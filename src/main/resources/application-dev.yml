@@ -1,0 +1,10 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/kiot_tay_db}
+    username: ${DB_USERNAME:ngocem1511}
+    password: ${DB_PASSWORD:12345}
+  jpa:
+    show-sql: true
