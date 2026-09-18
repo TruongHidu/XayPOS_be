@@ -1,115 +1,72 @@
-# Feature Package, Subscription và Entitlement
+# Public package và tenant subscription API
 
-Base URL: `http://localhost:8080/api/v1`.
+Tài liệu này chỉ mô tả API public/tenant. Contract duy nhất cho toàn bộ `/api/v1/admin/**`, gồm
+catalog, restaurant, subscription commands/queries, dashboard và audit, nằm tại
+[`admin-api.md`](admin-api.md) và [`openapi/admin-api.yaml`](openapi/admin-api.yaml). Admin paths
+không được lặp lại trong OpenAPI này để tránh hai nguồn contract mâu thuẫn.
 
-## Tạo tài khoản SUPER_ADMIN lần đầu
+Base URL local:
 
-Bootstrap mặc định tắt và không có mật khẩu hard-code. Trên PowerShell, đặt biến môi trường rồi chạy ứng dụng một lần:
-
-```powershell
-$env:SUPER_ADMIN_BOOTSTRAP_ENABLED = 'true'
-$env:SUPER_ADMIN_EMAIL = 'admin@kiottay.vn'
-$env:SUPER_ADMIN_PASSWORD = 'ChangeThisStrongPassword!'
-$env:SUPER_ADMIN_NAME = 'System Administrator'
-mvn spring-boot:run
+```text
+http://localhost:8080/api/v1
 ```
 
-Bootstrap idempotent theo email. Sau khi tài khoản đã được tạo, tắt `SUPER_ADMIN_BOOTSTRAP_ENABLED` và đăng nhập bằng `POST /api/v1/auth/login` để lấy Bearer token.
-
-## Mô hình authorization
-
-API nghiệp vụ sử dụng đồng thời hai điều kiện độc lập:
-
-```java
-@PreAuthorize("@featureSecurity.hasCurrentTenantFeature('MENU_MANAGEMENT')"
-    + " and hasAuthority('MENU_CREATE')")
-public MenuItemResponse createMenuItem(...) {
-    // restaurantId luôn lấy từ CurrentTenantProvider;
-    // repository tiếp tục lọc theo restaurantId để bảo vệ ownership.
-}
-```
-
-`SUPER_ADMIN` không tự động bypass entitlement của tenant. API quản trị subscription yêu cầu đồng thời role `SUPER_ADMIN` và authority `SUBSCRIPTION_MANAGE`. API tenant không nhận `restaurantId` từ client.
-
-## API
+## Endpoint
 
 | Method | Path | Xác thực | Chức năng |
 |---|---|---|---|
-| GET | `/packages` | Public | Danh sách package active và feature hiện tại của package |
+| GET | `/packages` | Public | Danh sách package active và feature active hiện tại |
 | GET | `/packages/{packageCode}` | Public | Chi tiết một package active |
 | GET | `/subscriptions/current` | Bearer + `SUBSCRIPTION_VIEW` | Subscription hiệu lực của tenant hiện tại |
-| GET | `/subscriptions/history?page=0&size=20` | Bearer + `SUBSCRIPTION_VIEW` | Lịch sử subscription của tenant, tối đa 100 dòng/trang |
+| GET | `/subscriptions/history?page=0&size=20` | Bearer + `SUBSCRIPTION_VIEW` | Lịch sử subscription của tenant |
 | GET | `/me/entitlements` | Bearer | Entitlement hiệu lực của tenant hiện tại |
-| POST | `/admin/restaurants/{restaurantId}/subscriptions` | Bearer + `SUPER_ADMIN` + `SUBSCRIPTION_MANAGE` | Tạo subscription `PENDING` |
-| POST | `/admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/activate` | Như trên | Activate và chốt snapshot |
-| POST | `/admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/change-package` | Như trên | Kết thúc gói cũ, tạo gói mới trong cùng transaction |
-| POST | `/admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/cancel` | Như trên | Hủy idempotent, không hard delete |
-| GET | `/admin/features?includeInactive=true` | Bearer + `SUPER_ADMIN` + `PACKAGE_VIEW` | Danh sách feature, gồm feature inactive nếu yêu cầu |
-| POST | `/admin/features` | Bearer + `SUPER_ADMIN` + `PACKAGE_MANAGE` | Tạo feature active |
-| PUT | `/admin/features/{featureCode}` | Như trên | Cập nhật tên, mô tả và trạng thái feature |
-| GET | `/admin/packages?includeInactive=true` | Bearer + `SUPER_ADMIN` + `PACKAGE_VIEW` | Danh sách package quản trị |
-| POST | `/admin/packages` | Bearer + `SUPER_ADMIN` + `PACKAGE_MANAGE` | Tạo package active |
-| PUT | `/admin/packages/{packageCode}` | Như trên | Cập nhật giá, chu kỳ và trạng thái package |
-| POST | `/admin/packages/{packageCode}/features/{featureCode}` | Như trên | Thêm feature và JSON limits vào package |
-| DELETE | `/admin/packages/{packageCode}/features/{featureCode}` | Như trên | Xóa mapping; không sửa snapshot cũ |
 
-Header cho API có xác thực:
+Header cho API protected:
 
 ```http
 Authorization: Bearer <access-token>
-Content-Type: application/json
 ```
 
-### Tạo subscription
+Tenant ID luôn được lấy từ principal JWT; client không truyền `restaurantId`. Sau khi JWT được xác
+thực, mọi protected tenant request còn kiểm tra restaurant tồn tại, chưa soft-delete và có status
+`ACTIVE`. Vì vậy access token cũ bị chặn ngay sau khi nhà hàng bị suspend/inactive.
+
+## Public package catalog
+
+`GET /packages` trả array package active theo giá tăng dần. `GET /packages/{packageCode}` trim và
+uppercase code; package không tồn tại hoặc inactive đều trả `404 PACKAGE_NOT_FOUND`.
+
+Response:
 
 ```json
 {
-  "packageCode": "PRO",
-  "startAt": "2026-08-24T00:00:00Z",
-  "endAt": "2026-09-24T00:00:00Z",
-  "autoRenew": false,
-  "priceAmount": 399000.00,
-  "currencyCode": "VND"
-}
-```
-
-Response `201 Created`:
-
-```json
-{
-  "id": "4cd93ccb-04e4-498b-b88c-4fe20f945a88",
-  "restaurantId": "9f082839-3dcf-49a4-94fd-b81ab599cd75",
-  "packageId": "21df1bc3-82e0-4f90-a767-cfcbcf9f64fd",
-  "packageCode": "PRO",
-  "status": "PENDING",
-  "startAt": "2026-08-24T00:00:00Z",
-  "endAt": "2026-09-24T00:00:00Z",
-  "autoRenew": false,
+  "id": "21df1bc3-82e0-4f90-a767-cfcbcf9f64fd",
+  "code": "PRO",
+  "name": "Pro",
+  "description": "Operations and staff features",
   "priceAmount": 399000.00,
   "currencyCode": "VND",
-  "activatedAt": null,
-  "cancelledAt": null,
-  "features": []
+  "billingCycleMonths": 1,
+  "features": [
+    {
+      "code": "TABLE_MANAGEMENT",
+      "limits": {}
+    }
+  ]
 }
 ```
 
-Client không thể gán `featureSnapshot`, `activatedAt`, `cancelledAt`, `createdAt`, `updatedAt` hoặc `version`; các trường này không tồn tại trong request DTO.
+Khác admin catalog, public API không trả field `active` và không trả package/feature inactive.
 
-### Đổi package
+## Subscription hiện tại và entitlement
 
-```json
-{
-  "packageCode": "PREMIUM",
-  "endAt": "2026-10-24T00:00:00Z",
-  "autoRenew": true,
-  "priceAmount": 699000.00,
-  "currencyCode": "VND"
-}
+Subscription được coi là hiệu lực khi:
+
+```text
+status == ACTIVE && startAt <= now && now < endAt
 ```
 
-Response `200 OK` là subscription `ACTIVE` mới. Subscription cũ được giữ lại ở trạng thái `CANCELLED`, snapshot cũ không thay đổi.
-
-### Entitlement hiện tại
+`GET /subscriptions/current` và `GET /me/entitlements` trả:
 
 ```json
 {
@@ -127,77 +84,82 @@ Response `200 OK` là subscription `ACTIVE` mới. Subscription cũ được gi�
 }
 ```
 
+`features` là immutable snapshot đã chốt lúc activate. Disable feature, đổi package mapping hoặc giá
+package về sau không sửa entitlement lịch sử. `features.is_active` không phải global kill switch cho
+snapshot đã active.
+
+Không có subscription effective trả business `403 SUBSCRIPTION_NOT_ACTIVE`.
+
+## Lịch sử subscription
+
+```http
+GET /api/v1/subscriptions/history?page=0&size=20
+```
+
+Response:
+
+```json
+{
+  "content": [
+    {
+      "id": "4cd93ccb-04e4-498b-b88c-4fe20f945a88",
+      "restaurantId": "9f082839-3dcf-49a4-94fd-b81ab599cd75",
+      "packageId": "21df1bc3-82e0-4f90-a767-cfcbcf9f64fd",
+      "packageCode": "PRO",
+      "status": "EXPIRED",
+      "startAt": "2026-07-24T00:00:00Z",
+      "endAt": "2026-08-24T00:00:00Z",
+      "autoRenew": false,
+      "priceAmount": 399000.00,
+      "currencyCode": "VND",
+      "activatedAt": "2026-07-24T00:00:00Z",
+      "cancelledAt": null,
+      "features": [
+        {"code": "TABLE_MANAGEMENT", "limits": {}}
+      ]
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+Kết quả sắp xếp `createdAt DESC`. Implementation hiện normalize `page < 0` thành 0, `size < 1`
+thành 1 và `size > 100` thành 100.
+
+## Vòng đời và expiration
+
+- Status gồm `PENDING`, `ACTIVE`, `EXPIRED`, `CANCELLED`.
+- `startAt` inclusive, `endAt` exclusive.
+- Mỗi tenant có tối đa một row lưu status `ACTIVE`, được bảo vệ bởi lock, `@Version` và partial
+  unique index PostgreSQL.
+- Cơ chế lazy + scheduled reconciliation chuyển `ACTIVE` có `endAt <= now` sang `EXPIRED`; audit
+  system chỉ được ghi một lần.
+- `autoRenew=true` vẫn expire vì hệ thống chưa có billing/renewal engine; không tự thu tiền hoặc tạo
+  subscription mới.
+- Downgrade/change package không hard-delete lịch sử và không xóa dữ liệu nghiệp vụ.
+
+Chi tiết command và cấu hình scheduler nằm trong [SUPER_ADMIN API](admin-api.md#subscription-commands).
+
 ## Error response
 
 ```json
 {
   "success": false,
-  "code": "FEATURE_NOT_ENTITLED",
-  "message": "The current package does not include this feature",
+  "code": "RESTAURANT_INACTIVE",
+  "message": "Restaurant is not active",
   "fieldErrors": {},
-  "timestamp": "2026-08-24T00:00:00Z"
+  "timestamp": "2026-08-27T00:00:00Z"
 }
 ```
 
-Các mã chính:
+- `401 UNAUTHORIZED`: access token thiếu/sai/hết hạn.
+- `403 FORBIDDEN`: đã login nhưng thiếu permission.
+- `403 RESTAURANT_INACTIVE`: restaurant tenant inactive, suspended, soft-delete hoặc không tồn tại.
+- `403 SUBSCRIPTION_NOT_ACTIVE`: không có subscription effective.
+- `404 PACKAGE_NOT_FOUND`: public package không tồn tại hoặc inactive.
+- `400 VALIDATION_ERROR`: query parameter sai kiểu.
 
-- `400`: `VALIDATION_ERROR`, `INVALID_REQUEST_BODY`, `INVALID_SUBSCRIPTION_PERIOD`, `PACKAGE_INACTIVE`.
-- `403`: `FORBIDDEN`, `TENANT_ACCESS_DENIED`, `SUBSCRIPTION_NOT_ACTIVE`, `FEATURE_NOT_ENTITLED`.
-- `404`: `PACKAGE_NOT_FOUND`, `RESTAURANT_NOT_FOUND`, `SUBSCRIPTION_NOT_FOUND`. Truy vấn khác tenant cũng trả `SUBSCRIPTION_NOT_FOUND`.
-- `409`: `SUBSCRIPTION_ALREADY_ACTIVE`, `SUBSCRIPTION_OVERLAP`, `INVALID_SUBSCRIPTION_TRANSITION`, `CONCURRENT_SUBSCRIPTION_UPDATE`.
-
-## Snapshot và vòng đời
-
-- Snapshot schema version hiện tại là `1`, gồm `packageCode`, `features`, từng `limits`, và `capturedAt` UTC.
-- Chỉ feature active tại thời điểm activate được chụp. Sau đó snapshot là nguồn entitlement duy nhất.
-- Không có global kill switch ở phiên bản này; tắt feature chỉ ảnh hưởng snapshot được tạo sau đó.
-- `startAt` inclusive, `endAt` exclusive. Scheduler đổi trạng thái `EXPIRED` không cần thiết để chặn truy cập sau `endAt`.
-- Change package khóa tenant, cancel subscription cũ và tạo subscription active mới trong một transaction.
-- Cancel gọi lại trả cùng trạng thái `CANCELLED` và không ghi audit trùng.
-- Các action audit: `SUBSCRIPTION_CREATED`, `SUBSCRIPTION_ACTIVATED`, `SUBSCRIPTION_PACKAGE_CHANGED`, `SUBSCRIPTION_CANCELLED`.
-
-## Ma trận seed mặc định
-
-- BASIC: feature POS lõi; không có `TABLE_MANAGEMENT`.
-- PRO: toàn bộ BASIC và quản lý bàn/nhân viên/KDS; không có `INVENTORY_MANAGEMENT`.
-- PREMIUM: toàn bộ PRO và inventory/analytics/AI.
-
-Mapping nằm hoàn toàn trong database migration, không có `if/else` theo package code trong Java.
-
-## Request quản trị catalog
-
-Tạo feature:
-
-```json
-{
-  "code": "LOYALTY_MANAGEMENT",
-  "name": "Quản lý khách hàng thân thiết",
-  "description": "Điểm và hạng thành viên"
-}
-```
-
-Tạo package:
-
-```json
-{
-  "code": "ENTERPRISE",
-  "name": "Enterprise",
-  "description": "Gói tùy chỉnh",
-  "priceAmount": 1299000,
-  "currencyCode": "VND",
-  "billingCycleMonths": 1
-}
-```
-
-Thêm feature vào package:
-
-```json
-{
-  "limits": {
-    "maxLocations": 10,
-    "monthlyRequests": 100000
-  }
-}
-```
-
-Catalog là tài nguyên toàn hệ thống nên audit của thao tác package/feature có `restaurant_id = null`; `actor_user_id` vẫn bắt buộc trỏ đến tài khoản `SUPER_ADMIN` đang thực hiện. Snapshot của các tenant đã activate không đổi khi feature bị disable hoặc mapping bị xóa.
+OpenAPI canonical: [`openapi/subscription-api.yaml`](openapi/subscription-api.yaml).

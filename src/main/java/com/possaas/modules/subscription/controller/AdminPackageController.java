@@ -30,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/admin")
-@PreAuthorize("hasRole('SUPER_ADMIN')")
 @RequiredArgsConstructor
 public class AdminPackageController {
     private final FeatureAdminService featureAdminService;
@@ -38,15 +37,27 @@ public class AdminPackageController {
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping("/features")
-    @PreAuthorize("hasAuthority('PACKAGE_VIEW')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_VIEW')"
+    )
     ResponseEntity<List<FeatureResponse>> features(
         @RequestParam(defaultValue = "true") boolean includeInactive
     ) {
         return ResponseEntity.ok(featureAdminService.findAll(includeInactive));
     }
 
+    @GetMapping("/features/{featureCode}")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_VIEW')"
+    )
+    ResponseEntity<FeatureResponse> feature(@PathVariable String featureCode) {
+        return ResponseEntity.ok(featureAdminService.findByCode(featureCode));
+    }
+
     @PostMapping("/features")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<FeatureResponse> createFeature(
         @Valid @RequestBody CreateFeatureRequest request,
         HttpServletRequest httpRequest
@@ -58,7 +69,9 @@ public class AdminPackageController {
     }
 
     @PutMapping("/features/{featureCode}")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<FeatureResponse> updateFeature(
         @PathVariable String featureCode,
         @Valid @RequestBody UpdateFeatureRequest request,
@@ -71,15 +84,27 @@ public class AdminPackageController {
     }
 
     @GetMapping("/packages")
-    @PreAuthorize("hasAuthority('PACKAGE_VIEW')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_VIEW')"
+    )
     ResponseEntity<List<AdminPackageResponse>> packages(
         @RequestParam(defaultValue = "true") boolean includeInactive
     ) {
         return ResponseEntity.ok(packageAdminService.findAll(includeInactive));
     }
 
+    @GetMapping("/packages/{packageCode}")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_VIEW')"
+    )
+    ResponseEntity<AdminPackageResponse> packageDetail(@PathVariable String packageCode) {
+        return ResponseEntity.ok(packageAdminService.findByCode(packageCode));
+    }
+
     @PostMapping("/packages")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<AdminPackageResponse> createPackage(
         @Valid @RequestBody CreatePackageRequest request,
         HttpServletRequest httpRequest
@@ -91,7 +116,9 @@ public class AdminPackageController {
     }
 
     @PutMapping("/packages/{packageCode}")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<AdminPackageResponse> updatePackage(
         @PathVariable String packageCode,
         @Valid @RequestBody UpdatePackageRequest request,
@@ -104,7 +131,9 @@ public class AdminPackageController {
     }
 
     @PostMapping("/packages/{packageCode}/features/{featureCode}")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<AdminPackageResponse> addFeature(
         @PathVariable String packageCode,
         @PathVariable String featureCode,
@@ -118,7 +147,9 @@ public class AdminPackageController {
     }
 
     @DeleteMapping("/packages/{packageCode}/features/{featureCode}")
-    @PreAuthorize("hasAuthority('PACKAGE_MANAGE')")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('PACKAGE_MANAGE')"
+    )
     ResponseEntity<AdminPackageResponse> removeFeature(
         @PathVariable String packageCode,
         @PathVariable String featureCode,

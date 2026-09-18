@@ -1,67 +1,92 @@
 openapi: 3.1.0
 info:
-  title: POS SaaS Subscription API
-  version: 1.0.0
-  description: Feature package, subscription lifecycle and tenant entitlement endpoints.
+  title: POS SaaS Public and Tenant Subscription API
+  version: 1.1.0
+  description: |
+    Canonical contract for public package discovery and current-tenant subscription/entitlement
+    reads. SUPER_ADMIN paths are intentionally excluded; their single canonical contract is
+    `admin-api.yaml`.
 servers:
   - url: http://localhost:8080/api/v1
+tags:
+  - name: Public packages
+  - name: Tenant subscriptions
+  - name: Tenant entitlements
 paths:
   /packages:
     get:
-      tags: [Packages]
+      tags: [Public packages]
+      operationId: listPublicPackages
       summary: List active packages
+      security: []
       responses:
         "200":
-          description: Active packages ordered by price
+          description: Active packages ordered by price with active catalog features
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/PackageResponse"
+
   /packages/{packageCode}:
     get:
-      tags: [Packages]
+      tags: [Public packages]
+      operationId: getPublicPackage
       summary: Get an active package
+      description: Package code is trimmed and normalized to uppercase. Inactive packages are hidden.
+      security: []
       parameters:
         - $ref: "#/components/parameters/PackageCode"
       responses:
         "200":
-          description: Package details
+          description: Active package detail
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PackageResponse"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/PackageNotFound"
+
   /subscriptions/current:
     get:
-      tags: [Subscriptions]
+      tags: [Tenant subscriptions]
+      operationId: getCurrentTenantSubscription
       summary: Get the current tenant's effective subscription
+      description: |
+        Requires `SUBSCRIPTION_VIEW`. The tenant ID is read from the authenticated principal,
+        never from a request parameter. Effective means `ACTIVE && startAt <= now && now < endAt`.
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Effective subscription and entitlements
+          description: Effective subscription and immutable entitlement snapshot
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentEntitlementResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/TenantForbidden"
+
   /subscriptions/history:
     get:
-      tags: [Subscriptions]
+      tags: [Tenant subscriptions]
+      operationId: getTenantSubscriptionHistory
       summary: Get the current tenant's subscription history
+      description: |
+        Requires `SUBSCRIPTION_VIEW`. Results are ordered by `createdAt DESC`. The implementation
+        normalizes a negative page to 0, size below 1 to 1 and size above 100 to 100.
       security:
         - bearerAuth: []
       parameters:
         - name: page
           in: query
-          schema: {type: integer, minimum: 0, default: 0}
+          schema: {type: integer, default: 0}
         - name: size
           in: query
-          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+          schema: {type: integer, default: 20}
       responses:
         "200":
           description: Paginated subscription history
@@ -69,296 +94,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SubscriptionPageResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          $ref: "#/components/responses/TenantForbidden"
+
   /me/entitlements:
     get:
-      tags: [Entitlements]
-      summary: Get current tenant entitlements
+      tags: [Tenant entitlements]
+      operationId: getMyEntitlements
+      summary: Get the authenticated tenant's current entitlements
+      description: The tenant ID comes from the authenticated principal and current effective snapshot.
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Current entitlements
+          description: Effective subscription and feature grants
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentEntitlementResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
-  /admin/restaurants/{restaurantId}/subscriptions:
-    post:
-      tags: [Subscription administration]
-      summary: Create a pending subscription
-      description: Requires SUPER_ADMIN and SUBSCRIPTION_MANAGE.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/RestaurantId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateSubscriptionRequest"
-            example:
-              packageCode: PRO
-              startAt: "2026-08-24T00:00:00Z"
-              endAt: "2026-09-24T00:00:00Z"
-              autoRenew: false
-              priceAmount: 399000.00
-              currencyCode: VND
-      responses:
-        "201":
-          description: Pending subscription
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/activate:
-    post:
-      tags: [Subscription administration]
-      summary: Activate a pending subscription and capture its feature snapshot
-      description: Requires SUPER_ADMIN and SUBSCRIPTION_MANAGE.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/RestaurantId"
-        - $ref: "#/components/parameters/SubscriptionId"
-      responses:
-        "200":
-          description: Active subscription
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionResponse"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-  /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/change-package:
-    post:
-      tags: [Subscription administration]
-      summary: Replace the active package without deleting subscription history
-      description: Requires SUPER_ADMIN and SUBSCRIPTION_MANAGE.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/RestaurantId"
-        - $ref: "#/components/parameters/SubscriptionId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ChangePackageRequest"
-      responses:
-        "200":
-          description: Replacement active subscription
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-  /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/cancel:
-    post:
-      tags: [Subscription administration]
-      summary: Cancel a subscription idempotently
-      description: Requires SUPER_ADMIN and SUBSCRIPTION_MANAGE.
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/RestaurantId"
-        - $ref: "#/components/parameters/SubscriptionId"
-      responses:
-        "200":
-          description: Cancelled subscription
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SubscriptionResponse"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-  /admin/features:
-    get:
-      tags: [Package administration]
-      summary: List features for system administration
-      security: [{bearerAuth: []}]
-      parameters:
-        - name: includeInactive
-          in: query
-          schema: {type: boolean, default: true}
-      responses:
-        "200":
-          description: Feature catalog
-          content:
-            application/json:
-              schema:
-                type: array
-                items: {$ref: "#/components/schemas/FeatureResponse"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-    post:
-      tags: [Package administration]
-      summary: Create a feature
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/CreateFeatureRequest"}
-      responses:
-        "201":
-          description: Created feature
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/FeatureResponse"}
-        "400": {$ref: "#/components/responses/BadRequest"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "409": {$ref: "#/components/responses/Conflict"}
-  /admin/features/{featureCode}:
-    put:
-      tags: [Package administration]
-      summary: Update a feature
-      security: [{bearerAuth: []}]
-      parameters:
-        - name: featureCode
-          in: path
-          required: true
-          schema: {type: string}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/UpdateFeatureRequest"}
-      responses:
-        "200":
-          description: Updated feature
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/FeatureResponse"}
-        "400": {$ref: "#/components/responses/BadRequest"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-  /admin/packages:
-    get:
-      tags: [Package administration]
-      summary: List packages for system administration
-      security: [{bearerAuth: []}]
-      parameters:
-        - name: includeInactive
-          in: query
-          schema: {type: boolean, default: true}
-      responses:
-        "200":
-          description: Package catalog including active status
-          content:
-            application/json:
-              schema:
-                type: array
-                items: {$ref: "#/components/schemas/AdminPackageResponse"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-    post:
-      tags: [Package administration]
-      summary: Create a package
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/CreatePackageRequest"}
-      responses:
-        "201":
-          description: Created package
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/AdminPackageResponse"}
-        "400": {$ref: "#/components/responses/BadRequest"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "409": {$ref: "#/components/responses/Conflict"}
-  /admin/packages/{packageCode}:
-    put:
-      tags: [Package administration]
-      summary: Update a package
-      security: [{bearerAuth: []}]
-      parameters:
-        - $ref: "#/components/parameters/PackageCode"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/UpdatePackageRequest"}
-      responses:
-        "200":
-          description: Updated package
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/AdminPackageResponse"}
-        "400": {$ref: "#/components/responses/BadRequest"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-  /admin/packages/{packageCode}/features/{featureCode}:
-    post:
-      tags: [Package administration]
-      summary: Add a feature and limits to a package
-      security: [{bearerAuth: []}]
-      parameters:
-        - $ref: "#/components/parameters/PackageCode"
-        - name: featureCode
-          in: path
-          required: true
-          schema: {type: string}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/PackageFeatureRequest"}
-      responses:
-        "200":
-          description: Updated package mapping
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/AdminPackageResponse"}
-        "400": {$ref: "#/components/responses/BadRequest"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-        "409": {$ref: "#/components/responses/Conflict"}
-    delete:
-      tags: [Package administration]
-      summary: Remove a feature mapping without changing historical snapshots
-      security: [{bearerAuth: []}]
-      parameters:
-        - $ref: "#/components/parameters/PackageCode"
-        - name: featureCode
-          in: path
-          required: true
-          schema: {type: string}
-      responses:
-        "200":
-          description: Updated package mapping
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/AdminPackageResponse"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
+          $ref: "#/components/responses/TenantForbidden"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -371,189 +133,144 @@ components:
       in: path
       required: true
       schema: {type: string, example: PRO}
-    RestaurantId:
-      name: restaurantId
-      in: path
-      required: true
-      schema: {type: string, format: uuid}
-    SubscriptionId:
-      name: subscriptionId
-      in: path
-      required: true
-      schema: {type: string, format: uuid}
   responses:
-    BadRequest:
-      description: Invalid request or subscription period
+    Unauthorized:
+      description: Missing, invalid or expired access token
       content:
         application/json:
-          schema: {$ref: "#/components/schemas/ErrorResponse"}
-    Forbidden:
-      description: Permission, tenant context, active subscription or feature is missing
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            code: UNAUTHORIZED
+            message: Authentication is required
+            fieldErrors: {}
+            timestamp: "2026-08-27T00:00:00Z"
+    TenantForbidden:
+      description: Missing permission, inactive restaurant or no effective subscription
       content:
         application/json:
-          schema: {$ref: "#/components/schemas/ErrorResponse"}
-    NotFound:
-      description: Resource was not found in the permitted tenant scope
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            permission:
+              value: {success: false, code: FORBIDDEN, message: Access denied, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+            restaurant:
+              value: {success: false, code: RESTAURANT_INACTIVE, message: Restaurant is not active, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+            subscription:
+              value: {success: false, code: SUBSCRIPTION_NOT_ACTIVE, message: No active subscription is available, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+    PackageNotFound:
+      description: Active package was not found
       content:
         application/json:
-          schema: {$ref: "#/components/schemas/ErrorResponse"}
-    Conflict:
-      description: Invalid transition, overlap or concurrent update
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            code: PACKAGE_NOT_FOUND
+            message: Package not found
+            fieldErrors: {}
+            timestamp: "2026-08-27T00:00:00Z"
+    ValidationError:
+      description: Invalid query type
       content:
         application/json:
-          schema: {$ref: "#/components/schemas/ErrorResponse"}
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            code: VALIDATION_ERROR
+            message: Request validation failed
+            fieldErrors: {}
+            timestamp: "2026-08-27T00:00:00Z"
   schemas:
-    CreateSubscriptionRequest:
-      type: object
-      additionalProperties: false
-      required: [packageCode, startAt, endAt, priceAmount, currencyCode]
-      properties:
-        packageCode: {type: string, minLength: 1, example: PRO}
-        startAt: {type: string, format: date-time}
-        endAt: {type: string, format: date-time}
-        autoRenew: {type: boolean, default: false}
-        priceAmount: {type: number, minimum: 0, example: 399000.00}
-        currencyCode: {type: string, pattern: "^[A-Za-z]{3}$", example: VND}
-    ChangePackageRequest:
-      type: object
-      additionalProperties: false
-      required: [packageCode, endAt, priceAmount, currencyCode]
-      properties:
-        packageCode: {type: string, minLength: 1, example: PREMIUM}
-        endAt: {type: string, format: date-time}
-        autoRenew: {type: boolean, default: false}
-        priceAmount: {type: number, minimum: 0, example: 699000.00}
-        currencyCode: {type: string, pattern: "^[A-Za-z]{3}$", example: VND}
-    CreateFeatureRequest:
-      type: object
-      additionalProperties: false
-      required: [code, name]
-      properties:
-        code: {type: string, pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 100}
-        name: {type: string, minLength: 1, maxLength: 150}
-        description: {type: [string, "null"]}
-    UpdateFeatureRequest:
-      type: object
-      additionalProperties: false
-      required: [name, active]
-      properties:
-        name: {type: string, minLength: 1, maxLength: 150}
-        description: {type: [string, "null"]}
-        active: {type: boolean}
-    CreatePackageRequest:
-      type: object
-      additionalProperties: false
-      required: [code, name, priceAmount, currencyCode, billingCycleMonths]
-      properties:
-        code: {type: string, pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 50}
-        name: {type: string, minLength: 1, maxLength: 100}
-        description: {type: [string, "null"]}
-        priceAmount: {type: number, minimum: 0}
-        currencyCode: {type: string, pattern: "^[A-Za-z]{3}$"}
-        billingCycleMonths: {type: integer, minimum: 1, maximum: 120}
-    UpdatePackageRequest:
-      type: object
-      additionalProperties: false
-      required: [name, priceAmount, currencyCode, billingCycleMonths, active]
-      properties:
-        name: {type: string, minLength: 1, maxLength: 100}
-        description: {type: [string, "null"]}
-        priceAmount: {type: number, minimum: 0}
-        currencyCode: {type: string, pattern: "^[A-Za-z]{3}$"}
-        billingCycleMonths: {type: integer, minimum: 1, maximum: 120}
-        active: {type: boolean}
-    PackageFeatureRequest:
-      type: object
-      additionalProperties: false
-      required: [limits]
-      properties:
-        limits: {type: object, additionalProperties: true}
-    FeatureEntitlement:
-      type: object
-      required: [code, limits]
-      properties:
-        code: {type: string, example: TABLE_MANAGEMENT}
-        limits: {type: object, additionalProperties: true}
-    PackageResponse:
-      type: object
-      required: [id, code, name, priceAmount, currencyCode, billingCycleMonths, features]
-      properties:
-        id: {type: string, format: uuid}
-        code: {type: string, example: PRO}
-        name: {type: string, example: Pro}
-        description: {type: [string, "null"]}
-        priceAmount: {type: number, example: 399000.00}
-        currencyCode: {type: string, example: VND}
-        billingCycleMonths: {type: integer, example: 1}
-        features:
-          type: array
-          items: {$ref: "#/components/schemas/FeatureEntitlement"}
-    FeatureResponse:
-      type: object
-      required: [id, code, name, active]
-      properties:
-        id: {type: string, format: uuid}
-        code: {type: string}
-        name: {type: string}
-        description: {type: [string, "null"]}
-        active: {type: boolean}
-    AdminPackageResponse:
-      allOf:
-        - $ref: "#/components/schemas/PackageResponse"
-        - type: object
-          required: [active]
-          properties:
-            active: {type: boolean}
-    SubscriptionResponse:
-      type: object
-      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, features]
-      properties:
-        id: {type: string, format: uuid}
-        restaurantId: {type: string, format: uuid}
-        packageId: {type: string, format: uuid}
-        packageCode: {type: string, example: PRO}
-        status: {type: string, enum: [PENDING, ACTIVE, EXPIRED, CANCELLED]}
-        startAt: {type: string, format: date-time}
-        endAt: {type: string, format: date-time}
-        autoRenew: {type: boolean}
-        priceAmount: {type: number}
-        currencyCode: {type: string}
-        activatedAt: {type: [string, "null"], format: date-time}
-        cancelledAt: {type: [string, "null"], format: date-time}
-        features:
-          type: array
-          items: {$ref: "#/components/schemas/FeatureEntitlement"}
-    CurrentEntitlementResponse:
-      type: object
-      required: [subscriptionId, packageCode, status, startAt, endAt, features]
-      properties:
-        subscriptionId: {type: string, format: uuid}
-        packageCode: {type: string, example: PRO}
-        status: {type: string, enum: [ACTIVE]}
-        startAt: {type: string, format: date-time}
-        endAt: {type: string, format: date-time}
-        features:
-          type: array
-          items: {$ref: "#/components/schemas/FeatureEntitlement"}
-    SubscriptionPageResponse:
-      type: object
-      required: [content, page, size, totalElements, totalPages]
-      properties:
-        content:
-          type: array
-          items: {$ref: "#/components/schemas/SubscriptionResponse"}
-        page: {type: integer}
-        size: {type: integer}
-        totalElements: {type: integer, format: int64}
-        totalPages: {type: integer}
     ErrorResponse:
       type: object
+      additionalProperties: false
       required: [success, code, message, fieldErrors, timestamp]
       properties:
         success: {type: boolean, const: false}
-        code: {type: string, example: FEATURE_NOT_ENTITLED}
+        code: {type: string}
         message: {type: string}
         fieldErrors:
           type: object
           additionalProperties: {type: string}
         timestamp: {type: string, format: date-time}
+    SubscriptionStatus:
+      type: string
+      enum: [PENDING, ACTIVE, EXPIRED, CANCELLED]
+    FeatureEntitlementResponse:
+      type: object
+      additionalProperties: false
+      required: [code, limits]
+      properties:
+        code: {type: string, example: TABLE_MANAGEMENT}
+        limits:
+          type: object
+          additionalProperties: true
+    PackageResponse:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, description, priceAmount, currencyCode, billingCycleMonths, features]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, example: PRO}
+        name: {type: string, example: Pro}
+        description: {type: [string, "null"]}
+        priceAmount: {type: number, minimum: 0, example: 399000.00}
+        currencyCode: {type: string, example: VND}
+        billingCycleMonths: {type: integer, minimum: 1, example: 1}
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureEntitlementResponse"
+    SubscriptionResponse:
+      type: object
+      additionalProperties: false
+      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, activatedAt, cancelledAt, features]
+      properties:
+        id: {type: string, format: uuid}
+        restaurantId: {type: string, format: uuid}
+        packageId: {type: string, format: uuid}
+        packageCode: {type: [string, "null"]}
+        status:
+          $ref: "#/components/schemas/SubscriptionStatus"
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        autoRenew: {type: boolean}
+        priceAmount: {type: number, minimum: 0}
+        currencyCode: {type: string}
+        activatedAt: {type: [string, "null"], format: date-time}
+        cancelledAt: {type: [string, "null"], format: date-time}
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureEntitlementResponse"
+    CurrentEntitlementResponse:
+      type: object
+      additionalProperties: false
+      required: [subscriptionId, packageCode, status, startAt, endAt, features]
+      properties:
+        subscriptionId: {type: string, format: uuid}
+        packageCode: {type: string}
+        status: {type: string, const: ACTIVE}
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        features:
+          type: array
+          description: Immutable feature snapshot captured at activation.
+          items:
+            $ref: "#/components/schemas/FeatureEntitlementResponse"
+    SubscriptionPageResponse:
+      type: object
+      additionalProperties: false
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionResponse"
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, minimum: 0}

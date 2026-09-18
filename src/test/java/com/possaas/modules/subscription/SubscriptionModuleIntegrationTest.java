@@ -37,6 +37,7 @@ import com.possaas.modules.subscription.service.FeatureAdminService;
 import com.possaas.modules.subscription.service.PackageAdminService;
 import com.possaas.modules.subscription.service.PackageQueryService;
 import com.possaas.modules.subscription.service.SubscriptionCommandService;
+import com.possaas.modules.subscription.service.SubscriptionExpirationService;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -80,6 +81,7 @@ class SubscriptionModuleIntegrationTest {
     @Autowired PackageFeatureRepository packageFeatureRepository;
     @Autowired FeatureRepository featureRepository;
     @Autowired SubscriptionCommandService subscriptionCommandService;
+    @Autowired SubscriptionExpirationService subscriptionExpirationService;
     @Autowired EntitlementService entitlementService;
     @Autowired FeatureSnapshotFactory snapshotFactory;
     @Autowired FeatureAdminService featureAdminService;
@@ -239,6 +241,122 @@ class SubscriptionModuleIntegrationTest {
             BigDecimal.ZERO,
             "{}"
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void lazyExpirationReleasesTheActiveSlotAndUsesOneCentralTransition() {
+        Restaurant restaurant = createRestaurant();
+        RestaurantSubscription stale = saveDirectSubscription(
+            restaurant.getId(),
+            "BASIC",
+            SubscriptionStatus.ACTIVE,
+            Instant.now().minus(2, ChronoUnit.DAYS),
+            Instant.now().minus(1, ChronoUnit.DAYS)
+        );
+        SubscriptionResponse pending = subscriptionCommandService.create(
+            restaurant.getId(),
+            createRequest("PRO"),
+            null,
+            "127.0.0.1"
+        );
+
+        SubscriptionResponse activated = subscriptionCommandService.activate(
+            restaurant.getId(),
+            pending.id(),
+            null,
+            "127.0.0.1"
+        );
+
+        assertThat(subscriptionRepository.findById(stale.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.EXPIRED);
+        assertThat(activated.status()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_logs WHERE entity_id = ? AND action_code = 'SUBSCRIPTION_EXPIRED'",
+            Integer.class,
+            stale.getId()
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void scheduledExpirationBatchIsIdempotentAndDoesNotRenewAutomatically() {
+        Restaurant restaurant = createRestaurant();
+        RestaurantSubscription stale = saveDirectSubscription(
+            restaurant.getId(),
+            "PRO",
+            SubscriptionStatus.ACTIVE,
+            Instant.now().minus(2, ChronoUnit.DAYS),
+            Instant.now().minus(1, ChronoUnit.DAYS)
+        );
+        stale.setAutoRenew(true);
+        subscriptionRepository.saveAndFlush(stale);
+
+        subscriptionExpirationService.expireDueBatch();
+        subscriptionExpirationService.expireDueBatch();
+
+        assertThat(subscriptionRepository.findById(stale.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.EXPIRED);
+        assertThat(subscriptionRepository.findAllByRestaurantIdOrderByCreatedAtDesc(
+            restaurant.getId(),
+            org.springframework.data.domain.Pageable.unpaged()
+        )).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_logs WHERE entity_id = ? AND action_code = 'SUBSCRIPTION_EXPIRED'",
+            Integer.class,
+            stale.getId()
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentExpirationCreatesOneAuditAndNeverExpiresPendingOrCancelledRows() throws Exception {
+        Restaurant restaurant = createRestaurant();
+        Instant pastStart = Instant.now().minus(2, ChronoUnit.DAYS);
+        Instant pastEnd = Instant.now().minus(1, ChronoUnit.DAYS);
+        RestaurantSubscription stale = saveDirectSubscription(
+            restaurant.getId(),
+            "BASIC",
+            SubscriptionStatus.ACTIVE,
+            pastStart,
+            pastEnd
+        );
+        RestaurantSubscription pending = saveDirectSubscription(
+            restaurant.getId(),
+            "PRO",
+            SubscriptionStatus.PENDING,
+            pastStart,
+            pastEnd
+        );
+        RestaurantSubscription cancelled = saveDirectSubscription(
+            restaurant.getId(),
+            "PREMIUM",
+            SubscriptionStatus.CANCELLED,
+            pastStart,
+            pastEnd
+        );
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> futures = executor.invokeAll(List.of(
+                subscriptionExpirationService::expireDueBatch,
+                subscriptionExpirationService::expireDueBatch
+            ));
+            for (Future<Integer> future : futures) {
+                future.get();
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(subscriptionRepository.findById(stale.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.EXPIRED);
+        assertThat(subscriptionRepository.findById(pending.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.PENDING);
+        assertThat(subscriptionRepository.findById(cancelled.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.CANCELLED);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_logs WHERE entity_id = ? AND action_code = 'SUBSCRIPTION_EXPIRED'",
+            Integer.class,
+            stale.getId()
+        )).isEqualTo(1);
     }
 
     @Test

@@ -51,6 +51,12 @@ public class PackageAdminService {
             .toList();
     }
 
+    @Transactional(readOnly = true)
+    public AdminPackageResponse findByCode(String packageCode) {
+        PackagePlan packagePlan = requirePackage(packageCode);
+        return responseWithAllFeatures(packagePlan);
+    }
+
     @Transactional
     public AdminPackageResponse create(CreatePackageRequest request, UUID actorUserId, String ipAddress) {
         String code = normalizeCode(request.code());

@@ -9,6 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -33,12 +37,38 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse(false, "VALIDATION_ERROR", "Request validation failed", Map.of(), Instant.now()));
     }
 
+    @ExceptionHandler({
+        MethodArgumentTypeMismatchException.class,
+        MissingServletRequestParameterException.class,
+        HandlerMethodValidationException.class
+    })
+    ResponseEntity<ErrorResponse> invalidRequestParameter(Exception ex) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(
+            false,
+            "VALIDATION_ERROR",
+            "Request validation failed",
+            Map.of(),
+            Instant.now()
+        ));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ErrorResponse> unreadableBody(HttpMessageNotReadableException ex) {
         return ResponseEntity.badRequest().body(new ErrorResponse(
             false,
             "INVALID_REQUEST_BODY",
             "Request body is malformed or contains unsupported fields",
+            Map.of(),
+            Instant.now()
+        ));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ErrorResponse> methodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        return ResponseEntity.status(405).body(new ErrorResponse(
+            false,
+            "METHOD_NOT_ALLOWED",
+            "HTTP method is not supported for this endpoint",
             Map.of(),
             Instant.now()
         ));

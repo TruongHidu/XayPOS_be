@@ -21,13 +21,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/admin/restaurants/{restaurantId}/subscriptions")
-@PreAuthorize("hasRole('SUPER_ADMIN') and hasAuthority('SUBSCRIPTION_MANAGE')")
 @RequiredArgsConstructor
 public class AdminSubscriptionController {
     private final SubscriptionCommandService subscriptionCommandService;
     private final CurrentUserProvider currentUserProvider;
 
     @PostMapping
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('SUBSCRIPTION_MANAGE')"
+    )
     ResponseEntity<SubscriptionResponse> create(
         @PathVariable UUID restaurantId,
         @Valid @RequestBody CreateSubscriptionRequest request,
@@ -45,6 +47,9 @@ public class AdminSubscriptionController {
     }
 
     @PostMapping("/{subscriptionId}/activate")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('SUBSCRIPTION_MANAGE')"
+    )
     ResponseEntity<SubscriptionResponse> activate(
         @PathVariable UUID restaurantId,
         @PathVariable UUID subscriptionId,
@@ -62,6 +67,9 @@ public class AdminSubscriptionController {
     }
 
     @PostMapping("/{subscriptionId}/change-package")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('SUBSCRIPTION_MANAGE')"
+    )
     ResponseEntity<SubscriptionResponse> changePackage(
         @PathVariable UUID restaurantId,
         @PathVariable UUID subscriptionId,
@@ -81,6 +89,9 @@ public class AdminSubscriptionController {
     }
 
     @PostMapping("/{subscriptionId}/cancel")
+    @PreAuthorize(
+        "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('SUBSCRIPTION_MANAGE')"
+    )
     ResponseEntity<SubscriptionResponse> cancel(
         @PathVariable UUID restaurantId,
         @PathVariable UUID subscriptionId,

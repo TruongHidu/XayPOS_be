@@ -15,4 +15,21 @@ public interface AuthRefreshTokenRepository extends JpaRepository<AuthRefreshTok
     @Modifying
     @Query("update AuthRefreshToken t set t.revokedAt = :now where t.userId = :userId and t.revokedAt is null")
     int revokeAllActive(@Param("userId") UUID userId, @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        update auth_refresh_tokens token
+        set revoked_at = :now
+        where token.revoked_at is null
+          and exists (
+              select 1
+              from users app_user
+              where app_user.id = token.user_id
+                and app_user.restaurant_id = :restaurantId
+          )
+        """, nativeQuery = true)
+    int revokeAllActiveByRestaurantId(
+        @Param("restaurantId") UUID restaurantId,
+        @Param("now") Instant now
+    );
 }

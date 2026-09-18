@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
@@ -26,6 +27,7 @@ public class RefreshTokenService {
     private final AuthRefreshTokenRepository refreshTokenRepository;
     private final JwtProperties jwtProperties;
     private final AuditService auditService;
+    private final Clock clock;
 
     @Transactional
     public IssuedRefreshToken issue(UUID userId, String deviceInfo, String ipAddress) {
@@ -33,7 +35,7 @@ public class RefreshTokenService {
         AuthRefreshToken token = new AuthRefreshToken();
         token.setUserId(userId);
         token.setTokenHash(hash(rawToken));
-        token.setExpiresAt(Instant.now().plus(jwtProperties.getRefreshTokenTtl()));
+        token.setExpiresAt(clock.instant().plus(jwtProperties.getRefreshTokenTtl()));
         token.setDeviceInfo(deviceInfo);
         token.setIpAddress(parseIpAddress(ipAddress));
         AuthRefreshToken savedToken = refreshTokenRepository.save(token);
@@ -46,7 +48,7 @@ public class RefreshTokenService {
             .orElseThrow(RefreshTokenService::invalidRefreshToken);
 
         if (token.getRevokedAt() != null) {
-            refreshTokenRepository.revokeAllActive(token.getUserId(), Instant.now());
+            refreshTokenRepository.revokeAllActive(token.getUserId(), clock.instant());
             auditService.record(
                 null,
                 token.getUserId(),
@@ -59,7 +61,7 @@ public class RefreshTokenService {
             );
             throw invalidRefreshToken();
         }
-        if (!token.getExpiresAt().isAfter(Instant.now())) {
+        if (!token.getExpiresAt().isAfter(clock.instant())) {
             throw invalidRefreshToken();
         }
         return token;
@@ -68,7 +70,7 @@ public class RefreshTokenService {
     @Transactional
     public void revoke(AuthRefreshToken token) {
         if (token.getRevokedAt() == null) {
-            token.setRevokedAt(Instant.now());
+            token.setRevokedAt(clock.instant());
             refreshTokenRepository.save(token);
         }
     }
@@ -78,6 +80,11 @@ public class RefreshTokenService {
         refreshTokenRepository.findByTokenHash(hash(rawToken))
             .filter(token -> token.getUserId().equals(userId))
             .ifPresent(this::revoke);
+    }
+
+    @Transactional
+    public int revokeAllActiveForRestaurant(UUID restaurantId) {
+        return refreshTokenRepository.revokeAllActiveByRestaurantId(restaurantId, clock.instant());
     }
 
     private static String generateRawToken() {

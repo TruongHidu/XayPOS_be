@@ -34,6 +34,11 @@ public class FeatureAdminService {
         return features.stream().map(packageMapper::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public FeatureResponse findByCode(String featureCode) {
+        return packageMapper.toResponse(requireFeature(featureCode));
+    }
+
     @Transactional
     public FeatureResponse create(CreateFeatureRequest request, UUID actorUserId, String ipAddress) {
         String code = normalizeCode(request.code());

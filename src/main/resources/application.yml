@@ -23,6 +23,12 @@ server:
   port: 8080
 
 app:
+  jobs:
+    subscription-expiration:
+      enabled: ${SUBSCRIPTION_EXPIRATION_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_EXPIRATION_FIXED_DELAY:PT1M}
+      initial-delay: ${SUBSCRIPTION_EXPIRATION_INITIAL_DELAY:PT1M}
+      batch-size: ${SUBSCRIPTION_EXPIRATION_BATCH_SIZE:100}
   bootstrap:
     super-admin:
       enabled: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:false}

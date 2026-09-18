@@ -36,6 +36,7 @@ public class SubscriptionCommandService {
     private final FeatureSnapshotFactory snapshotFactory;
     private final SubscriptionValidityPolicy validityPolicy;
     private final SubscriptionMapper subscriptionMapper;
+    private final SubscriptionExpirationService expirationService;
     private final AuditService auditService;
     private final Clock clock;
 
@@ -95,7 +96,9 @@ public class SubscriptionCommandService {
             throw conflict("INVALID_SUBSCRIPTION_TRANSITION", "Only a pending subscription can be activated");
         }
         subscriptionRepository.findActiveForUpdate(restaurantId).ifPresent(active -> {
-            throw conflict("SUBSCRIPTION_OVERLAP", "Restaurant already has an active subscription");
+            if (!expirationService.expireIfDue(active)) {
+                throw conflict("SUBSCRIPTION_OVERLAP", "Restaurant already has an active subscription");
+            }
         });
 
         PackagePlan packagePlan = requireActivePackage(subscription.getPackageId());
@@ -130,6 +133,7 @@ public class SubscriptionCommandService {
         UUID actorUserId,
         String ipAddress
     ) {
+        expirationService.reconcileByIdIfDue(restaurantId, subscriptionId);
         lockRestaurant(restaurantId);
         RestaurantSubscription current = subscriptionRepository.findActiveForUpdate(restaurantId)
             .filter(subscription -> subscription.getId().equals(subscriptionId))
@@ -195,6 +199,7 @@ public class SubscriptionCommandService {
         UUID actorUserId,
         String ipAddress
     ) {
+        expirationService.reconcileByIdIfDue(restaurantId, subscriptionId);
         lockRestaurant(restaurantId);
         RestaurantSubscription subscription = requireSubscription(restaurantId, subscriptionId);
         PackagePlan packagePlan = requirePackage(subscription.getPackageId());
