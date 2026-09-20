@@ -264,7 +264,11 @@ paths:
       tags: [Subscription commands]
       operationId: createAdminSubscription
       summary: Create a pending subscription
-      description: The package must exist and be active. The command records `SUBSCRIPTION_CREATED`.
+      description: |
+        Assign only when the restaurant has no unexpired ACTIVE and no PENDING subscription.
+        Due ACTIVE rows are reconciled to EXPIRED first. Existing ACTIVE requires change-package;
+        existing PENDING must be activated or cancelled. The package must exist and be active.
+        Records SUBSCRIPTION_CREATED on success. Renewal, self-service payment, billing and payment gateways are not supported.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -297,7 +301,7 @@ paths:
         "404":
           $ref: "#/components/responses/RestaurantOrPackageNotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/SubscriptionConflict"
 
   /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}:
     get:
@@ -335,8 +339,9 @@ paths:
       summary: Activate a pending subscription
       description: |
         Captures an immutable feature snapshot. Lazy reconciliation first expires a due ACTIVE
-        row and frees the one-active constraint. A still-effective ACTIVE row returns
-        `409 SUBSCRIPTION_OVERLAP`.
+        row and frees the one-active constraint. Any unexpired ACTIVE row returns
+        `409 SUBSCRIPTION_OVERLAP`, including future-start rows. endAt <= now returns
+        `409 SUBSCRIPTION_PERIOD_EXPIRED`; activating ACTIVE again returns SUBSCRIPTION_ALREADY_ACTIVE.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -367,7 +372,9 @@ paths:
       description: |
         Reconciles expiration first. The selected subscription must still be effective. The old
         row becomes CANCELLED and a replacement ACTIVE row with a new snapshot is created in the
-        same transaction; historical snapshots are not modified.
+        same transaction with startAt = now; historical snapshots are not modified.
+        The target package must be active and different; the same package returns
+        `409 SAME_PACKAGE_CHANGE_NOT_ALLOWED`. Renewal is not supported.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -1018,7 +1025,11 @@ components:
             fieldErrors: {}
             timestamp: "2026-08-27T00:00:00Z"
     SubscriptionConflict:
-      description: Invalid transition, overlap or concurrent subscription update
+      description: |
+        HTTP 409 business or persistence conflict. Codes include SUBSCRIPTION_ALREADY_ACTIVE,
+        SUBSCRIPTION_PENDING_EXISTS, SUBSCRIPTION_OVERLAP, SUBSCRIPTION_NOT_ACTIVE,
+        SUBSCRIPTION_PERIOD_EXPIRED, SAME_PACKAGE_CHANGE_NOT_ALLOWED,
+        INVALID_SUBSCRIPTION_TRANSITION and CONCURRENT_SUBSCRIPTION_UPDATE.
       content:
         application/json:
           schema:
@@ -1026,6 +1037,10 @@ components:
           examples:
             overlap:
               value: {success: false, code: SUBSCRIPTION_OVERLAP, message: Restaurant already has an active subscription, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+            pendingExists:
+              value: {success: false, code: SUBSCRIPTION_PENDING_EXISTS, message: Activate or cancel the existing pending subscription, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+            samePackage:
+              value: {success: false, code: SAME_PACKAGE_CHANGE_NOT_ALLOWED, message: Renewal is not supported, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
             transition:
               value: {success: false, code: INVALID_SUBSCRIPTION_TRANSITION, message: Invalid subscription transition, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
             notActive:
@@ -1091,7 +1106,7 @@ components:
     AdminRestaurantSummaryResponse:
       type: object
       additionalProperties: false
-      required: [id, code, name, legalName, phone, timezone, currencyCode, status, createdAt, updatedAt, effectiveSubscription]
+      required: [id, code, name, legalName, phone, timezone, currencyCode, status, createdAt, updatedAt, effectiveSubscription, packageAssignmentState]
       properties:
         id: {type: string, format: uuid}
         code: {type: string, example: KIOTTAY01}
@@ -1108,6 +1123,18 @@ components:
           oneOf:
             - $ref: "#/components/schemas/AdminSubscriptionBriefResponse"
             - type: "null"
+
+        packageAssignmentState:
+          $ref: "#/components/schemas/PackageAssignmentState"
+
+    PackageAssignmentState:
+      type: string
+      enum: [AVAILABLE, PENDING, ACTIVE]
+      description: |
+        UI hint, batch-loaded for lists; mutation commands recheck eligibility under lock.
+        ACTIVE means unexpired ACTIVE, including future starts; PENDING means a pending row exists
+        (even when its period has elapsed); otherwise AVAILABLE, including expired/cancelled history.
+        ACTIVE takes precedence if legacy data has both statuses. No writes are performed by GET.
 
     AdminRestaurantOwnerResponse:
       type: object
@@ -1132,7 +1159,7 @@ components:
     AdminRestaurantDetailResponse:
       type: object
       additionalProperties: false
-      required: [id, code, name, legalName, phone, address, timezone, currencyCode, status, createdAt, updatedAt, owners, userCounts, effectiveSubscription, latestSubscription]
+      required: [id, code, name, legalName, phone, address, timezone, currencyCode, status, createdAt, updatedAt, owners, userCounts, effectiveSubscription, latestSubscription, packageAssignmentState]
       properties:
         id: {type: string, format: uuid}
         code: {type: string}
@@ -1160,6 +1187,9 @@ components:
           oneOf:
             - $ref: "#/components/schemas/AdminSubscriptionBriefResponse"
             - type: "null"
+
+        packageAssignmentState:
+          $ref: "#/components/schemas/PackageAssignmentState"
 
     AdminRestaurantPageResponse:
       allOf:

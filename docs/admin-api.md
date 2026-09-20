@@ -123,6 +123,7 @@ Response `200`:
       "status": "ACTIVE",
       "createdAt": "2026-08-01T00:00:00Z",
       "updatedAt": "2026-08-27T00:00:00Z",
+      "packageAssignmentState": "ACTIVE",
       "effectiveSubscription": {
         "id": "4cd93ccb-04e4-498b-b88c-4fe20f945a88",
         "packageCode": "PRO",
@@ -175,6 +176,7 @@ Response `200`:
     }
   ],
   "userCounts": {"total": 5, "active": 4},
+  "packageAssignmentState": "AVAILABLE",
   "effectiveSubscription": null,
   "latestSubscription": {
     "id": "4cd93ccb-04e4-498b-b88c-4fe20f945a88",
@@ -353,14 +355,53 @@ uppercase. Response `201` là `SubscriptionResponse`:
 }
 ```
 
+### Quy tắc gán gói và dữ liệu hỗ trợ frontend
+
+“Gán gói” (create PENDING) chỉ dành cho restaurant không có ACTIVE chưa hết hạn và không có PENDING.
+Không có lịch sử, hoặc chỉ có EXPIRED/CANCELLED, đều được phép gán. ACTIVE đã đến `endAt` được
+reconcile sang EXPIRED trước khi tạo. ACTIVE chưa hết hạn phải dùng `change-package`, không dùng
+create + activate để thay gói; PENDING hiện tại phải activate hoặc cancel trước.
+
+List và detail restaurant bổ sung `packageAssignmentState`:
+
+- `AVAILABLE`: không có ACTIVE chưa hết hạn hoặc PENDING, kể cả khi lịch sử là EXPIRED/CANCELLED.
+- `PENDING`: có PENDING cần activate/cancel, kể cả PENDING đã qua endAt.
+- `ACTIVE`: có ACTIVE chưa hết hạn, kể cả startAt còn ở tương lai. Vì vậy không dùng
+  `effectiveSubscription == null` để quyết định bật nút gán gói.
+
+Trạng thái được lấy theo batch cho danh sách, không N+1; GET không tự ghi trạng thái expiration.
+Đây chỉ là gợi ý hiển thị, command luôn kiểm tra lại dưới pessimistic write lock của restaurant.
+Nếu dữ liệu cũ có cả ACTIVE chưa hết hạn và PENDING, UI ưu tiên `ACTIVE`.
+
+Các lỗi nghiệp vụ sau trả HTTP 409, không ghi audit thành công cho request bị từ chối:
+
+| Error code | Trường hợp |
+|---|---|
+| `SUBSCRIPTION_ALREADY_ACTIVE` | Create khi có ACTIVE chưa hết hạn; activate lại ACTIVE |
+| `SUBSCRIPTION_PENDING_EXISTS` | Create khi đã có PENDING |
+| `SUBSCRIPTION_OVERLAP` | Activate khi có ACTIVE khác chưa hết hạn |
+| `SUBSCRIPTION_NOT_ACTIVE` | Change-package khi subscription không ACTIVE/effective thuộc restaurant |
+| `SUBSCRIPTION_PERIOD_EXPIRED` | Activate PENDING có `endAt <= now` |
+| `SAME_PACKAGE_CHANGE_NOT_ALLOWED` | Đổi sang cùng package, kể cả code khác hoa/thường |
+| `INVALID_SUBSCRIPTION_TRANSITION` | Activate EXPIRED/CANCELLED hoặc cancel EXPIRED |
+| `CONCURRENT_SUBSCRIPTION_UPDATE` | Optimistic locking hoặc xung đột persistence chưa phân loại được |
+
+V8 bổ sung partial unique index `uq_restaurant_subscriptions_one_pending`, giữ nguyên index ACTIVE.
+Migration kiểm tra PENDING trùng và fail rõ ràng trước khi tạo index; không xóa/chỉnh lịch sử.
+Nếu migration fail, cần rà soát và xử lý các bản ghi trùng có chủ đích trước khi chạy lại.
+
+Chưa hỗ trợ renewal/gia hạn cùng package, self-service payment, billing, payment gateway/webhook,
+proration, refund, invoice hoặc scheduled downgrade. `autoRenew` chỉ là dữ liệu, chưa kích hoạt tự gia hạn.
+
 ### Activate
 
 ```http
 POST /api/v1/admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/activate
 ```
 
-Chỉ `PENDING` được activate. Feature active của package được chốt vào snapshot. Trước khi activate,
-lazy reconciliation chuyển subscription `ACTIVE` cũ có `endAt <= now` sang `EXPIRED`, flush và tiếp
+Chỉ `PENDING` được activate. Feature active của package được chốt vào snapshot.
+`endAt` phải lớn hơn thời điểm xử lý; nếu không trả `409 SUBSCRIPTION_PERIOD_EXPIRED`.
+Trước khi activate, lazy reconciliation chuyển subscription `ACTIVE` cũ có `endAt <= now` sang `EXPIRED`, flush và tiếp
 tục; nếu row ACTIVE cũ chưa hết hạn trả `409 SUBSCRIPTION_OVERLAP`. Response `200` có status
 `ACTIVE` và snapshot trong `features`.
 
@@ -378,7 +419,9 @@ POST /api/v1/admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/cha
 }
 ```
 
-Subscription đích phải đang effective. Gói cũ chuyển `CANCELLED`, gói mới `ACTIVE` được tạo trong
+Subscription đích phải thuộc restaurant và đang effective. Package mới phải active và khác package cũ;
+cùng package trả `409 SAME_PACKAGE_CHANGE_NOT_ALLOWED`. Gói cũ chuyển `CANCELLED`, gói mới `ACTIVE`
+có `startAt = now` được tạo trong
 cùng transaction với snapshot mới; lịch sử/snapshot cũ được giữ lại. Response `200` là subscription
 mới.
 

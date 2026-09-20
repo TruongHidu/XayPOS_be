@@ -15,5 +15,6 @@ public record AdminRestaurantSummaryResponse(
     RestaurantStatus status,
     Instant createdAt,
     Instant updatedAt,
-    AdminSubscriptionBriefResponse effectiveSubscription
+    AdminSubscriptionBriefResponse effectiveSubscription,
+    PackageAssignmentState packageAssignmentState
 ) {}

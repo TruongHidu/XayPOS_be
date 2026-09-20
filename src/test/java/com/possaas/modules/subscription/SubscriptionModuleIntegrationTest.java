@@ -41,6 +41,13 @@ import com.possaas.modules.subscription.service.SubscriptionExpirationService;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Clock;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import com.possaas.modules.restaurant.service.RestaurantAdminQueryService;
+import com.possaas.modules.restaurant.dto.PackageAssignmentState;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -90,6 +97,9 @@ class SubscriptionModuleIntegrationTest {
     @Autowired GuardedFeatureUseCase guardedFeatureUseCase;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
+    @Autowired Clock clock;
+    @Autowired RestaurantAdminQueryService restaurantAdminQueryService;
+    @Autowired EntityManagerFactory entityManagerFactory;
 
     private final List<UUID> restaurantIds = new ArrayList<>();
     private final List<UUID> packageIdsToDelete = new ArrayList<>();
@@ -166,6 +176,12 @@ class SubscriptionModuleIntegrationTest {
         );
         RestaurantSubscription storedBasic = subscriptionRepository.findById(basic.getId()).orElseThrow();
         assertThat(storedBasic.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
+        assertThat(storedBasic.getFeatureSnapshot()).isEqualTo(basic.getFeatureSnapshot());
+        RestaurantSubscription replacement = subscriptionRepository.findById(pro.id()).orElseThrow();
+        assertThat(SubscriptionFeatureSnapshot.fromMap(replacement.getFeatureSnapshot()).features())
+            .isEqualTo(snapshotFactory.capture(packageRepository.findByCode("PRO").orElseThrow()).features());
+        assertThat(SubscriptionFeatureSnapshot.fromMap(replacement.getFeatureSnapshot()).packageCode()).isEqualTo("PRO");
+        assertThat(replacement.getStartAt()).isEqualTo(replacement.getActivatedAt());
         assertThat(SubscriptionFeatureSnapshot.fromMap(storedBasic.getFeatureSnapshot()).packageCode())
             .isEqualTo("BASIC");
         assertThat(entitlementService.hasFeature(restaurant.getId(), "TABLE_MANAGEMENT")).isTrue();
@@ -216,12 +232,13 @@ class SubscriptionModuleIntegrationTest {
     void activeSubscriptionUniqueIndexAndOverlapPolicyPreventTwoActiveRows() {
         Restaurant restaurant = createRestaurant();
         RestaurantSubscription first = activate(restaurant.getId(), "PRO");
-        SubscriptionResponse second = subscriptionCommandService.create(
-            restaurant.getId(), createRequest("BASIC"), null, "127.0.0.1"
+        RestaurantSubscription second = saveDirectSubscription(
+            restaurant.getId(), "BASIC", SubscriptionStatus.PENDING,
+            clock.instant().minusSeconds(60), clock.instant().plus(30, ChronoUnit.DAYS)
         );
 
         assertThatThrownBy(() -> subscriptionCommandService.activate(
-            restaurant.getId(), second.id(), null, "127.0.0.1"
+            restaurant.getId(), second.getId(), null, "127.0.0.1"
         )).isInstanceOfSatisfying(BusinessException.class, exception ->
             assertThat(exception.getCode()).isEqualTo("SUBSCRIPTION_OVERLAP")
         );
@@ -260,6 +277,8 @@ class SubscriptionModuleIntegrationTest {
             "127.0.0.1"
         );
 
+        assertThat(subscriptionRepository.findById(stale.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.EXPIRED);
         SubscriptionResponse activated = subscriptionCommandService.activate(
             restaurant.getId(),
             pending.id(),
@@ -379,15 +398,12 @@ class SubscriptionModuleIntegrationTest {
         SubscriptionResponse first = subscriptionCommandService.create(
             restaurant.getId(), createRequest("BASIC"), null, "127.0.0.1"
         );
-        SubscriptionResponse second = subscriptionCommandService.create(
-            restaurant.getId(), createRequest("PRO"), null, "127.0.0.1"
-        );
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             List<Callable<String>> activations = List.of(
                 () -> activationResult(restaurant.getId(), first.id()),
-                () -> activationResult(restaurant.getId(), second.id())
+                () -> activationResult(restaurant.getId(), first.id())
             );
             List<Future<String>> futures = executor.invokeAll(activations);
             List<String> results = new ArrayList<>();
@@ -395,7 +411,7 @@ class SubscriptionModuleIntegrationTest {
                 results.add(getFuture(future));
             }
 
-            assertThat(results).containsExactlyInAnyOrder("ACTIVE", "SUBSCRIPTION_OVERLAP");
+            assertThat(results).containsExactlyInAnyOrder("ACTIVE", "SUBSCRIPTION_ALREADY_ACTIVE");
             assertThat(subscriptionRepository.findByRestaurantIdAndStatus(
                 restaurant.getId(), SubscriptionStatus.ACTIVE
             )).isPresent();
@@ -626,6 +642,268 @@ class SubscriptionModuleIntegrationTest {
                 .content(injectedSnapshotBody))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST_BODY"));
+    }
+
+    @Test
+    void assignmentAllowsEmptyExpiredAndCancelledHistory() {
+        for (SubscriptionStatus history : new SubscriptionStatus[]{null, SubscriptionStatus.EXPIRED, SubscriptionStatus.CANCELLED}) {
+            Restaurant restaurant = createRestaurant();
+            if (history != null) {
+                saveDirectSubscription(restaurant.getId(), "BASIC", history,
+                    clock.instant().minus(2, ChronoUnit.DAYS), clock.instant().minusSeconds(1));
+            }
+            assertThat(restaurantAdminQueryService.findDetail(restaurant.getId()).packageAssignmentState())
+                .isEqualTo(PackageAssignmentState.AVAILABLE);
+            SubscriptionResponse pending = subscriptionCommandService.create(
+                restaurant.getId(), createRequest("PRO"), null, null);
+            assertThat(pending.status()).isEqualTo(SubscriptionStatus.PENDING);
+            assertThat(restaurantAdminQueryService.findDetail(restaurant.getId()).packageAssignmentState())
+                .isEqualTo(PackageAssignmentState.PENDING);
+        }
+    }
+
+    @Test
+    void assignmentRejectsActiveAndPendingWithoutCreatingSuccessAudits() {
+        Restaurant activeRestaurant = createRestaurant();
+        activate(activeRestaurant.getId(), "BASIC");
+        expectCode(() -> subscriptionCommandService.create(activeRestaurant.getId(), createRequest("PRO"), null, null),
+            "SUBSCRIPTION_ALREADY_ACTIVE");
+        Restaurant pendingRestaurant = createRestaurant();
+        subscriptionCommandService.create(pendingRestaurant.getId(), createRequest("BASIC"), null, null);
+        expectCode(() -> subscriptionCommandService.create(pendingRestaurant.getId(), createRequest("PRO"), null, null),
+            "SUBSCRIPTION_PENDING_EXISTS");
+        for (UUID id : List.of(activeRestaurant.getId(), pendingRestaurant.getId())) {
+            assertThat(auditCount(id, "SUBSCRIPTION_CREATED")).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void concurrentCreatesLeaveOnePendingAndOneCreationAudit() throws Exception {
+        UUID restaurantId = createRestaurant().getId();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<String> create = () -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start gate timed out");
+            try {
+                return subscriptionCommandService.create(restaurantId, createRequest("BASIC"), null, null).status().name();
+            } catch (BusinessException exception) {
+                return exception.getCode();
+            }
+        };
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> first = executor.submit(create);
+            Future<String> second = executor.submit(create);
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder("PENDING", "SUBSCRIPTION_PENDING_EXISTS");
+            assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM restaurant_subscriptions WHERE restaurant_id = ?", Integer.class, restaurantId))
+                .isEqualTo(1);
+            assertThat(auditCount(restaurantId, "SUBSCRIPTION_CREATED")).isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void pendingIndexIsEnforcedAndCancellingTwiceReleasesSlotWithOneAudit() {
+        UUID restaurantId = createRestaurant().getId();
+        SubscriptionResponse pending = subscriptionCommandService.create(restaurantId, createRequest("BASIC"), null, null);
+        UUID packageId = packageRepository.findByCode("BASIC").orElseThrow().getId();
+        assertThatThrownBy(() -> insertSubscription(restaurantId, packageId,
+            clock.instant(), clock.instant().plus(1, ChronoUnit.DAYS)))
+            .isInstanceOf(DataIntegrityViolationException.class)
+            .hasMessageContaining("uq_restaurant_subscriptions_one_pending");
+        subscriptionCommandService.cancel(restaurantId, pending.id(), null, null);
+        subscriptionCommandService.cancel(restaurantId, pending.id(), null, null);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_CANCELLED")).isEqualTo(1);
+        assertThat(subscriptionCommandService.create(restaurantId, createRequest("PRO"), null, null).status())
+            .isEqualTo(SubscriptionStatus.PENDING);
+    }
+
+    @Test
+    void expiredPendingCannotActivateAndExpiredCannotCancel() {
+        UUID restaurantId = createRestaurant().getId();
+        RestaurantSubscription pending = saveDirectSubscription(restaurantId, "BASIC", SubscriptionStatus.PENDING,
+            clock.instant().minusSeconds(60), clock.instant());
+        expectCode(() -> subscriptionCommandService.activate(restaurantId, pending.getId(), null, null),
+            "SUBSCRIPTION_PERIOD_EXPIRED");
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_ACTIVATED")).isZero();
+        RestaurantSubscription expired = saveDirectSubscription(restaurantId, "BASIC", SubscriptionStatus.EXPIRED,
+            clock.instant().minusSeconds(60), clock.instant());
+        expectCode(() -> subscriptionCommandService.cancel(restaurantId, expired.getId(), null, null),
+            "INVALID_SUBSCRIPTION_TRANSITION");
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_CANCELLED")).isZero();
+    }
+
+    @Test
+    void samePackageChangeIsRejectedWithoutChangingSnapshotOrHistory() {
+        UUID restaurantId = createRestaurant().getId();
+        RestaurantSubscription active = activate(restaurantId, "BASIC");
+        expectCode(() -> subscriptionCommandService.changePackage(restaurantId, active.getId(), changeRequest("basic"), null, null),
+            "SAME_PACKAGE_CHANGE_NOT_ALLOWED");
+        RestaurantSubscription stored = subscriptionRepository.findById(active.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(stored.getFeatureSnapshot()).isEqualTo(active.getFeatureSnapshot());
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_PACKAGE_CHANGED")).isZero();
+    }
+
+    @Test
+    void assignmentStateIncludesFutureActiveAndListUsesFixedQueryCount() {
+        UUID futureRestaurant = createRestaurant().getId();
+        RestaurantSubscription future = saveDirectSubscription(futureRestaurant, "BASIC", SubscriptionStatus.ACTIVE,
+            clock.instant().plusSeconds(60), clock.instant().plus(1, ChronoUnit.DAYS));
+        var detail = restaurantAdminQueryService.findDetail(futureRestaurant);
+        assertThat(detail.effectiveSubscription()).isNull();
+        assertThat(detail.packageAssignmentState()).isEqualTo(PackageAssignmentState.ACTIVE);
+        expectCode(() -> subscriptionCommandService.create(futureRestaurant, createRequest("PRO"), null, null),
+            "SUBSCRIPTION_ALREADY_ACTIVE");
+        expectCode(() -> subscriptionCommandService.changePackage(futureRestaurant, future.getId(), changeRequest("PRO"), null, null),
+            "SUBSCRIPTION_NOT_ACTIVE");
+        UUID pendingRestaurant = createRestaurant().getId();
+        subscriptionCommandService.create(pendingRestaurant, createRequest("BASIC"), null, null);
+        UUID availableRestaurant = createRestaurant().getId();
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        boolean wasEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            restaurantAdminQueryService.search("Subscription Integration", null, 0, 1, "createdAt", "desc");
+            long oneRowQueries = statistics.getPrepareStatementCount();
+            statistics.clear();
+            var page = restaurantAdminQueryService.search("Subscription Integration", null, 0, 100, "createdAt", "desc");
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(oneRowQueries);
+            assertThat(page.content()).anySatisfy(row -> {
+                assertThat(row.id()).isEqualTo(futureRestaurant);
+                assertThat(row.packageAssignmentState()).isEqualTo(PackageAssignmentState.ACTIVE);
+            }).anySatisfy(row -> {
+                assertThat(row.id()).isEqualTo(pendingRestaurant);
+                assertThat(row.packageAssignmentState()).isEqualTo(PackageAssignmentState.PENDING);
+            }).anySatisfy(row -> {
+                assertThat(row.id()).isEqualTo(availableRestaurant);
+                assertThat(row.packageAssignmentState()).isEqualTo(PackageAssignmentState.AVAILABLE);
+            });
+        } finally {
+            statistics.setStatisticsEnabled(wasEnabled);
+        }
+    }
+
+    @Test
+    void allMutationEndpointsRequireSystemSuperAdminAndManagePermission() throws Exception {
+        UUID restaurantId = createRestaurant().getId();
+        UUID subscriptionId = UUID.randomUUID();
+        String base = "/api/v1/admin/restaurants/" + restaurantId + "/subscriptions";
+        String createBody = """
+            {"packageCode":"BASIC","startAt":"2030-01-01T00:00:00Z","endAt":"2030-02-01T00:00:00Z",
+             "autoRenew":false,"priceAmount":0,"currencyCode":"VND"}
+            """;
+        String changeBody = """
+            {"packageCode":"PRO","endAt":"2030-02-01T00:00:00Z","autoRenew":false,"priceAmount":0,"currencyCode":"VND"}
+            """;
+        for (String operation : List.of("", "/activate", "/change-package", "/cancel")) {
+            String path = operation.isEmpty() ? base : base + "/" + subscriptionId + operation;
+            String body = operation.isEmpty() ? createBody : operation.equals("/change-package") ? changeBody : "";
+            for (Authentication denied : List.of(
+                authenticationFor(null, "SUPER_ADMIN"),
+                authenticationFor(restaurantId, "SUPER_ADMIN", "SUBSCRIPTION_MANAGE"),
+                authenticationFor(restaurantId, "OWNER", "SUBSCRIPTION_MANAGE"))) {
+                mockMvc.perform(post(path).with(authentication(denied)).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isForbidden());
+            }
+            mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
+        }
+    }
+
+    private int auditCount(UUID restaurantId, String action) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM audit_logs WHERE restaurant_id = ? AND action_code = ?",
+            Integer.class, restaurantId, action);
+    }
+
+    @Test
+    void activationReconcilesLegacyExpiredActiveBeforeCapturingPendingSnapshot() {
+        UUID restaurantId = createRestaurant().getId();
+        RestaurantSubscription stale = saveDirectSubscription(restaurantId, "BASIC", SubscriptionStatus.ACTIVE,
+            clock.instant().minusSeconds(120), clock.instant().minusSeconds(60));
+        RestaurantSubscription pending = saveDirectSubscription(restaurantId, "PRO", SubscriptionStatus.PENDING,
+            clock.instant().minusSeconds(30), clock.instant().plusSeconds(3600));
+        assertThat(subscriptionCommandService.activate(restaurantId, pending.getId(), null, null).status())
+            .isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(subscriptionRepository.findById(stale.getId()).orElseThrow().getStatus())
+            .isEqualTo(SubscriptionStatus.EXPIRED);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_EXPIRED")).isEqualTo(1);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_ACTIVATED")).isEqualTo(1);
+    }
+
+    @Test
+    void changePackageRollsBackCancellationAndReplacementWhenAuditCannotBeWritten() {
+        UUID restaurantId = createRestaurant().getId();
+        RestaurantSubscription active = activate(restaurantId, "BASIC");
+        // Unknown actor violates the audit FK after both subscription writes have been flushed.
+        assertThatThrownBy(() -> subscriptionCommandService.changePackage(
+            restaurantId, active.getId(), changeRequest("PRO"), UUID.randomUUID(), null))
+            .isInstanceOf(DataIntegrityViolationException.class);
+        RestaurantSubscription stored = subscriptionRepository.findById(active.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(stored.getCancelledAt()).isNull();
+        assertThat(stored.getFeatureSnapshot()).isEqualTo(active.getFeatureSnapshot());
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM restaurant_subscriptions WHERE restaurant_id = ?",
+            Integer.class, restaurantId)).isEqualTo(1);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_PACKAGE_CHANGED")).isZero();
+    }
+
+    @Test
+    void changePackageRejectsAnotherRestaurantsSubscriptionAndInactivePackage() {
+        UUID restaurantId = createRestaurant().getId();
+        UUID otherId = createRestaurant().getId();
+        RestaurantSubscription active = activate(restaurantId, "BASIC");
+        RestaurantSubscription otherActive = activate(otherId, "BASIC");
+        expectCode(() -> subscriptionCommandService.changePackage(restaurantId, otherActive.getId(), changeRequest("PRO"), null, null),
+            "SUBSCRIPTION_NOT_ACTIVE");
+        PackagePlan pro = packageRepository.findByCode("PRO").orElseThrow();
+        boolean wasActive = pro.isActive();
+        try {
+            pro.setActive(false);
+            packageRepository.saveAndFlush(pro);
+            assertThatThrownBy(() -> subscriptionCommandService.changePackage(restaurantId, active.getId(), changeRequest("PRO"), null, null))
+                .isInstanceOfSatisfying(BusinessException.class, error -> assertThat(error.getCode()).isEqualTo("PACKAGE_INACTIVE"));
+        } finally {
+            pro.setActive(wasActive);
+            packageRepository.saveAndFlush(pro);
+        }
+        assertThat(subscriptionRepository.findById(active.getId()).orElseThrow().getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_PACKAGE_CHANGED")).isZero();
+    }
+
+    @Test
+    void rejectedHttpMutationsExposeSpecificConflictCodesWithoutSuccessAudits() throws Exception {
+        UUID restaurantId = createRestaurant().getId();
+        RestaurantSubscription active = activate(restaurantId, "BASIC");
+        Authentication admin = authenticationFor(null, "SUPER_ADMIN", "SUBSCRIPTION_MANAGE");
+        String base = "/api/v1/admin/restaurants/" + restaurantId + "/subscriptions";
+        mockMvc.perform(post(base).with(authentication(admin)).contentType(MediaType.APPLICATION_JSON).content("""
+            {"packageCode":"PRO","startAt":"2030-01-01T00:00:00Z","endAt":"2030-02-01T00:00:00Z",
+             "autoRenew":false,"priceAmount":0,"currencyCode":"VND"}
+            """))
+            .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SUBSCRIPTION_ALREADY_ACTIVE"));
+        mockMvc.perform(post(base + "/" + active.getId() + "/change-package").with(authentication(admin))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"packageCode":"BASIC","endAt":"2030-02-01T00:00:00Z","autoRenew":false,"priceAmount":0,"currencyCode":"VND"}
+                    """))
+            .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SAME_PACKAGE_CHANGE_NOT_ALLOWED"));
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_CREATED")).isEqualTo(1);
+        assertThat(auditCount(restaurantId, "SUBSCRIPTION_PACKAGE_CHANGED")).isZero();
+    }
+
+    private static void expectCode(Runnable action, String code) {
+        assertThatThrownBy(action::run).isInstanceOfSatisfying(BusinessException.class, error -> {
+            assertThat(error.getStatus().value()).isEqualTo(409);
+            assertThat(error.getCode()).isEqualTo(code);
+        });
     }
 
     private Restaurant createRestaurant() {

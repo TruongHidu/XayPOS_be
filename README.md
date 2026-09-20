@@ -21,6 +21,12 @@ mvn spring-boot:run
 
 Flyway tự chạy toàn bộ migration trong `src/main/resources/db/migration`; JPA dùng `ddl-auto: validate` để không tự ý thay đổi schema.
 
+Gán package: chỉ tạo PENDING khi restaurant không có ACTIVE chưa hết hạn/PENDING. ACTIVE dùng
+`change-package` sang package khác; PENDING phải activate hoặc cancel. List/detail restaurant có
+`packageAssignmentState` để hỗ trợ UI. Chưa có renewal, self-service payment, billing hoặc payment gateway.
+V8 thêm unique index cho PENDING; nếu dữ liệu cũ trùng, migration dừng để xử lý thủ công, không xóa lịch sử.
+Xem chi tiết trong `docs/admin-api.md` và `docs/openapi/admin-api.yaml`.
+
 ## API Phase 1
 
 Base URL: `http://localhost:8080/api/v1/auth`

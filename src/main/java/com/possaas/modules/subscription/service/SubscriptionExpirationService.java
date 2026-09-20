@@ -2,6 +2,7 @@ package com.possaas.modules.subscription.service;
 
 import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.audit.service.AuditRecordCommand;
+import com.possaas.modules.restaurant.repository.RestaurantRepository;
 import com.possaas.modules.subscription.entity.RestaurantSubscription;
 import com.possaas.modules.subscription.entity.SubscriptionStatus;
 import com.possaas.modules.subscription.repository.RestaurantSubscriptionRepository;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class SubscriptionExpirationService {
+    private final RestaurantRepository restaurantRepository;
     private final RestaurantSubscriptionRepository subscriptionRepository;
     private final AuditService auditService;
     private final Clock clock;
@@ -39,6 +41,10 @@ public class SubscriptionExpirationService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean reconcileByIdIfDue(UUID restaurantId, UUID subscriptionId) {
+        // Follow the same restaurant -> subscription lock order as mutation commands.
+        if (restaurantRepository.findByIdForUpdate(restaurantId).isEmpty()) {
+            return false;
+        }
         return subscriptionRepository.findByIdAndRestaurantIdForUpdate(subscriptionId, restaurantId)
             .map(subscription -> {
                 boolean expired = transitionIfDue(subscription, clock.instant());

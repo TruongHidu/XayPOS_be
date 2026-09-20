@@ -22,8 +22,8 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +48,14 @@ public class SubscriptionCommandService {
         String ipAddress
     ) {
         lockRestaurant(restaurantId);
+        subscriptionRepository.findActiveForUpdate(restaurantId).ifPresent(active -> {
+            if (!expirationService.expireIfDue(active)) {
+                throw conflict("SUBSCRIPTION_ALREADY_ACTIVE", "Use change-package for an active subscription");
+            }
+        });
+        if (subscriptionRepository.findByRestaurantIdAndStatus(restaurantId, SubscriptionStatus.PENDING).isPresent()) {
+            throw conflict("SUBSCRIPTION_PENDING_EXISTS", "Activate or cancel the existing pending subscription");
+        }
         validatePeriod(request.startAt(), request.endAt());
         PackagePlan packagePlan = requireActivePackage(request.packageCode());
 
@@ -60,7 +68,7 @@ public class SubscriptionCommandService {
         subscription.setAutoRenew(request.autoRenew());
         subscription.setPriceAmount(request.priceAmount());
         subscription.setCurrencyCode(normalizeCurrency(request.currencyCode()));
-        subscription = subscriptionRepository.saveAndFlush(subscription);
+        subscription = saveWithConcurrencyHandling(subscription);
 
         auditService.record(
             restaurantId,
@@ -95,6 +103,10 @@ public class SubscriptionCommandService {
         if (subscription.getStatus() != SubscriptionStatus.PENDING) {
             throw conflict("INVALID_SUBSCRIPTION_TRANSITION", "Only a pending subscription can be activated");
         }
+        Instant now = clock.instant();
+        if (!subscription.getEndAt().isAfter(now)) {
+            throw conflict("SUBSCRIPTION_PERIOD_EXPIRED", "Subscription endAt must be in the future");
+        }
         subscriptionRepository.findActiveForUpdate(restaurantId).ifPresent(active -> {
             if (!expirationService.expireIfDue(active)) {
                 throw conflict("SUBSCRIPTION_OVERLAP", "Restaurant already has an active subscription");
@@ -104,7 +116,7 @@ public class SubscriptionCommandService {
         PackagePlan packagePlan = requireActivePackage(subscription.getPackageId());
         SubscriptionFeatureSnapshot snapshot = snapshotFactory.capture(packagePlan);
         subscription.setStatus(SubscriptionStatus.ACTIVE);
-        subscription.setActivatedAt(clock.instant());
+        subscription.setActivatedAt(now);
         subscription.setFeatureSnapshot(snapshot.toMap());
         subscription = saveWithConcurrencyHandling(subscription);
 
@@ -142,7 +154,8 @@ public class SubscriptionCommandService {
                 "SUBSCRIPTION_NOT_ACTIVE",
                 "The selected subscription is not active"
             ));
-        if (!validityPolicy.isEffective(current)) {
+        Instant now = clock.instant();
+        if (!validityPolicy.isEffective(current.getStatus(), current.getStartAt(), current.getEndAt(), now)) {
             throw new BusinessException(
                 HttpStatus.CONFLICT,
                 "SUBSCRIPTION_NOT_ACTIVE",
@@ -150,15 +163,17 @@ public class SubscriptionCommandService {
             );
         }
 
-        Instant now = clock.instant();
         validatePeriod(now, request.endAt());
         PackagePlan oldPackage = requirePackage(current.getPackageId());
         PackagePlan newPackage = requireActivePackage(request.packageCode());
+        if (oldPackage.getId().equals(newPackage.getId())) {
+            throw conflict("SAME_PACKAGE_CHANGE_NOT_ALLOWED", "Changing to the same package is not supported; renewal is out of scope");
+        }
         SubscriptionFeatureSnapshot snapshot = snapshotFactory.capture(newPackage);
 
         current.setStatus(SubscriptionStatus.CANCELLED);
         current.setCancelledAt(now);
-        subscriptionRepository.saveAndFlush(current);
+        saveWithConcurrencyHandling(current);
 
         RestaurantSubscription replacement = new RestaurantSubscription();
         replacement.setRestaurantId(restaurantId);
@@ -230,12 +245,8 @@ public class SubscriptionCommandService {
     private RestaurantSubscription saveWithConcurrencyHandling(RestaurantSubscription subscription) {
         try {
             return subscriptionRepository.saveAndFlush(subscription);
-        } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException exception) {
-            throw new BusinessException(
-                HttpStatus.CONFLICT,
-                "CONCURRENT_SUBSCRIPTION_UPDATE",
-                "Subscription was changed concurrently"
-            );
+        } catch (DataIntegrityViolationException | OptimisticLockingFailureException exception) {
+            throw SubscriptionConflictTranslator.translate(exception);
         }
     }
 

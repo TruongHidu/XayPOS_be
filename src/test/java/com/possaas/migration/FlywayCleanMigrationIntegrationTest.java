@@ -1,6 +1,7 @@
 package com.possaas.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -39,11 +40,41 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
             assertThat(countTables(schema)).isEqualTo(12);
             assertThat(tableExists(schema, "restaurants")).isTrue();
             assertThat(tableExists(schema, "restaurant_subscriptions")).isTrue();
             assertThat(tableExists(schema, "audit_logs")).isTrue();
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v8FailsClearlyOnDuplicatePendingWithoutDeletingHistory() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("7").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO \"" + schema + "\".restaurants (id, code, name, status) "
+                    + "VALUES ('00000000-0000-0000-0000-000000000001', 'V8_DUPLICATE', 'V8 duplicate fixture', 'ACTIVE')");
+                statement.execute("INSERT INTO \"" + schema + "\".restaurant_subscriptions "
+                    + "(restaurant_id, package_id, status, start_at, end_at, price_amount, currency_code) "
+                    + "SELECT '00000000-0000-0000-0000-000000000001'::uuid, p.id, 'PENDING', now(), "
+                    + "now() + interval '1 day', 0, 'VND' FROM \"" + schema + "\".packages p "
+                    + "CROSS JOIN generate_series(1, 2) WHERE p.code = 'BASIC'");
+            }
+            Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();
+            assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("V8: duplicate PENDING subscriptions");
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
+                     + "\".restaurant_subscriptions WHERE status = 'PENDING'")) {
+                rows.next();
+                assertThat(rows.getInt(1)).isEqualTo(2);
+            }
         } finally {
             dropTestSchema(schema);
         }

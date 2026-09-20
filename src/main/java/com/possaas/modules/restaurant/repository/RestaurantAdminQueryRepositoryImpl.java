@@ -5,6 +5,7 @@ import com.possaas.modules.restaurant.dto.AdminRestaurantOwnerResponse;
 import com.possaas.modules.restaurant.dto.AdminRestaurantSummaryResponse;
 import com.possaas.modules.restaurant.dto.AdminSubscriptionBriefResponse;
 import com.possaas.modules.restaurant.dto.RestaurantUserCountsResponse;
+import com.possaas.modules.restaurant.dto.PackageAssignmentState;
 import com.possaas.modules.restaurant.entity.Restaurant;
 import com.possaas.modules.subscription.entity.SubscriptionStatus;
 import jakarta.persistence.EntityManager;
@@ -71,8 +72,11 @@ public class RestaurantAdminQueryRepositoryImpl implements RestaurantAdminQueryR
             .getResultList();
         Map<UUID, AdminSubscriptionBriefResponse> effectiveSubscriptions =
             findEffectiveSubscriptions(restaurants.stream().map(Restaurant::getId).toList(), now);
+        Map<UUID, PackageAssignmentState> assignmentStates =
+            findAssignmentStates(restaurants.stream().map(Restaurant::getId).toList(), now);
         List<AdminRestaurantSummaryResponse> content = restaurants.stream()
-            .map(item -> toSummary(item, effectiveSubscriptions.get(item.getId())))
+            .map(item -> toSummary(item, effectiveSubscriptions.get(item.getId()),
+                assignmentStates.getOrDefault(item.getId(), PackageAssignmentState.AVAILABLE)))
             .toList();
         return new PageImpl<>(content, pageRequest, total);
     }
@@ -115,7 +119,9 @@ public class RestaurantAdminQueryRepositoryImpl implements RestaurantAdminQueryR
             owners,
             userCounts,
             effectiveSubscription,
-            latestSubscription
+            latestSubscription,
+            findAssignmentStates(List.of(restaurantId), now)
+                .getOrDefault(restaurantId, PackageAssignmentState.AVAILABLE)
         ));
     }
 
@@ -186,6 +192,32 @@ public class RestaurantAdminQueryRepositoryImpl implements RestaurantAdminQueryR
             row.get("restaurantId", UUID.class),
             toSubscription(row)
         ));
+        return result;
+    }
+
+    private Map<UUID, PackageAssignmentState> findAssignmentStates(List<UUID> restaurantIds, Instant now) {
+        if (restaurantIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Tuple> rows = entityManager.createQuery("""
+            select s.restaurantId as restaurantId, s.status as status
+              from RestaurantSubscription s
+             where s.restaurantId in :restaurantIds
+               and (s.status = :pending or (s.status = :active and s.endAt > :now))
+            """, Tuple.class)
+            .setParameter("restaurantIds", restaurantIds)
+            .setParameter("pending", SubscriptionStatus.PENDING)
+            .setParameter("active", SubscriptionStatus.ACTIVE)
+            .setParameter("now", now)
+            .getResultList();
+        Map<UUID, PackageAssignmentState> result = new LinkedHashMap<>();
+        for (Tuple row : rows) {
+            PackageAssignmentState state = row.get("status", SubscriptionStatus.class) == SubscriptionStatus.ACTIVE
+                ? PackageAssignmentState.ACTIVE : PackageAssignmentState.PENDING;
+            // Legacy data can contain both statuses; an unexpired ACTIVE takes precedence.
+            result.merge(row.get("restaurantId", UUID.class), state,
+                (left, right) -> left == PackageAssignmentState.ACTIVE ? left : right);
+        }
         return result;
     }
 
@@ -266,7 +298,8 @@ public class RestaurantAdminQueryRepositoryImpl implements RestaurantAdminQueryR
 
     private static AdminRestaurantSummaryResponse toSummary(
         Restaurant restaurant,
-        AdminSubscriptionBriefResponse effectiveSubscription
+        AdminSubscriptionBriefResponse effectiveSubscription,
+        PackageAssignmentState packageAssignmentState
     ) {
         return new AdminRestaurantSummaryResponse(
             restaurant.getId(),
@@ -279,7 +312,8 @@ public class RestaurantAdminQueryRepositoryImpl implements RestaurantAdminQueryR
             restaurant.getStatus(),
             restaurant.getCreatedAt(),
             restaurant.getUpdatedAt(),
-            effectiveSubscription
+            effectiveSubscription,
+            packageAssignmentState
         );
     }
 

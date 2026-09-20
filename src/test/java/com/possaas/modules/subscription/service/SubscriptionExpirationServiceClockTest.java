@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.possaas.modules.audit.service.AuditService;
+import com.possaas.modules.restaurant.repository.RestaurantRepository;
 import com.possaas.modules.subscription.entity.RestaurantSubscription;
 import com.possaas.modules.subscription.entity.SubscriptionStatus;
 import com.possaas.modules.subscription.repository.RestaurantSubscriptionRepository;
@@ -24,11 +25,13 @@ class SubscriptionExpirationServiceClockTest {
     private static final Instant NOW = Instant.parse("2026-08-27T00:00:00Z");
 
     @Mock RestaurantSubscriptionRepository subscriptionRepository;
+    @Mock RestaurantRepository restaurantRepository;
     @Mock AuditService auditService;
 
     @Test
     void fixedClockMakesTheExpirationBoundaryDeterministic() {
         SubscriptionExpirationService service = new SubscriptionExpirationService(
+            restaurantRepository,
             subscriptionRepository,
             auditService,
             Clock.fixed(NOW, ZoneOffset.UTC)

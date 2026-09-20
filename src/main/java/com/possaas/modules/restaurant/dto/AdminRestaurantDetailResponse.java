@@ -20,7 +20,8 @@ public record AdminRestaurantDetailResponse(
     List<AdminRestaurantOwnerResponse> owners,
     RestaurantUserCountsResponse userCounts,
     AdminSubscriptionBriefResponse effectiveSubscription,
-    AdminSubscriptionBriefResponse latestSubscription
+    AdminSubscriptionBriefResponse latestSubscription,
+    PackageAssignmentState packageAssignmentState
 ) {
     public AdminRestaurantDetailResponse {
         owners = List.copyOf(owners);
