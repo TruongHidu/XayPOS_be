@@ -38,6 +38,6 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   jwt:
-    access-token-ttl: ${JWT_ACCESS_TTL:15m}
+    access-token-ttl: ${JWT_ACCESS_TTL:7d}
     refresh-token-ttl: ${JWT_REFRESH_TTL:30d}
     secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes-long}

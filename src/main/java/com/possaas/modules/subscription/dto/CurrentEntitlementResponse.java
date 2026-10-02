@@ -11,5 +11,6 @@ public record CurrentEntitlementResponse(
     SubscriptionStatus status,
     Instant startAt,
     Instant endAt,
-    List<FeatureEntitlementResponse> features
+    List<FeatureEntitlementResponse> features,
+    Long maxStaff
 ) {}

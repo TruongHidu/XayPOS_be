@@ -21,5 +21,6 @@ public record AdminSubscriptionDetailResponse(
     Instant cancelledAt,
     Instant createdAt,
     Instant updatedAt,
-    List<FeatureEntitlementResponse> features
+    List<FeatureEntitlementResponse> features,
+    Long maxStaff
 ) {}

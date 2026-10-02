@@ -24,7 +24,8 @@ public class PackageMapper {
             packagePlan.getPriceAmount(),
             packagePlan.getCurrencyCode(),
             packagePlan.getBillingCycleMonths(),
-            toFeatureEntitlements(features)
+            toFeatureEntitlements(features),
+            packagePlan.getMaxStaff()
         );
     }
 
@@ -41,7 +42,8 @@ public class PackageMapper {
             packagePlan.getCurrencyCode(),
             packagePlan.getBillingCycleMonths(),
             packagePlan.isActive(),
-            toFeatureEntitlements(features)
+            toFeatureEntitlements(features),
+            packagePlan.getMaxStaff()
         );
     }
 

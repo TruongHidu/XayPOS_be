@@ -211,8 +211,10 @@ components:
     PackageResponse:
       type: object
       additionalProperties: false
-      required: [id, code, name, description, priceAmount, currencyCode, billingCycleMonths, features]
+      required: [id, code, name, description, priceAmount, currencyCode, billingCycleMonths, features, maxStaff]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
         id: {type: string, format: uuid}
         code: {type: string, example: PRO}
         name: {type: string, example: Pro}
@@ -227,8 +229,11 @@ components:
     SubscriptionResponse:
       type: object
       additionalProperties: false
-      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, activatedAt, cancelledAt, features]
+      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, activatedAt, cancelledAt, features, maxStaff]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
+          description: Immutable snapshot limit. Null for uncaptured PENDING; never read from live catalog.
         id: {type: string, format: uuid}
         restaurantId: {type: string, format: uuid}
         packageId: {type: string, format: uuid}
@@ -249,8 +254,11 @@ components:
     CurrentEntitlementResponse:
       type: object
       additionalProperties: false
-      required: [subscriptionId, packageCode, status, startAt, endAt, features]
+      required: [subscriptionId, packageCode, status, startAt, endAt, features, maxStaff]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
+          description: Effective limit from immutable snapshot, including legacy v1 compatibility.
         subscriptionId: {type: string, format: uuid}
         packageCode: {type: string}
         status: {type: string, const: ACTIVE}
@@ -261,6 +269,12 @@ components:
           description: Immutable feature snapshot captured at activation.
           items:
             $ref: "#/components/schemas/FeatureEntitlementResponse"
+    MaxStaff:
+      type: [integer, "null"]
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+      description: Package-level staff capacity; null means unlimited after activation.
     SubscriptionPageResponse:
       type: object
       additionalProperties: false

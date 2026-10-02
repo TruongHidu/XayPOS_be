@@ -1,5 +1,27 @@
 # SUPER_ADMIN API
 
+## Tài khoản thuộc nhà hàng (read-only)
+
+`GET /api/v1/admin/restaurants/{restaurantId}/users` trả `PageResponse<AdminRestaurantUserResponse>`.
+Chỉ System SUPER_ADMIN (`restaurantId == null`) có `RESTAURANT_VIEW`; không phụ thuộc gói dịch vụ hoặc `STAFF_VIEW`.
+
+Query: `q` trim, tối đa 100 ký tự, tìm name/email/phone không phân biệt hoa thường;
+`roleCode` trim/uppercase, tối đa 50 ký tự; `active` boolean tùy chọn;
+`page` mặc định 0; `size` mặc định 20 (1–100);
+`sortBy` chỉ nhận createdAt/name/email/lastLoginAt (mặc định createdAt);
+`direction` asc/desc (mặc định desc). Sort luôn có id làm tie-breaker.
+Các ký tự `%`, `_`, `\` trong q được tìm theo nghĩa đen.
+
+`GET /api/v1/admin/restaurants/{restaurantId}/users/{userId}` trả cùng DTO:
+id, name, email, phone (nullable), active, role {id, code, name, active},
+lastLoginAt (nullable), createdAt, updatedAt.
+
+Không trả passwordHash, token, deletedAt hoặc permission nội bộ. Chỉ trả user chưa soft-delete
+thuộc đúng restaurant. Restaurant không tồn tại/soft-delete trả 404 RESTAURANT_NOT_FOUND;
+user không tồn tại/soft-delete/thuộc nhà hàng khác trả cùng 404 USER_NOT_FOUND.
+401 khi chưa đăng nhập, 403 khi sai scope hoặc thiếu quyền, 400 khi filter không hợp lệ.
+GET không ghi audit. Restaurant detail giữ nguyên owners, userCounts và subscription.
+
 Tài liệu này là contract dành cho web quản trị hệ thống. OpenAPI canonical của toàn bộ
 `/api/v1/admin/**` nằm tại [`openapi/admin-api.yaml`](openapi/admin-api.yaml). Các API public và
 tenant của module subscription nằm riêng tại [`subscription-api.md`](subscription-api.md).
@@ -669,6 +691,119 @@ Gắn feature bằng `POST /admin/packages/{packageCode}/features/{featureCode}`
 `409 PACKAGE_FEATURE_ALREADY_EXISTS`. Gỡ mapping bằng `DELETE` cùng path; mapping không tồn tại trả
 `404 PACKAGE_FEATURE_NOT_FOUND`. Hai thao tác trả package đã cập nhật và không sửa snapshot cũ.
 
+### Tạo/sửa package cùng feature và maxStaff (V12)
+
+FE lấy danh sách checkbox qua `GET /api/v1/admin/features?includeInactive=false` với `PACKAGE_VIEW`.
+Mutation dùng Bearer của system SUPER_ADMIN có `PACKAGE_MANAGE` và `Content-Type: application/json`.
+
+`POST /api/v1/admin/packages`:
+
+```json
+{"code":"CUSTOM_STAFF","name":"Custom staff","description":"Gói tùy chỉnh","priceAmount":199000,"currencyCode":"VND","billingCycleMonths":1,"maxStaff":3,"features":[{"code":"QR_MENU_VIEW","limits":{}},{"code":"STAFF_MANAGEMENT","limits":{}}]}
+```
+
+Response `201`:
+
+```json
+{"id":"21df1bc3-82e0-4f90-a767-cfcbcf9f64fd","code":"CUSTOM_STAFF","name":"Custom staff","description":"Gói tùy chỉnh","priceAmount":199000,"currencyCode":"VND","billingCycleMonths":1,"active":true,"maxStaff":3,"features":[{"code":"QR_MENU_VIEW","limits":{}},{"code":"STAFF_MANAGEMENT","limits":{}}]}
+```
+
+`features` tùy chọn, tối đa 200 phần tử. Bỏ qua/null/[] tạo package không có feature, tương thích
+request cũ. Code được trim/uppercase trước khi kiểm tra trùng. `limits` bỏ qua/null mặc định `{}`.
+Package, mappings và audit `PACKAGE_CREATED` chứa feature/limits commit hoặc rollback cùng nhau.
+
+`PUT /api/v1/admin/packages/CUSTOM_STAFF`:
+
+```json
+{"name":"Custom staff","description":"Gói tùy chỉnh","priceAmount":199000,"currencyCode":"VND","billingCycleMonths":1,"active":true,"maxStaff":10,"features":[{"code":"QR_MENU_VIEW","limits":{}},{"code":"STAFF_MANAGEMENT","limits":{}}]}
+```
+
+Response `200` cùng cấu trúc trên với maxStaff=10. Bỏ qua/null `features` giữ nguyên mappings;
+`[]` xóa tất cả; danh sách thay thế toàn bộ, bao gồm sửa limits của mapping đã có. Field metadata
+bắt buộc của PUT vẫn giữ nguyên. Gửi lại trạng thái tương đương không ghi audit. Package được lock
+trước khi diff/ghi, kể cả API thêm/gỡ feature riêng. `PACKAGE_UPDATED` chứa before/after metadata và
+features trong cùng transaction. Lock tuần tự hóa các thay đổi; PUT thay thế toàn bộ có chủ đích theo
+payload, nên FE cần tải lại dữ liệu trước khi chỉnh sửa một form cũ.
+
+`maxStaff` thuộc cấp package, lưu tại `packages.max_staff`; không được gửi trong feature `limits`.
+POST/PUT nhận `null` hoặc bỏ qua `maxStaff` là **không giới hạn**. PUT thay thế metadata:
+FE phải gửi lại `maxStaff` hiện tại nếu muốn giữ giới hạn; chỉ `features` có quy tắc bỏ qua là giữ nguyên.
+Giá trị khác null phải là JSON number nguyên dương tối đa 9223372036854775807.
+Ví dụ `{"maxStaff":3}` hợp lệ; `{"maxStaff":"3"}` không hợp lệ. FE JavaScript nên giới hạn input trong
+Number.MAX_SAFE_INTEGER để tránh làm tròn. Các limit khác giữ định dạng JSON hiện có.
+`maxStaff` không tự cấp feature STAFF_MANAGEMENT. Nhân viên được tính là tài khoản active, chưa xóa,
+role MANAGER/WAITER/KITCHEN/CASHIER, không tính OWNER. Validation áp dụng như sau:
+
+| HTTP | Code | Trường hợp |
+|---|---|---|
+| 400 | `DUPLICATE_PACKAGE_FEATURE` | Trùng code sau chuẩn hóa |
+| 404 | `FEATURE_NOT_FOUND` | Feature không tồn tại |
+| 400 | `FEATURE_DISABLED` | Feature inactive |
+| 400 | `INVALID_PACKAGE_LIMIT` | maxStaff cấp package là string/boolean/0/âm/số lẻ/quá lớn/object/array |
+| 400 | `INVALID_FEATURE_LIMIT` | Có key maxStaff trong limits của bất kỳ feature nào, kể cả null |
+| 409 | `CONCURRENT_PACKAGE_UPDATE` | Xung đột lock/persistence khác |
+
+Ví dụ lỗi (dùng cho cả POST và PUT):
+
+```json
+{"success":false,"code":"INVALID_PACKAGE_LIMIT","message":"maxStaff must be null or a positive integer at package level","fieldErrors":{},"timestamp":"2026-09-27T00:00:00Z"}
+```
+
+GET public/admin package list/detail trả `maxStaff` top-level theo catalog hiện tại.
+Subscription mutation/detail và current entitlement trả `maxStaff` top-level đọc từ snapshot,
+không đọc lại package đang bán. PENDING chưa chốt snapshot trả null; đây không phải quyền lợi đã kích hoạt.
+
+V12 thêm cột nullable BIGINT với CHECK dương, chuyển maxStaff từ STAFF_MANAGEMENT mapping
+sang package và gỡ key này khỏi catalog limits. Các limit khác được giữ nguyên. Dữ liệu cũ sai
+kiểu/giá trị hoặc maxStaff nằm ở feature khác làm migration fail rõ ràng, không tự xóa dữ liệu.
+Snapshot schemaVersion=2 chốt maxStaff top-level khi activate/change-package (kể cả null).
+Snapshot schemaVersion=1 vẫn đọc giới hạn lồng trong STAFF_MANAGEMENT; thiếu key là unlimited.
+Không ghi lại snapshot cũ. Snapshot có giới hạn lỗi trả 409 INVALID_STAFF_LIMIT_CONFIG.
+
+### Catalog V13 và subscription cũ
+
+Web là nơi cashier gọi món/ghi nhận thanh toán và khách xem menu QR; app là nơi quản lý/vận hành.
+Feature là năng lực nghiệp vụ; permission quyết định người nào được thao tác.
+
+| Gói | Quyền lợi catalog mặc định | maxStaff |
+|---|---|---|
+| BASIC | Menu, bàn, nhân viên và phân quyền, POS/order/payment, doanh thu ngày, báo cáo chi tiết, màn hình bếp, in/in lại hóa đơn và phiếu bếp, QR_MENU_VIEW | 3 |
+| PRO | Toàn bộ BASIC + RECIPE_MANAGEMENT (công thức) | 10 |
+| PREMIUM | Toàn bộ PRO + kho, cảnh báo tồn, kiểm kê, phân tích và AI đã seed (không thay đổi) | 30 |
+
+V13 thêm STAFF_PERMISSION, KITCHEN_DISPLAY, DETAIL_REPORT, KITCHEN_TICKET_PRINT và
+KITCHEN_TICKET_REPRINT cho BASIC; thêm RECIPE_MANAGEMENT cho PRO.
+Trong catalog mặc định, BASIC/PRO chỉ khác về quyền công thức và maxStaff; giá vẫn là
+199000/399000 VND mỗi tháng. PREMIUM và package tùy chỉnh không bị sửa.
+Migration chỉ thêm mapping còn thiếu, không ghi đè limits đã tùy chỉnh, không sửa giá/maxStaff,
+không bật lại feature đã bị admin vô hiệu hóa và không ghi lại snapshot lịch sử.
+Các tùy chỉnh catalog có sẵn vẫn được giữ; bảng trên mô tả cấu hình mặc định.
+Không thay đổi request/response API. FE lấy features và maxStaff từ API, không hard-code theo tên gói.
+RECIPE_MANAGEMENT ở đây là quyền lợi trong catalog; V13 không triển khai API công thức hoặc quản lý kho.
+
+V11 coi `limits = {}` trên STAFF_MANAGEMENT của ba gói chuẩn là mặc định V5 và chuyển sang 3/10/30.
+Không thể phân biệt `{}` do seed với `{}` do admin cố ý đặt unlimited: cả hai đều được chuyển trong
+catalog. Mọi limits **không rỗng** được giữ nguyên, kể cả object không có maxStaff. Gói tùy chỉnh
+không bị đổi. Từ V12, admin dùng PUT package với `maxStaff:null` để đặt unlimited cho lần kích hoạt sau.
+
+V11 bỏ mapping QR_STATIC_ORDER/QR_TABLE_ORDER khỏi ba gói chuẩn, giữ feature rows và snapshot lịch sử.
+QR_MENU_VIEW chỉ là quyền xem menu; hai mã ordering dành cho luồng khách tự đặt món sau này.
+Migration không tạo public QR/menu API. Backend có catalog/subscription, profile, staff và permission
+APIs; menu, bàn, order, thanh toán, bếp, kho, báo cáo và AI chưa được coi là đã triển khai chỉ vì có
+feature trong catalog.
+
+Snapshot ACTIVE cũ giữ nguyên feature/limits. Catalog mới áp dụng khi activate/change-package sau
+cập nhật (PENDING chưa chốt snapshot cũng nhận catalog lúc activate). Hạ giới hạn không khóa/xóa
+nhân viên hiện hữu; số active đã vượt limit của snapshot mới sẽ chặn tạo/reactivate tới khi còn chỗ.
+
+Nhà hàng BASIC/PRO cũ không tự nhận feature mới, kể cả phân quyền, bếp, báo cáo hoặc công thức.
+PENDING nhận cấu hình mới khi activate; ACTIVE đã chốt snapshot giữ nguyên quyền lợi. Các lựa chọn có audit
+qua API hiện tại: chuyển sang package **khác** có cấu hình phù hợp; hoặc, nếu nghiệp vụ chấp nhận kết
+thúc gói hiện tại, cancel rồi create/activate subscription mới. Cách thứ hai là nhiều transaction,
+có khoảng trống entitlement và cần quyết định của admin. Task này không tự thực hiện chuyển tiếp.
+API chuyển phiên bản gói cùng code có audit/transaction riêng có thể được thiết kế sau; chưa có
+renewal cùng package hoặc sửa snapshot trực tiếp.
+
 ## Error contract
 
 Mọi lỗi nghiệp vụ/validation dùng schema:
@@ -700,7 +835,8 @@ UUID/enum/boolean/date-time sai, thiếu query bắt buộc, page/size/sort/dire
 
 - Không hard-delete restaurant, package hoặc feature.
 - Không impersonation, CRUD SUPER_ADMIN, reset password hoặc MFA.
-- Không staff CRUD, billing/payment hoặc auto-renew engine.
+- Staff CRUD phía tenant nằm tại [tenant-api.md](tenant-api.md); API admin xem tài khoản vẫn chỉ đọc.
+- Không billing/payment hoặc auto-renew engine.
 - Không revenue/MRR/ARR/churn/payment statistics.
 - Không sửa/xóa audit log.
 - Không public QR API, restaurant settings editor hoặc public order token management.

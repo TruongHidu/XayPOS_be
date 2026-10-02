@@ -264,7 +264,7 @@ public class SubscriptionCommandService {
     }
 
     private PackagePlan requireActivePackage(String packageCode) {
-        PackagePlan packagePlan = packageRepository.findByCode(normalizePackageCode(packageCode))
+        PackagePlan packagePlan = packageRepository.findByCodeForUpdate(normalizePackageCode(packageCode))
             .orElseThrow(() -> new ResourceNotFoundException("PACKAGE_NOT_FOUND", "Package not found"));
         if (!packagePlan.isActive()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "PACKAGE_INACTIVE", "Package is inactive");
@@ -273,7 +273,8 @@ public class SubscriptionCommandService {
     }
 
     private PackagePlan requireActivePackage(UUID packageId) {
-        PackagePlan packagePlan = requirePackage(packageId);
+        PackagePlan packagePlan = packageRepository.findByIdForUpdate(packageId)
+            .orElseThrow(() -> new ResourceNotFoundException("PACKAGE_NOT_FOUND", "Package not found"));
         if (!packagePlan.isActive()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "PACKAGE_INACTIVE", "Package is inactive");
         }

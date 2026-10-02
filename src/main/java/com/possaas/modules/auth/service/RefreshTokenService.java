@@ -87,6 +87,11 @@ public class RefreshTokenService {
         return refreshTokenRepository.revokeAllActiveByRestaurantId(restaurantId, clock.instant());
     }
 
+    @Transactional
+    public int revokeAllActiveForUser(UUID userId) {
+        return refreshTokenRepository.revokeAllActive(userId, clock.instant());
+    }
+
     private static String generateRawToken() {
         byte[] bytes = new byte[32];
         SECURE_RANDOM.nextBytes(bytes);

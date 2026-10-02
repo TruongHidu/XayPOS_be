@@ -26,7 +26,8 @@ public class SubscriptionMapper {
             subscription.getCurrencyCode(),
             subscription.getActivatedAt(),
             subscription.getCancelledAt(),
-            toFeatureResponses(snapshot.features())
+            toFeatureResponses(snapshot.features()),
+            snapshot.effectiveMaxStaff()
         );
     }
 
@@ -37,7 +38,8 @@ public class SubscriptionMapper {
             entitlement.status(),
             entitlement.startAt(),
             entitlement.endAt(),
-            toFeatureResponses(entitlement.features())
+            toFeatureResponses(entitlement.features()),
+            entitlement.maxStaff()
         );
     }
 

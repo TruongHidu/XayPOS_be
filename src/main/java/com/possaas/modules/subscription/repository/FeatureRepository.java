@@ -8,6 +8,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FeatureRepository extends JpaRepository<Feature, UUID> {
+    List<Feature> findAllByCodeIn(Collection<String> codes);
+
     Optional<Feature> findByCode(String code);
 
     Optional<Feature> findByCodeAndActiveTrue(String code);

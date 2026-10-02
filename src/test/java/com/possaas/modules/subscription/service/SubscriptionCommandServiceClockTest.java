@@ -68,7 +68,7 @@ class SubscriptionCommandServiceClockTest {
         plan.setId(UUID.randomUUID());
         plan.setCode("BASIC");
         plan.setActive(true);
-        when(packages.findByCode("BASIC")).thenReturn(Optional.of(plan));
+        when(packages.findByCodeForUpdate("BASIC")).thenReturn(Optional.of(plan));
         when(subscriptions.saveAndFlush(any())).thenAnswer(invocation -> {
             assertThat(active.getStatus()).isEqualTo(SubscriptionStatus.EXPIRED);
             RestaurantSubscription saved = invocation.getArgument(0);

@@ -27,7 +27,29 @@ Gán package: chỉ tạo PENDING khi restaurant không có ACTIVE chưa hết h
 V8 thêm unique index cho PENDING; nếu dữ liệu cũ trùng, migration dừng để xử lý thủ công, không xóa lịch sử.
 Xem chi tiết trong `docs/admin-api.md` và `docs/openapi/admin-api.yaml`.
 
+V11 cho phép chọn feature và limits khi POST/PUT package. BASIC có STAFF_MANAGEMENT/TABLE_MANAGEMENT;
+cả ba gói có QR_MENU_VIEW. Limits STAFF_MANAGEMENT rỗng của BASIC/PRO/PREMIUM nhận maxStaff 3/10/30;
+limits tùy chỉnh không rỗng và snapshot ACTIVE cũ được giữ nguyên. V12 chuyển maxStaff từ feature
+sang cột package và field top-level POST/PUT/GET. `maxStaff:null` hoặc bỏ qua là unlimited (kể cả PUT).
+Snapshot mới phiên bản 2 lưu maxStaff cấp package; snapshot cũ vẫn giữ nguyên và đọc tương thích.
+QR ordering không còn trong mapping ba gói chuẩn, feature rows/lịch sử
+vẫn giữ. Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
+Các feature menu/order/payment/kitchen/inventory/report/AI trong catalog chưa đồng nghĩa có API
+nghiệp vụ; hiện phase này triển khai catalog/subscription và profile/staff/permission APIs.
+
+V13 đưa phân quyền nhân viên, màn hình bếp, báo cáo chi tiết và in/in lại phiếu bếp xuống BASIC;
+PRO có cùng bộ tính năng vận hành và thêm RECIPE_MANAGEMENT. maxStaff mặc định vẫn là BASIC=3,
+PRO=10, PREMIUM=30. Giá và PREMIUM không đổi. Chỉ thêm mapping còn thiếu; giữ tùy chỉnh catalog
+và snapshot đã kích hoạt. V13 không triển khai API công thức. FE đọc features/maxStaff từ API hiện có.
+
 ## API Phase 1
+
+Tenant profile and staff administration are documented in [docs/tenant-api.md](docs/tenant-api.md)
+and [docs/openapi/tenant-api.yaml](docs/openapi/tenant-api.yaml). V10 seeds tenant profile permissions
+and basic MANAGER staff permissions. Staff operations require STAFF_MANAGEMENT; permission overrides
+also require STAFF_PERMISSION. Disabled bearer accounts are rejected immediately; role/permission
+claims already issued in access JWTs remain valid until their TTL expires. Security-sensitive staff
+changes revoke refresh tokens. Existing users need refresh/login to receive newly seeded permissions.
 
 Base URL: `http://localhost:8080/api/v1/auth`
 

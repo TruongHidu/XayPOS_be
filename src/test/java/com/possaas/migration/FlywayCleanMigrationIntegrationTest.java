@@ -40,11 +40,20 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
             assertThat(countTables(schema)).isEqualTo(12);
             assertThat(tableExists(schema, "restaurants")).isTrue();
             assertThat(tableExists(schema, "restaurant_subscriptions")).isTrue();
             assertThat(tableExists(schema, "audit_logs")).isTrue();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT p.code, p.max_staff FROM \"" + schema
+                     + "\".packages p JOIN \"" + schema + "\".package_features pf ON pf.package_id=p.id JOIN \""
+                     + schema + "\".features f ON f.id=pf.feature_id WHERE f.code='STAFF_MANAGEMENT' ORDER BY p.code")) {
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("BASIC"); assertThat(rows.getString(2)).isEqualTo("3");
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("PREMIUM"); assertThat(rows.getString(2)).isEqualTo("30");
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("PRO"); assertThat(rows.getString(2)).isEqualTo("10");
+                assertThat(rows.next()).isFalse();
+            }
         } finally {
             dropTestSchema(schema);
         }
@@ -78,6 +87,120 @@ class FlywayCleanMigrationIntegrationTest {
         } finally {
             dropTestSchema(schema);
         }
+    }
+
+    @Test
+    void v11PreservesCustomLimitsAndHistoricalSnapshotsWhileMigratingEmptyDefaults() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        createSchema(schema);
+        String prefix = "\"" + schema + "\".";
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("10").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "package_features(package_id,feature_id,limits) "
+                    + "SELECT p.id,f.id,'{\"maxStaff\":7,\"custom\":true}'::jsonb FROM " + prefix + "packages p," + prefix
+                    + "features f WHERE p.code='BASIC' AND f.code='STAFF_MANAGEMENT'");
+                statement.execute("UPDATE " + prefix + "package_features SET limits='{\"custom\":true}'::jsonb WHERE package_id="
+                    + "(SELECT id FROM " + prefix + "packages WHERE code='PREMIUM') AND feature_id=(SELECT id FROM "
+                    + prefix + "features WHERE code='STAFF_MANAGEMENT')");
+                statement.execute("INSERT INTO " + prefix + "restaurants(code,name,status) VALUES('OLD','Old tenant','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "restaurant_subscriptions(restaurant_id,package_id,status,start_at,end_at,price_amount,currency_code,feature_snapshot) "
+                    + "SELECT r.id,p.id,'ACTIVE',now(),now()+interval '1 day',0,'VND','{\"features\":[{\"code\":\"QR_STATIC_ORDER\",\"limits\":{}}]}'::jsonb "
+                    + "FROM " + prefix + "restaurants r," + prefix + "packages p WHERE p.code='BASIC'");
+            }
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("11").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                try (ResultSet rows = statement.executeQuery("SELECT p.code,pf.limits::text FROM " + prefix + "packages p JOIN " + prefix
+                    + "package_features pf ON pf.package_id=p.id JOIN " + prefix + "features f ON f.id=pf.feature_id "
+                    + "WHERE f.code='STAFF_MANAGEMENT' ORDER BY p.code")) {
+                    rows.next(); assertThat(rows.getString(2)).contains("\"maxStaff\": 7", "\"custom\": true");
+                    rows.next(); assertThat(rows.getString(2)).isEqualTo("{\"custom\": true}");
+                    rows.next(); assertThat(rows.getString(2)).isEqualTo("{\"maxStaff\": 10}");
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT feature_snapshot::text FROM " + prefix + "restaurant_subscriptions")) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo("{\"features\": [{\"code\": \"QR_STATIC_ORDER\", \"limits\": {}}]}");
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features pf JOIN "
+                    + prefix + "features f ON f.id=pf.feature_id WHERE f.code IN ('QR_STATIC_ORDER','QR_TABLE_ORDER')")) {
+                    rows.next(); assertThat(rows.getInt(1)).isZero();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "features WHERE code IN ('QR_STATIC_ORDER','QR_TABLE_ORDER')")) {
+                    rows.next(); assertThat(rows.getInt(1)).isEqualTo(2);
+                }
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v12MovesCustomLimitButPreservesOtherLimitsAndHistoricalSnapshot() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("11").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("UPDATE " + prefix + "package_features SET limits='{\"maxStaff\":7,\"custom\":true}'::jsonb "
+                    + "WHERE package_id=(SELECT id FROM " + prefix + "packages WHERE code='BASIC') "
+                    + "AND feature_id=(SELECT id FROM " + prefix + "features WHERE code='STAFF_MANAGEMENT')");
+                statement.execute("UPDATE " + prefix + "package_features SET limits='{}'::jsonb "
+                    + "WHERE package_id=(SELECT id FROM " + prefix + "packages WHERE code='PREMIUM')");
+                statement.execute("INSERT INTO " + prefix + "restaurants(code,name,status) VALUES('LEGACY','Legacy','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "restaurant_subscriptions(restaurant_id,package_id,status,start_at,end_at,price_amount,currency_code,feature_snapshot) "
+                    + "SELECT r.id,p.id,'ACTIVE',now(),now()+interval '1 day',0,'VND',"
+                    + "'{\"schemaVersion\":1,\"features\":[{\"code\":\"STAFF_MANAGEMENT\",\"limits\":{\"maxStaff\":5}}]}'::jsonb "
+                    + "FROM " + prefix + "restaurants r," + prefix + "packages p WHERE p.code='BASIC'");
+            }
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                try (ResultSet rows = statement.executeQuery("SELECT max_staff FROM " + prefix + "packages WHERE code='BASIC'")) {
+                    rows.next(); assertThat(rows.getLong(1)).isEqualTo(7);
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT max_staff FROM " + prefix + "packages WHERE code='PREMIUM'")) {
+                    rows.next(); assertThat(rows.getObject(1)).isNull();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features WHERE limits ? 'maxStaff'")) {
+                    rows.next(); assertThat(rows.getInt(1)).isZero();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features WHERE limits='{\"custom\":true}'::jsonb")) {
+                    rows.next(); assertThat(rows.getInt(1)).isEqualTo(1);
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT feature_snapshot="
+                    + "'{\"schemaVersion\":1,\"features\":[{\"code\":\"STAFF_MANAGEMENT\",\"limits\":{\"maxStaff\":5}}]}'::jsonb "
+                    + "FROM " + prefix + "restaurant_subscriptions")) {
+                    rows.next(); assertThat(rows.getBoolean(1)).isTrue();
+                }
+                assertThatThrownBy(() -> statement.execute("UPDATE " + prefix + "packages SET max_staff=0 WHERE code='BASIC'"))
+                    .isInstanceOf(java.sql.SQLException.class).hasMessageContaining("ck_packages_max_staff");
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v12RejectsMalformedLegacyLimitWithoutDiscardingIt() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("11").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("UPDATE " + prefix + "package_features SET limits='{\"maxStaff\":\"bad\"}'::jsonb "
+                    + "WHERE feature_id=(SELECT id FROM " + prefix + "features WHERE code='STAFF_MANAGEMENT')");
+            }
+            Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();
+            assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("V12: invalid legacy maxStaff");
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features WHERE limits->>'maxStaff'='bad'")) {
+                rows.next(); assertThat(rows.getInt(1)).isEqualTo(3);
+            }
+        } finally { dropTestSchema(schema); }
     }
 
     private void createSchema(String schema) throws Exception {

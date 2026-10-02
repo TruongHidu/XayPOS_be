@@ -12,8 +12,14 @@ public record CurrentEntitlement(
     SubscriptionStatus status,
     Instant startAt,
     Instant endAt,
-    List<SubscriptionFeatureSnapshot.FeatureGrant> features
+    List<SubscriptionFeatureSnapshot.FeatureGrant> features,
+    Long maxStaff
 ) {
+    public CurrentEntitlement(UUID subscriptionId, UUID restaurantId, String packageCode, SubscriptionStatus status,
+        Instant startAt, Instant endAt, List<SubscriptionFeatureSnapshot.FeatureGrant> features) {
+        this(subscriptionId, restaurantId, packageCode, status, startAt, endAt, features,
+            new SubscriptionFeatureSnapshot(1, packageCode, features, startAt).effectiveMaxStaff());
+    }
     public CurrentEntitlement {
         features = features == null ? List.of() : List.copyOf(features);
     }

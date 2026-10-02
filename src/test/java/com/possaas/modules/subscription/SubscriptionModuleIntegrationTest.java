@@ -142,8 +142,10 @@ class SubscriptionModuleIntegrationTest {
         PackageResponse pro = packageQueryService.findActivePackage("PRO");
         PackageResponse premium = packageQueryService.findActivePackage("premium");
 
-        assertThat(featureCodes(basic)).contains("MENU_MANAGEMENT").doesNotContain("TABLE_MANAGEMENT");
-        assertThat(featureCodes(pro)).contains("TABLE_MANAGEMENT").doesNotContain("INVENTORY_MANAGEMENT");
+        assertThat(featureCodes(basic)).contains("MENU_MANAGEMENT", "TABLE_MANAGEMENT", "STAFF_MANAGEMENT", "QR_MENU_VIEW",
+            "KITCHEN_DISPLAY", "STAFF_PERMISSION", "DETAIL_REPORT", "KITCHEN_TICKET_PRINT", "KITCHEN_TICKET_REPRINT")
+            .doesNotContain("RECIPE_MANAGEMENT", "QR_STATIC_ORDER", "QR_TABLE_ORDER");
+        assertThat(featureCodes(pro)).contains("KITCHEN_DISPLAY", "RECIPE_MANAGEMENT").doesNotContain("INVENTORY_MANAGEMENT");
         assertThat(featureCodes(premium)).contains("INVENTORY_MANAGEMENT", "AI_DEMAND_FORECAST");
         assertThat(packageQueryService.findActivePackages()).extracting(PackageResponse::code)
             .contains("BASIC", "PRO", "PREMIUM");
@@ -155,8 +157,9 @@ class SubscriptionModuleIntegrationTest {
         RestaurantSubscription basic = activate(restaurant.getId(), "BASIC");
 
         assertThat(entitlementService.hasFeature(restaurant.getId(), "MENU_MANAGEMENT")).isTrue();
-        assertThat(entitlementService.hasFeature(restaurant.getId(), "TABLE_MANAGEMENT")).isFalse();
-        assertThatThrownBy(() -> entitlementService.requireFeature(restaurant.getId(), "TABLE_MANAGEMENT"))
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "KITCHEN_DISPLAY")).isTrue();
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "RECIPE_MANAGEMENT")).isFalse();
+        assertThatThrownBy(() -> entitlementService.requireFeature(restaurant.getId(), "RECIPE_MANAGEMENT"))
             .isInstanceOfSatisfying(BusinessException.class, exception ->
                 assertThat(exception.getCode()).isEqualTo("FEATURE_NOT_ENTITLED")
             );
@@ -184,7 +187,8 @@ class SubscriptionModuleIntegrationTest {
         assertThat(replacement.getStartAt()).isEqualTo(replacement.getActivatedAt());
         assertThat(SubscriptionFeatureSnapshot.fromMap(storedBasic.getFeatureSnapshot()).packageCode())
             .isEqualTo("BASIC");
-        assertThat(entitlementService.hasFeature(restaurant.getId(), "TABLE_MANAGEMENT")).isTrue();
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "KITCHEN_DISPLAY")).isTrue();
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "RECIPE_MANAGEMENT")).isTrue();
         assertThat(entitlementService.hasFeature(restaurant.getId(), "INVENTORY_MANAGEMENT")).isFalse();
 
         SubscriptionResponse downgraded = subscriptionCommandService.changePackage(
@@ -198,7 +202,8 @@ class SubscriptionModuleIntegrationTest {
         assertThat(storedPro.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
         assertThat(SubscriptionFeatureSnapshot.fromMap(storedPro.getFeatureSnapshot()).packageCode())
             .isEqualTo("PRO");
-        assertThat(entitlementService.hasFeature(restaurant.getId(), "TABLE_MANAGEMENT")).isFalse();
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "KITCHEN_DISPLAY")).isTrue();
+        assertThat(entitlementService.hasFeature(restaurant.getId(), "RECIPE_MANAGEMENT")).isFalse();
 
         SubscriptionResponse firstCancel = subscriptionCommandService.cancel(
             restaurant.getId(), downgraded.id(), null, "127.0.0.1"
@@ -430,8 +435,8 @@ class SubscriptionModuleIntegrationTest {
         Restaurant restaurant = createRestaurant();
         RestaurantSubscription subscription = activate(restaurant.getId(), "BASIC");
         PackagePlan basic = packageRepository.findByCode("BASIC").orElseThrow();
-        UUID tableFeatureId = featureRepository.findByCodeAndActiveTrue("TABLE_MANAGEMENT").orElseThrow().getId();
-        PackageFeatureId mappingId = new PackageFeatureId(basic.getId(), tableFeatureId);
+        UUID recipeFeatureId = featureRepository.findByCodeAndActiveTrue("RECIPE_MANAGEMENT").orElseThrow().getId();
+        PackageFeatureId mappingId = new PackageFeatureId(basic.getId(), recipeFeatureId);
 
         try {
             PackageFeature mapping = new PackageFeature();
@@ -440,11 +445,11 @@ class SubscriptionModuleIntegrationTest {
             packageFeatureRepository.saveAndFlush(mapping);
 
             assertThat(featureCodes(packageQueryService.findActivePackage("BASIC")))
-                .contains("TABLE_MANAGEMENT");
-            assertThat(entitlementService.hasFeature(restaurant.getId(), "TABLE_MANAGEMENT")).isFalse();
+                .contains("RECIPE_MANAGEMENT");
+            assertThat(entitlementService.hasFeature(restaurant.getId(), "RECIPE_MANAGEMENT")).isFalse();
             RestaurantSubscription reloaded = subscriptionRepository.findById(subscription.getId()).orElseThrow();
             assertThat(SubscriptionFeatureSnapshot.fromMap(reloaded.getFeatureSnapshot())
-                .contains("TABLE_MANAGEMENT")).isFalse();
+                .contains("RECIPE_MANAGEMENT")).isFalse();
         } finally {
             packageFeatureRepository.deleteById(mappingId);
             packageFeatureRepository.flush();
@@ -540,10 +545,20 @@ class SubscriptionModuleIntegrationTest {
         RestaurantSubscription cancelled = activate(cancelledRestaurant.getId(), "PRO");
         subscriptionCommandService.cancel(cancelledRestaurant.getId(), cancelled.getId(), null, "127.0.0.1");
 
-        authenticate(proRestaurant.getId(), "OWNER", "TABLE_CREATE");
-        assertThat(guardedFeatureUseCase.createTable()).isEqualTo("created");
+        authenticate(proRestaurant.getId(), "OWNER", "KITCHEN_VIEW");
+        assertThat(guardedFeatureUseCase.operateKitchen()).isEqualTo("created");
 
-        authenticate(basicRestaurant.getId(), "OWNER", "TABLE_CREATE");
+        authenticate(basicRestaurant.getId(), "OWNER", "KITCHEN_VIEW");
+        assertThat(guardedFeatureUseCase.operateKitchen()).isEqualTo("created");
+
+        // A legacy BASIC snapshot still lacks kitchen access despite the upgraded catalog.
+        Restaurant legacyRestaurant = createRestaurant();
+        RestaurantSubscription legacy = activate(legacyRestaurant.getId(), "BASIC");
+        legacy.setFeatureSnapshot(new SubscriptionFeatureSnapshot(2, "BASIC",
+            List.of(new SubscriptionFeatureSnapshot.FeatureGrant("MENU_MANAGEMENT", Map.of())),
+            clock.instant(), 3L).toMap());
+        subscriptionRepository.saveAndFlush(legacy);
+        authenticate(legacyRestaurant.getId(), "OWNER", "KITCHEN_VIEW");
         assertDenied();
 
         authenticate(proRestaurant.getId(), "OWNER");
@@ -552,13 +567,13 @@ class SubscriptionModuleIntegrationTest {
         authenticate(basicRestaurant.getId(), "OWNER");
         assertDenied();
 
-        authenticate(expiredRestaurant.getId(), "OWNER", "TABLE_CREATE");
+        authenticate(expiredRestaurant.getId(), "OWNER", "KITCHEN_VIEW");
         assertDenied();
 
-        authenticate(cancelledRestaurant.getId(), "OWNER", "TABLE_CREATE");
+        authenticate(cancelledRestaurant.getId(), "OWNER", "KITCHEN_VIEW");
         assertDenied();
 
-        authenticate(null, "SUPER_ADMIN", "TABLE_CREATE", "SUBSCRIPTION_MANAGE");
+        authenticate(null, "SUPER_ADMIN", "KITCHEN_VIEW", "SUBSCRIPTION_MANAGE");
         assertDenied();
     }
 
@@ -1024,7 +1039,7 @@ class SubscriptionModuleIntegrationTest {
     }
 
     private void assertDenied() {
-        assertThatThrownBy(guardedFeatureUseCase::createTable).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(guardedFeatureUseCase::operateKitchen).isInstanceOf(AccessDeniedException.class);
     }
 
     private static List<String> featureCodes(PackageResponse response) {
@@ -1032,8 +1047,8 @@ class SubscriptionModuleIntegrationTest {
     }
 
     static class GuardedFeatureUseCase {
-        @PreAuthorize("@featureSecurity.hasCurrentTenantFeature('TABLE_MANAGEMENT') and hasAuthority('TABLE_CREATE')")
-        public String createTable() {
+        @PreAuthorize("@featureSecurity.hasCurrentTenantFeature('KITCHEN_DISPLAY') and hasAuthority('KITCHEN_VIEW')")
+        public String operateKitchen() {
             return "created";
         }
     }

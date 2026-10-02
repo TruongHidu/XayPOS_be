@@ -24,6 +24,64 @@ tags:
   - name: Audit
   - name: Catalog
 paths:
+  /admin/restaurants/{restaurantId}/users:
+    get:
+      tags: [Restaurants]
+      operationId: listAdminRestaurantUsers
+      summary: List non-deleted accounts belonging to one restaurant
+      description: System SUPER_ADMIN with null restaurantId only. No package entitlement or STAFF_VIEW required. Search escapes literal percent, underscore and backslash. Stable sort adds id in the same direction. Read-only; no audit write.
+      x-required-permission: RESTAURANT_VIEW
+      parameters:
+        - $ref: '#/components/parameters/RestaurantId'
+        - {name: q, in: query, schema: {type: string, maxLength: 100}, description: Trimmed case-insensitive name/email/phone search}
+        - {name: roleCode, in: query, schema: {type: string, maxLength: 50}, description: Trimmed uppercase role code}
+        - {name: active, in: query, schema: {type: boolean}}
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - {name: sortBy, in: query, schema: {type: string, enum: [createdAt, name, email, lastLoginAt], default: createdAt}}
+        - {name: direction, in: query, schema: {type: string, enum: [asc, desc], default: desc}}
+      responses:
+        '200':
+          description: Database-paginated restaurant accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [content, page, size, totalElements, totalPages]
+                properties:
+                  content: {type: array, items: {$ref: '#/components/schemas/AdminRestaurantUserResponse'}}
+                  page: {type: integer}
+                  size: {type: integer}
+                  totalElements: {type: integer, format: int64}
+                  totalPages: {type: integer}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/RestaurantNotFound'}
+  /admin/restaurants/{restaurantId}/users/{userId}:
+    get:
+      tags: [Restaurants]
+      operationId: getAdminRestaurantUser
+      summary: Read one restaurant account
+      description: Requires system scope; no package entitlement check. Missing/deleted/foreign user returns the same USER_NOT_FOUND. Missing/deleted restaurant returns RESTAURANT_NOT_FOUND. No audit write.
+      x-required-permission: RESTAURANT_VIEW
+      parameters:
+        - $ref: '#/components/parameters/RestaurantId'
+        - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Account detail without secrets
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminRestaurantUserResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: RESTAURANT_NOT_FOUND or USER_NOT_FOUND; never reveals another restaurant
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
   /admin/dashboard/summary:
     get:
       tags: [Dashboard]
@@ -634,6 +692,7 @@ paths:
       tags: [Catalog]
       operationId: createAdminPackage
       summary: Create a package
+      description: Creates package, selected active feature mappings and audit atomically. Omitted/null features means no mappings. Codes are normalized and duplicate codes rejected. Existing subscription snapshots are unchanged.
       x-required-permission: PACKAGE_MANAGE
       requestBody:
         required: true
@@ -648,19 +707,38 @@ paths:
               priceAmount: 1299000
               currencyCode: VND
               billingCycleMonths: 1
+              maxStaff: 10
+              features:
+                - {code: QR_MENU_VIEW, limits: {}}
+                - {code: STAFF_MANAGEMENT, limits: {}}
       responses:
         "201":
-          description: Created active package
+          description: Created active package with selected features sorted by code
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminPackageResponse"
+              example:
+                id: "21df1bc3-82e0-4f90-a767-cfcbcf9f64fd"
+                code: ENTERPRISE
+                name: Enterprise
+                description: Gói tùy chỉnh
+                priceAmount: 1299000
+                currencyCode: VND
+                billingCycleMonths: 1
+                active: true
+                maxStaff: 10
+                features:
+                  - {code: QR_MENU_VIEW, limits: {}}
+                  - {code: STAFF_MANAGEMENT, limits: {}}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/FeatureNotFound"
         "409":
           $ref: "#/components/responses/CatalogConflict"
 
@@ -692,7 +770,12 @@ paths:
       tags: [Catalog]
       operationId: updateAdminPackage
       summary: Update a package
-      description: Changing catalog data does not mutate subscription snapshots already captured.
+      description: >-
+        Metadata and feature selection commit atomically under a package write lock. Omitted/null
+        features preserves mappings; [] clears all; a list replaces all mappings and their limits.
+        Equivalent no-op requests produce no audit. Changing catalog data does not mutate captured
+        subscription snapshots or disable existing staff when maxStaff is lowered.
+        Omitted/null maxStaff sets unlimited; send the current value to preserve a finite limit.
       x-required-permission: PACKAGE_MANAGE
       parameters:
         - $ref: "#/components/parameters/PackageCode"
@@ -702,13 +785,37 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/UpdatePackageRequest"
+            example:
+              name: Enterprise
+              description: Gói tùy chỉnh
+              priceAmount: 1399000
+              currencyCode: VND
+              billingCycleMonths: 1
+              active: true
+              maxStaff: 20
+              features:
+                - {code: QR_MENU_VIEW, limits: {}}
+                - {code: STAFF_MANAGEMENT, limits: {}}
       responses:
         "200":
-          description: Updated package
+          description: Updated package including selected features and limits
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminPackageResponse"
+              example:
+                id: "21df1bc3-82e0-4f90-a767-cfcbcf9f64fd"
+                code: ENTERPRISE
+                name: Enterprise
+                description: Gói tùy chỉnh
+                priceAmount: 1399000
+                currencyCode: VND
+                billingCycleMonths: 1
+                active: true
+                maxStaff: 20
+                features:
+                  - {code: QR_MENU_VIEW, limits: {}}
+                  - {code: STAFF_MANAGEMENT, limits: {}}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -716,14 +823,16 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/PackageNotFound"
+          $ref: "#/components/responses/PackageOrFeatureNotFound"
+        "409":
+          $ref: "#/components/responses/CatalogConflict"
 
   /admin/packages/{packageCode}/features/{featureCode}:
     post:
       tags: [Catalog]
       operationId: addFeatureToAdminPackage
       summary: Add a feature mapping and limits to a package
-      description: The feature must be active. Existing subscription snapshots are unchanged.
+      description: The feature must be active. maxStaff belongs at package level; any maxStaff key in feature limits returns INVALID_FEATURE_LIMIT. Package is write-locked. Existing subscription snapshots are unchanged. Use PUT package with features to edit existing mappings.
       x-required-permission: PACKAGE_MANAGE
       parameters:
         - $ref: "#/components/parameters/PackageCode"
@@ -735,8 +844,7 @@ paths:
             schema:
               $ref: "#/components/schemas/PackageFeatureRequest"
             example:
-              limits:
-                maxLocations: 10
+              limits: {}
       responses:
         "200":
           description: Package with updated mappings
@@ -831,12 +939,16 @@ components:
 
   responses:
     BadRequest:
-      description: Invalid JSON body, validation failure, inactive package/feature or invalid period
+      description: Invalid JSON body, validation failure, inactive package/feature, invalid period, duplicate selection or invalid feature limits
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
           examples:
+            invalidFeatureLimit:
+              value: {success: false, code: INVALID_PACKAGE_LIMIT, message: maxStaff must be null or a positive integer at package level, fieldErrors: {}, timestamp: "2026-09-27T00:00:00Z"}
+            duplicateSelection:
+              value: {success: false, code: DUPLICATE_PACKAGE_FEATURE, message: Feature appears more than once, fieldErrors: {}, timestamp: "2026-09-27T00:00:00Z"}
             validation:
               value:
                 success: false
@@ -1048,7 +1160,7 @@ components:
             concurrent:
               value: {success: false, code: CONCURRENT_SUBSCRIPTION_UPDATE, message: Subscription was changed concurrently, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
     CatalogConflict:
-      description: Feature, package or mapping already exists
+      description: Feature, package or mapping already exists, or concurrent catalog persistence conflict
       content:
         application/json:
           schema:
@@ -1060,8 +1172,33 @@ components:
               value: {success: false, code: PACKAGE_ALREADY_EXISTS, message: Package already exists, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
             mapping:
               value: {success: false, code: PACKAGE_FEATURE_ALREADY_EXISTS, message: Feature is already assigned to this package, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
+            concurrent:
+              value: {success: false, code: CONCURRENT_PACKAGE_UPDATE, message: Catalog update conflicts with the current data, fieldErrors: {}, timestamp: "2026-09-27T00:00:00Z"}
 
   schemas:
+    AdminRoleSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, active]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        active: {type: boolean}
+    AdminRestaurantUserResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, phone, active, role, lastLoginAt, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        email: {type: string, format: email}
+        phone: {type: [string, 'null']}
+        active: {type: boolean}
+        role: {$ref: '#/components/schemas/AdminRoleSummaryResponse'}
+        lastLoginAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     RestaurantStatus:
       type: string
       enum: [ACTIVE, INACTIVE, SUSPENDED]
@@ -1268,8 +1405,11 @@ components:
       allOf:
         - $ref: "#/components/schemas/AdminSubscriptionSummaryResponse"
         - type: object
-          required: [features]
+          required: [features, maxStaff]
           properties:
+            maxStaff:
+              $ref: "#/components/schemas/MaxStaff"
+              description: Effective immutable snapshot limit, not live catalog. Null for uncaptured PENDING.
             features:
               type: array
               description: Immutable feature snapshot captured when the subscription was activated.
@@ -1313,8 +1453,11 @@ components:
     SubscriptionResponse:
       type: object
       additionalProperties: false
-      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, activatedAt, cancelledAt, features]
+      required: [id, restaurantId, packageId, packageCode, status, startAt, endAt, autoRenew, priceAmount, currencyCode, activatedAt, cancelledAt, features, maxStaff]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
+          description: Effective immutable snapshot limit, not live catalog. Null for uncaptured PENDING.
         id: {type: string, format: uuid}
         restaurantId: {type: string, format: uuid}
         packageId: {type: string, format: uuid}
@@ -1434,8 +1577,10 @@ components:
     AdminPackageResponse:
       type: object
       additionalProperties: false
-      required: [id, code, name, description, priceAmount, currencyCode, billingCycleMonths, active, features]
+      required: [id, code, name, description, priceAmount, currencyCode, billingCycleMonths, active, features, maxStaff]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
         id: {type: string, format: uuid}
         code: {type: string}
         name: {type: string}
@@ -1472,24 +1617,67 @@ components:
       additionalProperties: false
       required: [code, name, priceAmount, currencyCode, billingCycleMonths]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
+          description: Omitted/null means unlimited. Does not grant STAFF_MANAGEMENT.
         code: {type: string, minLength: 1, maxLength: 50, pattern: "^[A-Za-z][A-Za-z0-9_]*$"}
         name: {type: string, minLength: 1, maxLength: 100}
         description: {type: [string, "null"]}
         priceAmount: {type: number, minimum: 0}
         currencyCode: {type: string, pattern: "^[A-Za-z]{3}$"}
         billingCycleMonths: {type: integer, minimum: 1, maximum: 120}
+        features:
+          $ref: "#/components/schemas/PackageFeatureSelections"
+          description: Omitted/null/empty creates a package without feature mappings, preserving the legacy contract.
 
     UpdatePackageRequest:
       type: object
       additionalProperties: false
       required: [name, priceAmount, currencyCode, billingCycleMonths, active]
       properties:
+        maxStaff:
+          $ref: "#/components/schemas/MaxStaff"
+          description: Omitted/null sets unlimited. Send the current value to preserve a finite limit. Existing snapshots are unchanged.
         name: {type: string, minLength: 1, maxLength: 100}
         description: {type: [string, "null"]}
         priceAmount: {type: number, minimum: 0}
         currencyCode: {type: string, pattern: "^[A-Za-z]{3}$"}
         billingCycleMonths: {type: integer, minimum: 1, maximum: 120}
         active: {type: boolean}
+        features:
+          $ref: "#/components/schemas/PackageFeatureSelections"
+          description: Omitted/null preserves mappings. Empty array clears all. Otherwise replaces the complete selection and limits.
+
+    MaxStaff:
+      type: [integer, "null"]
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+      description: Package-level staff capacity. Null means unlimited. JSON strings, booleans and fractional values return INVALID_PACKAGE_LIMIT on package writes.
+
+    PackageFeatureSelections:
+      type: [array, "null"]
+      maxItems: 200
+      description: Only active known features. Codes unique after trim and uppercase; duplicates return DUPLICATE_PACKAGE_FEATURE.
+      items:
+        $ref: "#/components/schemas/PackageFeatureSelection"
+
+    PackageFeatureSelection:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Trimmed and uppercased before validation; normalized value must match [A-Z][A-Z0-9_]* and be at most 100 characters.
+          example: STAFF_MANAGEMENT
+        limits:
+          type: [object, "null"]
+          additionalProperties: true
+          description: Omitted/null defaults to {}. maxStaff belongs to the package; this key is rejected in any feature limits. Other limits retain their existing JSON contracts.
+          propertyNames:
+            not: {const: maxStaff}
+          example: {}
 
     PackageFeatureRequest:
       type: object
@@ -1499,3 +1687,6 @@ components:
         limits:
           type: object
           additionalProperties: true
+          description: maxStaff belongs to the package; any maxStaff key here returns INVALID_FEATURE_LIMIT.
+          propertyNames:
+            not: {const: maxStaff}

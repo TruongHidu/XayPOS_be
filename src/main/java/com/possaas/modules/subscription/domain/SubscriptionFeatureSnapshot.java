@@ -1,18 +1,41 @@
 package com.possaas.modules.subscription.domain;
 
+import com.possaas.common.exception.BusinessException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 
 public record SubscriptionFeatureSnapshot(
     int schemaVersion,
     String packageCode,
     List<FeatureGrant> features,
-    Instant capturedAt
+    Instant capturedAt,
+    Long maxStaff
 ) {
+    public SubscriptionFeatureSnapshot(int schemaVersion, String packageCode, List<FeatureGrant> features, Instant capturedAt) {
+        this(schemaVersion, packageCode, features, capturedAt, null);
+    }
+
+    /** Legacy snapshots remain stored verbatim; only their effective limit is adapted on read. */
+    public Long effectiveMaxStaff() {
+        if (schemaVersion >= 2) return maxStaff;
+        return features.stream().filter(f -> "STAFF_MANAGEMENT".equals(f.code()))
+            .filter(f -> f.limits().containsKey("maxStaff"))
+            .findFirst().map(f -> readLimit(f.limits().get("maxStaff"))).orElse(null);
+    }
+
+    private static Long readLimit(Object value) {
+        try {
+            return FeatureLimitValues.positiveLong(value);
+        } catch (IllegalArgumentException | ArithmeticException ex) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                "INVALID_STAFF_LIMIT_CONFIG", "Snapshot staff limit must be a positive integer");
+        }
+    }
     public SubscriptionFeatureSnapshot {
         features = features == null ? List.of() : List.copyOf(features);
     }
@@ -35,6 +58,7 @@ public record SubscriptionFeatureSnapshot(
         snapshot.put("packageCode", packageCode);
         snapshot.put("features", featureValues);
         snapshot.put("capturedAt", capturedAt.toString());
+        if (schemaVersion >= 2) snapshot.put("maxStaff", maxStaff);
         return snapshot;
     }
 
@@ -63,7 +87,12 @@ public record SubscriptionFeatureSnapshot(
                 grants.add(new FeatureGrant(featureValue.get("code").toString(), limits));
             }
         }
-        return new SubscriptionFeatureSnapshot(version, packageCode, grants, capturedAt);
+        Long maxStaff = null;
+        if (version >= 2) {
+            if (!source.containsKey("maxStaff")) readLimit(null); // Missing is corrupt; explicit null means unlimited.
+            if (source.get("maxStaff") != null) maxStaff = readLimit(source.get("maxStaff"));
+        }
+        return new SubscriptionFeatureSnapshot(version, packageCode, grants, capturedAt, maxStaff);
     }
 
     public record FeatureGrant(String code, Map<String, Object> limits) {

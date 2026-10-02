@@ -22,6 +22,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    public static final String JWT_AUTHENTICATED = JwtAuthenticationFilter.class.getName() + ".authenticated";
     private final JwtDecoder decoder;
 
     @Override
@@ -43,6 +44,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 permissions.forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
                 var authentication = new UsernamePasswordAuthenticationToken(currentUser, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                request.setAttribute(JWT_AUTHENTICATED, Boolean.TRUE);
             } catch (JwtException | IllegalArgumentException ignored) {
                 SecurityContextHolder.clearContext();
             }

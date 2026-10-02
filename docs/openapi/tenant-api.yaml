@@ -1,0 +1,1325 @@
+openapi: "3.0.3"
+info:
+  title: "POS SaaS Tenant Phase 1 API"
+  version: "1.0.0"
+  description: "Restaurant profile and staff administration. Tenant is derived from JWT. Disabled accounts are checked on protected bearer requests. Role/permission JWT claims may remain stale until access TTL expires (default 15 minutes); security changes revoke refresh tokens. maxStaff is a package-level positive integer or null (unlimited), captured at the root of immutable snapshot v2. Legacy v1 reads STAFF_MANAGEMENT.limits.maxStaff with absent key meaning unlimited. STAFF_MANAGEMENT remains required independently. Staff count excludes OWNER. No password reset, invitation, owner transfer or custom role management."
+security:
+  -
+    bearerAuth: []
+paths:
+  "/api/v1/restaurants/me":
+    get:
+      operationId: "getRestaurantProfile"
+      description: "Requires RESTAURANT_PROFILE_VIEW and active tenant. No subscription required."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RestaurantProfile"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "RESTAURANT_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+    patch:
+      operationId: "updateRestaurantProfile"
+      description: "Requires RESTAURANT_PROFILE_UPDATE. No subscription required. Normalized no-op creates no audit."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/RestaurantProfile"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "RESTAURANT_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/UpdateRestaurantProfile"
+            example:
+              name: "Updated Restaurant"
+              phone: ""
+              timezone: "Asia/Ho_Chi_Minh"
+              currencyCode: "VND"
+  "/api/v1/staff":
+    get:
+      operationId: "searchStaff"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_VIEW. Includes protected OWNER. Stable id tiebreaker; wildcard characters treated literally."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/StaffPage"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      parameters:
+        -
+          name: "q"
+          in: "query"
+          schema:
+            type: "string"
+            maxLength: 100
+        -
+          name: "roleCode"
+          in: "query"
+          schema:
+            type: "string"
+            maxLength: 50
+        -
+          name: "active"
+          in: "query"
+          schema:
+            type: "boolean"
+        -
+          name: "page"
+          in: "query"
+          schema:
+            type: "integer"
+            minimum: 0
+            default: 0
+        -
+          name: "size"
+          in: "query"
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 100
+            default: 20
+        -
+          name: "sortBy"
+          in: "query"
+          schema:
+            type: "string"
+            enum:
+              - "createdAt"
+              - "name"
+              - "email"
+              - "lastLoginAt"
+            default: "createdAt"
+        -
+          name: "direction"
+          in: "query"
+          schema:
+            type: "string"
+            enum:
+              - "asc"
+              - "desc"
+            default: "desc"
+    post:
+      operationId: "createStaff"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_CREATE. OWNER can assign MANAGER/WAITER/KITCHEN/CASHIER; MANAGER only operational roles. Global email uniqueness and snapshot maxStaff enforced."
+      responses:
+        "201":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Staff"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/CreateStaff"
+            example:
+              name: "Alice"
+              email: "alice@example.com"
+              roleCode: "WAITER"
+              initialPassword: "ExamplePassword123!"
+  "/api/v1/staff/roles":
+    get:
+      operationId: "listAssignableStaffRoles"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_VIEW. Active system roles filtered by actor."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/StaffRoles"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+  "/api/v1/staff/{staffId}":
+    parameters:
+      -
+        name: "staffId"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+          format: "uuid"
+    get:
+      operationId: "getStaff"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_VIEW. Foreign/missing/deleted target returns USER_NOT_FOUND."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Staff"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+    patch:
+      operationId: "updateStaff"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_UPDATE. OWNER and self protected; MANAGER cannot manage MANAGER."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Staff"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/UpdateStaff"
+            example:
+              name: "Alice Updated"
+              phone: ""
+              roleCode: "KITCHEN"
+  "/api/v1/staff/{staffId}/status":
+    parameters:
+      -
+        name: "staffId"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+          format: "uuid"
+    patch:
+      operationId: "setStaffStatus"
+      description: "Requires tenant OWNER/MANAGER, matching permission and STAFF_MANAGEMENT feature. STAFF_DISABLE controls disable and enable. Reason required for disable. Same state idempotent. Reactivation checks capacity."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Staff"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/UpdateStaffStatus"
+            example:
+              active: false
+              reason: "Employee left"
+  "/api/v1/staff/permissions":
+    get:
+      operationId: "listStaffPermissionCatalog"
+      description: "Requires STAFF_PERMISSION_MANAGE and both STAFF_MANAGEMENT and STAFF_PERMISSION. OWNER manages staff; MANAGER only operational staff. No self/OWNER override access. Active tenant permissions only. Grants additionally require actor to possess the authority."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/PermissionCatalog"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+  "/api/v1/staff/{staffId}/permissions":
+    parameters:
+      -
+        name: "staffId"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+          format: "uuid"
+    get:
+      operationId: "getStaffPermissions"
+      description: "Requires STAFF_PERMISSION_MANAGE and both STAFF_MANAGEMENT and STAFF_PERMISSION. OWNER manages staff; MANAGER only operational staff. No self/OWNER override access. Sorted active role/grant/deny/effective permission codes."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/StaffPermissions"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+    put:
+      operationId: "replaceStaffPermissions"
+      description: "Requires STAFF_PERMISSION_MANAGE and both STAFF_MANAGEMENT and STAFF_PERMISSION. OWNER manages staff; MANAGER only operational staff. No self/OWNER override access. Real changes revoke refresh sessions; identical normalized assignments are no-ops."
+      responses:
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/StaffPermissions"
+        "400":
+          description: "Validation or business rule error"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "VALIDATION_ERROR"
+                message: "Invalid request"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "401":
+          description: "UNAUTHORIZED or ACCOUNT_INACTIVE"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "UNAUTHORIZED"
+                message: "Authentication required"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "403":
+          description: "Permission, tenant scope or entitlement denied"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "FORBIDDEN"
+                message: "Access denied"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "404":
+          description: "Resource not found; includes foreign-tenant staff"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "USER_NOT_FOUND"
+                message: "User not found"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+        "409":
+          description: "Email, capacity or concurrent update conflict"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/Error"
+              example:
+                success: false
+                code: "CONCURRENT_STAFF_UPDATE"
+                message: "Concurrent staff update"
+                fieldErrors: {}
+                timestamp: "2026-09-22T00:00:00Z"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/ReplaceStaffPermissions"
+            example:
+              grants:
+                - "ORDER_CANCEL"
+              denies:
+                - "TABLE_CLOSE"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: "http"
+      scheme: "bearer"
+      bearerFormat: "JWT"
+  schemas:
+    Error:
+      type: "object"
+      additionalProperties: false
+      properties:
+        success:
+          type: "boolean"
+          enum:
+            - false
+        code:
+          type: "string"
+        message:
+          type: "string"
+        fieldErrors:
+          type: "object"
+          additionalProperties:
+            type: "string"
+        timestamp:
+          type: "string"
+          format: "date-time"
+      required:
+        - "success"
+        - "code"
+        - "message"
+        - "fieldErrors"
+        - "timestamp"
+    RestaurantProfile:
+      type: "object"
+      additionalProperties: false
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        code:
+          type: "string"
+          maxLength: 50
+        name:
+          type: "string"
+          maxLength: 150
+        legalName:
+          type: "string"
+          maxLength: 200
+          nullable: true
+        phone:
+          type: "string"
+          maxLength: 30
+          nullable: true
+        address:
+          type: "string"
+          maxLength: 500
+          nullable: true
+        timezone:
+          type: "string"
+          maxLength: 50
+        currencyCode:
+          type: "string"
+          maxLength: 3
+        status:
+          type: "string"
+          enum:
+            - "ACTIVE"
+            - "INACTIVE"
+            - "SUSPENDED"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+      example:
+        id: "22222222-2222-4222-8222-222222222222"
+        code: "DEMO"
+        name: "Demo Restaurant"
+        legalName: null
+        phone: null
+        address: null
+        timezone: "Asia/Ho_Chi_Minh"
+        currencyCode: "VND"
+        status: "ACTIVE"
+        createdAt: "2026-09-22T00:00:00Z"
+        updatedAt: "2026-09-22T00:00:00Z"
+    UpdateRestaurantProfile:
+      type: "object"
+      additionalProperties: false
+      properties:
+        name:
+          type: "string"
+          maxLength: 150
+          minLength: 2
+          nullable: true
+        legalName:
+          type: "string"
+          maxLength: 200
+          nullable: true
+        phone:
+          type: "string"
+          maxLength: 30
+          nullable: true
+        address:
+          type: "string"
+          maxLength: 500
+          nullable: true
+        timezone:
+          type: "string"
+          maxLength: 50
+          nullable: true
+        currencyCode:
+          type: "string"
+          nullable: true
+      description: "At least one non-null field. Null/omitted keeps current value. Blank legalName/phone/address clears to null. Name is validated after trimming. Valid ZoneId and Currency required."
+    StaffRole:
+      type: "object"
+      additionalProperties: false
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        code:
+          type: "string"
+          maxLength: 50
+        name:
+          type: "string"
+          maxLength: 100
+      required:
+        - "id"
+        - "code"
+        - "name"
+      example:
+        id: "33333333-3333-4333-8333-333333333333"
+        code: "WAITER"
+        name: "Waiter"
+    Staff:
+      type: "object"
+      additionalProperties: false
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+          maxLength: 150
+        email:
+          type: "string"
+          maxLength: 254
+          format: "email"
+        phone:
+          type: "string"
+          maxLength: 30
+          nullable: true
+        active:
+          type: "boolean"
+        role:
+          "$ref": "#/components/schemas/StaffRole"
+        lastLoginAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "name"
+        - "email"
+        - "active"
+        - "role"
+        - "createdAt"
+        - "updatedAt"
+      example:
+        id: "22222222-2222-4222-8222-222222222222"
+        name: "Alice"
+        email: "alice@example.com"
+        phone: null
+        active: true
+        role:
+          id: "33333333-3333-4333-8333-333333333333"
+          code: "WAITER"
+          name: "Waiter"
+        lastLoginAt: null
+        createdAt: "2026-09-22T00:00:00Z"
+        updatedAt: "2026-09-22T00:00:00Z"
+    StaffPage:
+      type: "object"
+      additionalProperties: false
+      properties:
+        content:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/Staff"
+        page:
+          type: "integer"
+        size:
+          type: "integer"
+        totalElements:
+          type: "integer"
+          format: "int64"
+        totalPages:
+          type: "integer"
+      example:
+        content:
+          -
+            id: "22222222-2222-4222-8222-222222222222"
+            name: "Alice"
+            email: "alice@example.com"
+            phone: null
+            active: true
+            role:
+              id: "33333333-3333-4333-8333-333333333333"
+              code: "WAITER"
+              name: "Waiter"
+            lastLoginAt: null
+            createdAt: "2026-09-22T00:00:00Z"
+            updatedAt: "2026-09-22T00:00:00Z"
+        page: 0
+        size: 20
+        totalElements: 1
+        totalPages: 1
+    StaffRoles:
+      type: "array"
+      items:
+        "$ref": "#/components/schemas/StaffRole"
+    CreateStaff:
+      type: "object"
+      additionalProperties: false
+      properties:
+        name:
+          type: "string"
+          maxLength: 150
+          minLength: 1
+        email:
+          type: "string"
+          maxLength: 254
+          format: "email"
+        phone:
+          type: "string"
+          maxLength: 30
+          nullable: true
+        roleCode:
+          type: "string"
+          enum:
+            - "MANAGER"
+            - "WAITER"
+            - "KITCHEN"
+            - "CASHIER"
+        initialPassword:
+          type: "string"
+          maxLength: 100
+          minLength: 8
+          writeOnly: true
+          format: "password"
+      required:
+        - "name"
+        - "email"
+        - "roleCode"
+        - "initialPassword"
+    UpdateStaff:
+      type: "object"
+      additionalProperties: false
+      properties:
+        name:
+          type: "string"
+          maxLength: 150
+          minLength: 1
+          nullable: true
+        email:
+          type: "string"
+          maxLength: 254
+          format: "email"
+          minLength: 1
+          nullable: true
+        phone:
+          type: "string"
+          maxLength: 30
+          nullable: true
+        roleCode:
+          type: "string"
+          maxLength: 50
+          minLength: 1
+          nullable: true
+      description: "Null/omitted fields are unchanged. Blank phone clears to null. At least one non-null field. Role change clears overrides and revokes refresh tokens; email change also revokes tokens."
+    UpdateStaffStatus:
+      type: "object"
+      additionalProperties: false
+      properties:
+        active:
+          type: "boolean"
+        reason:
+          type: "string"
+          maxLength: 500
+          nullable: true
+      required:
+        - "active"
+    Permission:
+      type: "object"
+      additionalProperties: false
+      properties:
+        code:
+          type: "string"
+          maxLength: 100
+        module:
+          type: "string"
+          maxLength: 50
+        name:
+          type: "string"
+          maxLength: 150
+        description:
+          type: "string"
+          nullable: true
+      required:
+        - "code"
+        - "module"
+        - "name"
+    PermissionCatalog:
+      type: "array"
+      items:
+        "$ref": "#/components/schemas/Permission"
+      example:
+        -
+          code: "ORDER_CANCEL"
+          module: "ORDER"
+          name: "Cancel order"
+          description: null
+    StaffPermissions:
+      type: "object"
+      additionalProperties: false
+      properties:
+        staffId:
+          type: "string"
+          format: "uuid"
+        roleCode:
+          type: "string"
+          maxLength: 50
+        rolePermissions:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+        grants:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+        denies:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+        effectivePermissions:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+      example:
+        staffId: "22222222-2222-4222-8222-222222222222"
+        roleCode: "WAITER"
+        rolePermissions:
+          - "MENU_VIEW"
+          - "TABLE_CLOSE"
+        grants:
+          - "ORDER_CANCEL"
+        denies:
+          - "TABLE_CLOSE"
+        effectivePermissions:
+          - "MENU_VIEW"
+          - "ORDER_CANCEL"
+    ReplaceStaffPermissions:
+      type: "object"
+      additionalProperties: false
+      properties:
+        grants:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+        denies:
+          type: "array"
+          uniqueItems: true
+          maxItems: 200
+          items:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+      required:
+        - "grants"
+        - "denies"
+      description: "Atomic replacement; empty arrays clear all overrides. Codes are normalized uppercase. Overlap, inactive/unknown/system permissions, and grants outside actor DB effective permissions are rejected."
