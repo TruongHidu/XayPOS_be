@@ -7,6 +7,640 @@ security:
   -
     bearerAuth: []
 paths:
+  "/api/v1/menu/groups":
+    "get":
+      "tags": ["Menu"]
+      "operationId": "listMenuGroup"
+      "description": "Requires MENU_VIEW. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "parameters": [{"name":"q","in":"query","required":false,"schema":{"type":"string","maxLength":100,"description":"Literal case-insensitive search; % and _ are escaped."}},{"name":"active","in":"query","required":false,"schema":{"type":"boolean"}},{"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","required":false,"schema":{"type":"string","default":"createdAt","enum":["createdAt","name","displayOrder","updatedAt"]}},{"name":"direction","in":"query","required":false,"schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuGroupPage"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "post":
+      "tags": ["Menu"]
+      "operationId": "createMenuGroup"
+      "description": "Requires MENU_CREATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuCreateGroup"
+      "responses":
+        "201":
+          "description": "Created"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuGroup"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/groups/{groupId}":
+    "get":
+      "tags": ["Menu"]
+      "operationId": "getMenuGroup"
+      "description": "Requires MENU_VIEW. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuGroup"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "patch":
+      "tags": ["Menu"]
+      "operationId": "updateMenuGroup"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. expectedVersion is required; actual changes with a stale version return 409. No-op does not change version/timestamps or create audit."
+      "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuUpdateGroup"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuGroup"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "delete":
+      "tags": ["Menu"]
+      "operationId": "deleteMenuGroup"
+      "description": "Requires MENU_DELETE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Soft deletion only. Retry of an already deleted same-tenant resource returns 204 without audit even with an old expectedVersion. Deleted item SKU remains reserved. A group with any non-deleted item cannot be deleted."
+      "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      "responses":
+        "204":
+          "description": "Deleted or already deleted; no body"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/groups/{groupId}/status":
+    "patch":
+      "tags": ["Menu"]
+      "operationId": "setStatusMenuGroup"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Repeated status is a no-op even with an old version. Disabling/enabling an item preserves availability; changing group status never changes child items."
+      "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuStatusRequest"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuGroup"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/items":
+    "get":
+      "tags": ["Menu"]
+      "operationId": "listMenuItem"
+      "description": "Requires MENU_VIEW. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "parameters": [{"name":"q","in":"query","required":false,"schema":{"type":"string","maxLength":100,"description":"Literal case-insensitive search; % and _ are escaped."}},{"name":"active","in":"query","required":false,"schema":{"type":"boolean"}},{"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","required":false,"schema":{"type":"string","default":"createdAt","enum":["createdAt","name","salePrice","updatedAt"]}},{"name":"direction","in":"query","required":false,"schema":{"type":"string","enum":["asc","desc"],"default":"desc"}},{"name":"groupId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}},{"name":"availabilityStatus","in":"query","required":false,"schema":{"type":"string","enum":["AVAILABLE","OUT_OF_STOCK"]}},{"name":"sellable","in":"query","required":false,"schema":{"type":"boolean"}}]
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItemPage"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "post":
+      "tags": ["Menu"]
+      "operationId": "createMenuItem"
+      "description": "Requires MENU_CREATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuCreateItem"
+      "responses":
+        "201":
+          "description": "Created"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/items/{itemId}":
+    "get":
+      "tags": ["Menu"]
+      "operationId": "getMenuItem"
+      "description": "Requires MENU_VIEW. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "patch":
+      "tags": ["Menu"]
+      "operationId": "updateMenuItem"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. expectedVersion is required; actual changes with a stale version return 409. No-op does not change version/timestamps or create audit."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuUpdateItem"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+    "delete":
+      "tags": ["Menu"]
+      "operationId": "deleteMenuItem"
+      "description": "Requires MENU_DELETE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Soft deletion only. Retry of an already deleted same-tenant resource returns 204 without audit even with an old expectedVersion. Deleted item SKU remains reserved. A group with any non-deleted item cannot be deleted."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      "responses":
+        "204":
+          "description": "Deleted or already deleted; no body"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/items/{itemId}/status":
+    "patch":
+      "tags": ["Menu"]
+      "operationId": "setStatusMenuItem"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Repeated status is a no-op even with an old version. Disabling/enabling an item preserves availability; changing group status never changes child items."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuStatusRequest"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/items/{itemId}/availability":
+    "patch":
+      "tags": ["Menu"]
+      "operationId": "setAvailabilityMenuItem"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Only active, non-deleted items may change availability. Active item with unchanged availability is a no-op."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuAvailabilityRequest"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/items/{itemId}/group":
+    "put":
+      "tags": ["Menu"]
+      "operationId": "assignGroupMenuItem"
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Destination must be same-tenant, active and non-deleted, or null for ungrouped. Repeated same group is a no-op even with an old version."
+      "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/MenuGroupAssignment"
+      "responses":
+        "200":
+          "description": "Success"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/MenuItem"
+        "400":
+          "description": "VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "401":
+          "description": "Missing/invalid access token"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "403":
+          "description": "Insufficient permission, unavailable tenant/account, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "404":
+          "description": "MENU_GROUP_NOT_FOUND or MENU_ITEM_NOT_FOUND; foreign tenant, wrong item type and deleted resources are hidden"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
+        "409":
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Error"
   "/api/v1/restaurants/me":
     get:
       operationId: "getRestaurantProfile"
@@ -920,6 +1554,282 @@ components:
       scheme: "bearer"
       bearerFormat: "JWT"
   schemas:
+    "MenuCreateGroup":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "maxLength": 100
+          "minLength": 1
+        "displayOrder":
+          "type": "integer"
+          "minimum": 0
+          "default": 0
+        "active":
+          "type": "boolean"
+          "default": true
+      "required": ["name"]
+    "MenuUpdateGroup":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "maxLength": 100
+          "minLength": 1
+          "nullable": true
+        "displayOrder":
+          "type": "integer"
+          "minimum": 0
+          "nullable": true
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+      "required": ["expectedVersion"]
+    "MenuCreateItem":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "groupId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "name":
+          "type": "string"
+          "maxLength": 150
+          "minLength": 1
+        "sku":
+          "type": "string"
+          "maxLength": 80
+          "nullable": true
+        "baseUnit":
+          "type": "string"
+          "maxLength": 30
+          "minLength": 1
+        "description":
+          "type": "string"
+          "maxLength": 10000
+          "nullable": true
+        "imageUrl":
+          "type": "string"
+          "maxLength": 500
+          "description": "Absolute HTTP(S) URL without credentials; empty string clears the value."
+          "nullable": true
+        "salePrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
+        "active":
+          "type": "boolean"
+          "default": true
+      "required": ["name","baseUnit","salePrice"]
+    "MenuUpdateItem":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "maxLength": 150
+          "minLength": 1
+          "nullable": true
+        "sku":
+          "type": "string"
+          "maxLength": 80
+          "nullable": true
+        "baseUnit":
+          "type": "string"
+          "maxLength": 30
+          "minLength": 1
+          "nullable": true
+        "description":
+          "type": "string"
+          "maxLength": 10000
+          "nullable": true
+        "imageUrl":
+          "type": "string"
+          "maxLength": 500
+          "description": "Absolute HTTP(S) URL without credentials; empty string clears the value."
+          "nullable": true
+        "salePrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
+          "nullable": true
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+      "required": ["expectedVersion"]
+      "description": "Omitted/null fields remain unchanged. Empty sku/description/imageUrl clears the value. At least one editable non-null field is required."
+    "MenuStatusRequest":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "active":
+          "type": "boolean"
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+      "required": ["active","expectedVersion"]
+    "MenuAvailabilityRequest":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "availabilityStatus":
+          "type": "string"
+          "enum": ["AVAILABLE","OUT_OF_STOCK"]
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+      "required": ["availabilityStatus","expectedVersion"]
+    "MenuGroupAssignment":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "groupId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+      "required": ["groupId","expectedVersion"]
+      "description": "groupId must be present. Explicit null removes the group."
+    "MenuGroup":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+          "maxLength": 100
+        "displayOrder":
+          "type": "integer"
+          "minimum": 0
+        "active":
+          "type": "boolean"
+        "version":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "createdAt":
+          "type": "string"
+          "format": "date-time"
+        "updatedAt":
+          "type": "string"
+          "format": "date-time"
+      "required": ["id","name","displayOrder","active","version","createdAt","updatedAt"]
+    "MenuItem":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "group":
+          "type": "object"
+          "additionalProperties": false
+          "properties":
+            "id":
+              "type": "string"
+              "format": "uuid"
+            "name":
+              "type": "string"
+              "maxLength": 100
+            "active":
+              "type": "boolean"
+          "required": ["id","name","active"]
+          "nullable": true
+        "name":
+          "type": "string"
+          "maxLength": 150
+          "minLength": 1
+        "sku":
+          "type": "string"
+          "maxLength": 80
+          "nullable": true
+        "baseUnit":
+          "type": "string"
+          "maxLength": 30
+          "minLength": 1
+        "description":
+          "type": "string"
+          "maxLength": 10000
+          "nullable": true
+        "imageUrl":
+          "type": "string"
+          "maxLength": 500
+          "description": "Absolute HTTP(S) URL without credentials; empty string clears the value."
+          "nullable": true
+        "salePrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
+        "active":
+          "type": "boolean"
+        "availabilityStatus":
+          "type": "string"
+          "enum": ["AVAILABLE","OUT_OF_STOCK"]
+        "sellable":
+          "type": "boolean"
+          "description": "Computed from item and group lifecycle. Not real inventory."
+        "version":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "createdAt":
+          "type": "string"
+          "format": "date-time"
+        "updatedAt":
+          "type": "string"
+          "format": "date-time"
+      "required": ["id","group","sku","name","baseUnit","description","imageUrl","salePrice","active","availabilityStatus","sellable","version","createdAt","updatedAt"]
+    "MenuGroupPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "content":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/MenuGroup"
+        "page":
+          "type": "integer"
+        "size":
+          "type": "integer"
+        "totalElements":
+          "type": "integer"
+          "format": "int64"
+        "totalPages":
+          "type": "integer"
+      "required": ["content","page","size","totalElements","totalPages"]
+    "MenuItemPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "content":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/MenuItem"
+        "page":
+          "type": "integer"
+        "size":
+          "type": "integer"
+        "totalElements":
+          "type": "integer"
+          "format": "int64"
+        "totalPages":
+          "type": "integer"
+      "required": ["content","page","size","totalElements","totalPages"]
     Error:
       type: "object"
       additionalProperties: false

@@ -34,8 +34,9 @@ sang cột package và field top-level POST/PUT/GET. `maxStaff:null` hoặc bỏ
 Snapshot mới phiên bản 2 lưu maxStaff cấp package; snapshot cũ vẫn giữ nguyên và đọc tương thích.
 QR ordering không còn trong mapping ba gói chuẩn, feature rows/lịch sử
 vẫn giữ. Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
-Các feature menu/order/payment/kitchen/inventory/report/AI trong catalog chưa đồng nghĩa có API
-nghiệp vụ; hiện phase này triển khai catalog/subscription và profile/staff/permission APIs.
+V14 triển khai API nhóm món và món bán với Strategy tạo item, soft delete, version và audit.
+Xem mục Menu trong docs/tenant-api.md và docs/openapi/tenant-api.yaml.
+Các feature order/payment/kitchen/inventory/report/AI vẫn chỉ là catalog, chưa có API nghiệp vụ.
 
 V13 đưa phân quyền nhân viên, màn hình bếp, báo cáo chi tiết và in/in lại phiếu bếp xuống BASIC;
 PRO có cùng bộ tính năng vận hành và thêm RECIPE_MANAGEMENT. maxStaff mặc định vẫn là BASIC=3,
