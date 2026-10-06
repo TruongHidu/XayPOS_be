@@ -296,3 +296,314 @@ A recipe is a versioned relation of MENU_ITEM to INGREDIENT, not another item ty
 or strategy for a package/role. Add a recipe application boundary when implementing
 that feature; do not put recipe payloads in metadata. This release has no recipe,
 inventory, public QR, variants or upload endpoints.
+## Tables, areas and seating sessions (V15)
+
+The explicitly authorized QR management endpoints below are the exception to the
+ordinary tenant responses' no-token rule; they return the QR payload for printing.
+
+All 21 operations require an active bearer account/restaurant, a tenant from JWT,
+an effective subscription, and `TABLE_MANAGEMENT` in its immutable snapshot.
+Package names do not authorize access. System SUPER_ADMIN without tenant context
+cannot call these APIs. There are no role defaults or feature snapshot changes in V15.
+CASHIER/MANAGER need the relevant effective permission grants.
+
+### Headers and endpoint contracts
+
+```http
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+Content-Type is required for JSON request bodies. Do not send restaurantId or a
+tenant override header. The base path is `/api/v1`.
+
+| Method and path | Permission | Body/query | Success response |
+| --- | --- | --- | --- |
+| GET /table-areas | TABLE_VIEW | Area search below | 200 Page<Area> |
+| POST /table-areas | TABLE_CREATE | CreateArea | 201 Area |
+| GET /table-areas/{areaId} | TABLE_VIEW | — | 200 Area |
+| PATCH /table-areas/{areaId} | TABLE_UPDATE | UpdateArea | 200 Area |
+| PATCH /table-areas/{areaId}/status | TABLE_UPDATE | AreaStatus | 200 Area |
+| DELETE /table-areas/{areaId} | TABLE_UPDATE | expectedVersion query, required | 204 |
+| GET /tables | TABLE_VIEW | Table search below | 200 Page<Table> |
+| POST /tables | TABLE_CREATE | CreateTable | 201 Table |
+| GET /tables/{tableId} | TABLE_VIEW | — | 200 Table |
+| PATCH /tables/{tableId} | TABLE_UPDATE | UpdateTable | 200 Table |
+| PATCH /tables/{tableId}/status | TABLE_UPDATE | TableStatus | 200 Table |
+| PATCH /tables/{tableId}/area | TABLE_UPDATE | AreaAssignment | 200 Table |
+| DELETE /tables/{tableId} | TABLE_UPDATE | expectedVersion query, required | 204 |
+| GET /tables/{tableId}/qr | TABLE_UPDATE | — | 200 QR |
+| POST /tables/{tableId}/qr/rotate | TABLE_UPDATE | Version | 200 QR |
+| POST /tables/{tableId}/sessions | TABLE_OPEN | OpenSession | 201 Session |
+| GET /tables/{tableId}/current-session | TABLE_VIEW | — | 200 Session; 204 when no OPEN |
+| GET /table-sessions | TABLE_VIEW | Session search below | 200 Page<Session> |
+| GET /table-sessions/{sessionId} | TABLE_VIEW | — | 200 Session |
+| PATCH /table-sessions/{sessionId} | TABLE_OPEN | UpdateSession | 200 Session |
+| POST /table-sessions/{sessionId}/cancel | TABLE_CLOSE | CancelSession | 200 Session |
+
+No TABLE_DELETE/TABLE_CANCEL permission is introduced. QR management is deliberately
+restricted to TABLE_UPDATE rather than TABLE_VIEW.
+
+### Request body examples
+
+CreateArea (name required; active defaults true, displayOrder defaults 0):
+
+```json
+{"name":"Tầng 1","description":"Khu trong nhà","displayOrder":0,"active":true}
+```
+
+UpdateArea; AreaStatus:
+
+```json
+{"name":"Tầng trệt","description":"","displayOrder":1,"expectedVersion":0}
+```
+
+```json
+{"active":false,"expectedVersion":1}
+```
+
+CreateTable (code/name required; areaId nullable; capacity 4,
+displayOrder 0 and status AVAILABLE by default):
+
+```json
+{"areaId":null,"code":"B01","name":"Bàn 01","capacity":4,"displayOrder":0,"status":"AVAILABLE"}
+```
+
+UpdateTable; TableStatus:
+
+```json
+{"name":"Bàn cửa sổ","capacity":6,"displayOrder":2,"expectedVersion":0}
+```
+
+```json
+{"status":"INACTIVE","expectedVersion":1}
+```
+
+AreaAssignment (both properties required); Version for QR rotation:
+
+```json
+{"areaId":null,"expectedVersion":2}
+```
+
+```json
+{"expectedVersion":3}
+```
+
+Replace null areaId with a same-tenant active area's UUID to assign it.
+Omitting areaId is INVALID_REQUEST_BODY; explicit null unassigns.
+
+OpenSession (expectedVersion is the TABLE version; guestCount defaults 1):
+
+```json
+{"guestCount":3,"note":"Khách ngồi chờ","expectedVersion":0}
+```
+
+UpdateSession and CancelSession (expectedVersion is the SESSION version):
+
+```json
+{"guestCount":2,"note":"","expectedVersion":0}
+```
+
+```json
+{"reason":"Mở nhầm bàn","expectedVersion":1}
+```
+
+These are independent examples: use the version returned by the most recent
+response for the resource being changed, rather than copying the example number.
+
+Validation:
+- Names trim to nonblank text, max 100 characters; table code trims and uppercases
+  with Locale.ROOT, max 50. Area names are unique case-insensitively within tenant.
+- capacity and guestCount are integers in 1..32767. Capacity is advisory:
+  guestCount may exceed capacity. displayOrder is nonnegative.
+- Area description and session note: max 2000 characters; cancellation reason:
+  required nonblank max 1000.
+- PATCH missing/null normally keeps a field; empty description/note clears it.
+  A PATCH without any business field is EMPTY_UPDATE_REQUEST.
+- Body properties such as restaurantId, qrToken, sessionCode, actor IDs,
+  timestamps, occupancy, currentSession and arbitrary session status are rejected.
+- expectedVersion is required and nonnegative on mutations other than creation
+  of area/table. Version is checked before configuration no-ops.
+- A valid no-op keeps version/updatedAt and emits no audit.
+- Repeated delete of a soft-deleted resource returns 204. Repeated cancellation
+  of an already CANCELLED session returns its original terminal data even when
+  using the initial expectedVersion; no duplicate audit and no reason/time overwrite.
+
+### Response examples
+
+Area:
+
+```json
+{
+  "id":"11111111-1111-4111-8111-111111111111",
+  "name":"Tầng 1",
+  "description":"Khu trong nhà",
+  "displayOrder":0,
+  "active":true,
+  "version":0,
+  "createdAt":"2026-10-06T03:00:00Z",
+  "updatedAt":"2026-10-06T03:00:00Z"
+}
+```
+
+Table with an OPEN session:
+
+```json
+{
+  "id":"22222222-2222-4222-8222-222222222222",
+  "code":"B01",
+  "name":"Bàn 01",
+  "capacity":4,
+  "displayOrder":0,
+  "status":"AVAILABLE",
+  "area":{"id":"11111111-1111-4111-8111-111111111111","name":"Tầng 1","active":true},
+  "occupied":true,
+  "currentSession":{
+    "id":"33333333-3333-4333-8333-333333333333",
+    "sessionCode":"TS-1234567890abcdef1234567890abcdef",
+    "guestCount":3,
+    "openedAt":"2026-10-06T03:01:00Z",
+    "version":0
+  },
+  "canOpen":false,
+  "version":0,
+  "createdAt":"2026-10-06T03:00:00Z",
+  "updatedAt":"2026-10-06T03:00:00Z"
+}
+```
+
+AVAILABLE/INACTIVE is table configuration. `occupied` comes exclusively from an
+OPEN session. Opening/cancelling a session does not increment the table's
+configuration version. `canOpen` is only a configuration/occupancy hint; FE
+must also check permissions, and BE always revalidates under the mutation lock.
+
+Session:
+
+```json
+{
+  "id":"33333333-3333-4333-8333-333333333333",
+  "sessionCode":"TS-1234567890abcdef1234567890abcdef",
+  "tableId":"22222222-2222-4222-8222-222222222222",
+  "tableCode":"B01",
+  "tableName":"Bàn 01",
+  "status":"CANCELLED",
+  "guestCount":3,
+  "note":"Khách ngồi chờ",
+  "openedBy":"44444444-4444-4444-8444-444444444444",
+  "openedAt":"2026-10-06T03:01:00Z",
+  "closedBy":"44444444-4444-4444-8444-444444444444",
+  "closedAt":"2026-10-06T03:02:00Z",
+  "cancelReason":"Mở nhầm bàn",
+  "version":1,
+  "createdAt":"2026-10-06T03:01:00Z",
+  "updatedAt":"2026-10-06T03:02:00Z"
+}
+```
+
+closedAt/closedBy represent termination for CANCELLED and the reserved CLOSED
+status. In OPEN they, together with cancelReason, are null. User IDs are returned,
+not full User entities. Table code/name are current table metadata, not historical
+snapshots. Session history remains accessible after table/area soft deletion.
+
+QR (management endpoints only; token below is illustrative):
+
+```json
+{
+  "tableId":"22222222-2222-4222-8222-222222222222",
+  "qrToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "qrPath":"/menu/qr/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "version":1
+}
+```
+
+Tokens use 32 SecureRandom bytes encoded base64url without padding. Rotation
+changes the token and table version even during an OPEN session; the previous
+token no longer matches the table in DB. Ordinary responses/audit never include
+tokens, token hashes or token-bearing paths. GET QR is read-only and emits no
+mutation audit. The path prepares a future web menu contract: this phase does
+not implement a public resolver, menu endpoint or QR image generation.
+
+The datasource sets pgJDBC logServerErrorDetail=false so constraint exceptions
+do not echo QR values into application logs. Keep this setting in deployment
+overrides; do not enable JDBC bind-value or HTTP response-body logging for QR data.
+
+All list responses use:
+```json
+{"content":[],"page":0,"size":20,"totalElements":0,"totalPages":0}
+```
+
+### Search, pagination and business rules
+
+Common page=0, size=20 (max 100), direction=desc. Every sort adds id as a
+tie-breaker. Invalid sortBy/direction is VALIDATION_ERROR.
+
+- Areas: q (name, max 100), active; sortBy displayOrder (default),
+  name, createdAt, updatedAt.
+- Tables: q (code/name, max 100), areaId, status, occupied; sortBy
+  displayOrder (default), name, code, capacity, createdAt, updatedAt.
+- Sessions: tableId, status, openedFrom, openedTo (ISO-8601 instants,
+  inclusive bounds, from <= to); sortBy openedAt (default),
+  sessionCode, createdAt, updatedAt.
+
+q matches literal case-insensitive text: %, _ and backslash are escaped.
+occupied filtering runs in SQL before pagination. Areas/current sessions/table
+metadata are batch-loaded; list endpoints do not query once per row.
+
+Area cannot be disabled while it contains OPEN sessions. Disabling it preserves
+individual table configuration, but prevents new openings. Area cannot be deleted
+while it contains non-deleted tables, including inactive ones. Move/delete these
+tables first.
+
+Occupied tables cannot change code/capacity/area, be disabled or deleted.
+Name/displayOrder may change. Bàn without area is valid. Assignments require an
+active, non-deleted same-tenant area. Code remains reserved after soft deletion.
+
+All mutations acquire the restaurant pessimistic write lock before reading state,
+then update/audit in the same transaction. @Version and a partial unique index
+(one OPEN session per table) provide additional protection. Auditing failure rolls
+back the mutation. Rejected calls and no-ops emit no successful audit.
+
+### Errors
+
+Envelope is unchanged:
+
+```json
+{
+  "success":false,
+  "code":"TABLE_ALREADY_OCCUPIED",
+  "message":"Table already has an open session",
+  "fieldErrors":{},
+  "timestamp":"2026-10-06T03:01:01Z"
+}
+```
+
+| HTTP | Codes |
+| --- | --- |
+| 400 | VALIDATION_ERROR, INVALID_REQUEST_BODY, EMPTY_UPDATE_REQUEST |
+| 401 | UNAUTHORIZED, ACCOUNT_INACTIVE |
+| 403 | FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE, FEATURE_NOT_ENTITLED |
+| 404 | TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND, TABLE_SESSION_NOT_FOUND |
+| 409 | TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE, QR_TOKEN_CONFLICT |
+
+Foreign-tenant resource IDs are hidden as 404, including filtered resource lookups.
+Stale version/lock conflicts are 409. DB constraint failures are translated without
+raw SQL/details. Authentication/feature checks may precede resource lookup.
+
+### Phase boundary and verification
+
+Only OPEN -> CANCELLED is exposed. Cancel undoes a seating session; it does not
+cancel orders, refund money or confirm settlement. CLOSED is reserved. There is
+no /close API, order/payment implementation, public menu, merge/split/move-session,
+reservation or realtime integration.
+
+Before introducing the first order write:
+1. Implement a real session-usage policy for cancellation and closure.
+2. Require order creation and session termination to share the transaction/lock
+   protocol; a separate check outside the lock is insufficient.
+3. Require all orders/financial obligations to satisfy closure rules.
+4. Fail closed if the integration is missing; never use an always-empty adapter.
+
+V15 adds only the three table-domain tables and constraints; V1-V14 and role grants
+are unchanged. TableIntegrationTest creates/drops its own UUID-named PostgreSQL
+schema, validates tenant/security/concurrency/QR/audit and batch query behavior.
+FlywayCleanMigrationIntegrationTest validates all migrations on a fresh schema.

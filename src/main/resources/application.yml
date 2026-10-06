@@ -3,6 +3,11 @@ spring:
     name: pos-saas-be
   profiles:
     default: dev
+  datasource:
+    hikari:
+      data-source-properties:
+        # PostgreSQL constraint details may contain the table QR token.
+        logServerErrorDetail: false
   jpa:
     hibernate:
       ddl-auto: validate

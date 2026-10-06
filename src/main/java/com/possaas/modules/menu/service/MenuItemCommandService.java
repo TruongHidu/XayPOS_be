@@ -6,6 +6,8 @@ import com.possaas.modules.menu.entity.*;
 import com.possaas.modules.menu.repository.ItemRepository;
 import com.possaas.modules.menu.service.strategy.ItemCreationContext;
 import com.possaas.common.security.CurrentUser;
+
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class MenuItemCommandService {
         var context = new ItemCreationContext(actor.restaurantId(), r.groupId(), validation.sku(r.sku()),
                 validation.required(r.name(), 150), validation.required(r.baseUnit(), 30),
                 validation.optional(r.description()), validation.image(r.imageUrl()), validation.price(r.salePrice()),
+                validation.price(r.costPrice() == null ? BigDecimal.ZERO : r.costPrice()),
                 r.active() == null || r.active(), clock.instant());
         var item = factory.create(ItemType.MENU_ITEM, context);
         items.saveAndFlush(item);
@@ -43,7 +46,7 @@ public class MenuItemCommandService {
         var actor = access.require(true);
         var item = access.item(actor.restaurantId(), id, false);
         if (r.name() == null && r.sku() == null && r.baseUnit() == null && r.description() == null
-                && r.imageUrl() == null && r.salePrice() == null)
+                && r.imageUrl() == null && r.salePrice() == null && r.costPrice() == null)
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EMPTY_UPDATE_REQUEST", "No fields provided");
         lifecycle.requireVersion(item, r.expectedVersion());
         var before = audit.snapshot(item);
@@ -59,6 +62,9 @@ public class MenuItemCommandService {
             item.setImageUrl(validation.image(r.imageUrl()));
         if (r.salePrice() != null)
             item.setSalePrice(validation.price(r.salePrice()));
+        if (r.costPrice() != null) {
+            item.setCostPrice(validation.price(r.costPrice()));
+        }
         if (!before.equals(audit.snapshot(item)))
             persist(actor, item, "MENU_ITEM_UPDATED", before, ip);
         return mapper.item(item);

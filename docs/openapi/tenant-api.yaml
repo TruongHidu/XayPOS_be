@@ -7,6 +7,155 @@ security:
   -
     bearerAuth: []
 paths:
+  "/api/v1/table-areas":
+    get:
+      tags: ["Tables"]
+      operationId: "listTableAreas"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"q","in":"query","required":false,"schema":{"type":"string","maxLength":100}},{"name":"active","in":"query","required":false,"schema":{"type":"boolean"}},{"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","required":false,"schema":{"type":"string","enum":["createdAt","updatedAt","name","displayOrder"],"default":"displayOrder"}},{"name":"direction","in":"query","required":false,"schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableAreaPage"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    post:
+      tags: ["Tables"]
+      operationId: "createTableArea"
+      description: "Requires TABLE_CREATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableAreaCreate"},"example":{"name":"Tầng 1","description":"Khu trong nhà","displayOrder":0,"active":true}}}}
+      responses: {"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableArea"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/table-areas/{areaId}":
+    get:
+      tags: ["Tables"]
+      operationId: "getTableArea"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"areaId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableArea"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    patch:
+      tags: ["Tables"]
+      operationId: "updateTableArea"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"areaId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableAreaUpdate"},"example":{"description":"","expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableArea"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    delete:
+      tags: ["Tables"]
+      operationId: "deleteTableArea"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Soft delete. Rejects non-deleted tables even when inactive; repeated delete returns 204 without duplicate audit."
+      parameters: [{"name":"areaId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses: {"204":{"description":"No content"},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/table-areas/{areaId}/status":
+    patch:
+      tags: ["Tables"]
+      operationId: "setTableAreaStatus"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Rejects disable when an area contains OPEN sessions; preserves individual table status."
+      parameters: [{"name":"areaId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableAreaStatus"},"example":{"active":false,"expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableArea"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables":
+    get:
+      tags: ["Tables"]
+      operationId: "listRestaurantTables"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Search treats %, _ and backslash literally. occupied is filtered before pagination. No QR token is returned."
+      parameters: [{"name":"q","in":"query","required":false,"schema":{"type":"string","maxLength":100}},{"name":"areaId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}},{"name":"status","in":"query","required":false,"schema":{"type":"string","enum":["AVAILABLE","INACTIVE"]}},{"name":"occupied","in":"query","required":false,"schema":{"type":"boolean"}},{"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","required":false,"schema":{"type":"string","enum":["createdAt","updatedAt","name","code","displayOrder","capacity"],"default":"displayOrder"}},{"name":"direction","in":"query","required":false,"schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTablePage"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    post:
+      tags: ["Tables"]
+      operationId: "createRestaurantTable"
+      description: "Requires TABLE_CREATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableCreate"},"example":{"areaId":null,"code":"B01","name":"Bàn 01","capacity":4,"displayOrder":0,"status":"AVAILABLE"}}}}
+      responses: {"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTable"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}":
+    get:
+      tags: ["Tables"]
+      operationId: "getRestaurantTable"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTable"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    patch:
+      tags: ["Tables"]
+      operationId: "updateRestaurantTable"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Occupied tables may change name/displayOrder, but not code/capacity."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableUpdate"},"example":{"name":"Bàn cửa sổ","expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTable"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    delete:
+      tags: ["Tables"]
+      operationId: "deleteRestaurantTable"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Soft delete of unoccupied table. Code, QR and session history are retained. Repeat returns 204."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses: {"204":{"description":"No content"},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/status":
+    patch:
+      tags: ["Tables"]
+      operationId: "setRestaurantTableStatus"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Cannot disable an occupied table. AVAILABLE is configuration, not occupancy."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableStatusUpdate"},"example":{"status":"INACTIVE","expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTable"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/area":
+    patch:
+      tags: ["Tables"]
+      operationId: "assignTableArea"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Explicit null unassigns; omitted areaId fails. Cannot move an occupied table."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableAreaAssignment"},"example":{"areaId":null,"expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RestaurantTable"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/qr":
+    get:
+      tags: ["Tables"]
+      operationId: "getTableQr"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Restricted management response. Does not mutate/audit. qrPath is a future web menu contract, not an implemented public API."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableQr"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/qr/rotate":
+    post:
+      tags: ["Tables"]
+      operationId: "rotateTableQr"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Invalidates old token, increments table version. Allowed during OPEN session. Token/path omitted from audit."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableVersionRequest"},"example":{"expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableQr"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/sessions":
+    post:
+      tags: ["Tables"]
+      operationId: "openTableSession"
+      description: "Requires TABLE_OPEN and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableOpenSession"},"example":{"guestCount":3,"note":"Khách ngồi chờ","expectedVersion":0}}}}
+      responses: {"201":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/current-session":
+    get:
+      tags: ["Tables"]
+      operationId: "currentTableSession"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"204":{"description":"Table exists but has no OPEN session"},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/table-sessions":
+    get:
+      tags: ["Tables"]
+      operationId: "listTableSessions"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Time bounds inclusive. History remains visible after table/area soft deletion."
+      parameters: [{"name":"tableId","in":"query","required":false,"schema":{"type":"string","format":"uuid"}},{"name":"status","in":"query","required":false,"schema":{"type":"string","enum":["OPEN","CLOSED","CANCELLED"]}},{"name":"openedFrom","in":"query","required":false,"schema":{"type":"string","format":"date-time"}},{"name":"openedTo","in":"query","required":false,"schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","required":false,"schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","required":false,"schema":{"type":"string","enum":["openedAt","createdAt","updatedAt","sessionCode"],"default":"openedAt"}},{"name":"direction","in":"query","required":false,"schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSessionPage"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/table-sessions/{sessionId}":
+    get:
+      tags: ["Tables"]
+      operationId: "getTableSession"
+      description: "Requires TABLE_VIEW and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"sessionId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    patch:
+      tags: ["Tables"]
+      operationId: "updateTableSession"
+      description: "Requires TABLE_OPEN and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active."
+      parameters: [{"name":"sessionId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableUpdateSession"},"example":{"guestCount":2,"note":"","expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/table-sessions/{sessionId}/cancel":
+    post:
+      tags: ["Tables"]
+      operationId: "cancelTableSession"
+      description: "Requires TABLE_CLOSE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. OPEN -> CANCELLED seating only. Idempotent by original session ID; does not settle orders/payments. No close endpoint exists. Before first order write, add a real usage policy with the shared tenant lock; missing integration must fail closed."
+      parameters: [{"name":"sessionId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableCancelSession"},"example":{"reason":"Mở nhầm bàn","expectedVersion":0}}}}
+      responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
   "/api/v1/menu/groups":
     "get":
       "tags": ["Menu"]
@@ -1554,6 +1703,101 @@ components:
       scheme: "bearer"
       bearerFormat: "JWT"
   schemas:
+    TableArea:
+      type: "object"
+      additionalProperties: false
+      properties: {"id":{"type":"string","format":"uuid"},"name":{"type":"string","maxLength":100},"description":{"type":"string","maxLength":2000,"nullable":true},"displayOrder":{"type":"integer","minimum":0},"active":{"type":"boolean"},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}
+      required: ["id","name","description","displayOrder","active","version","createdAt","updatedAt"]
+    TableAreaCreate:
+      type: "object"
+      additionalProperties: false
+      properties: {"name":{"type":"string","maxLength":100,"minLength":1},"description":{"type":"string","maxLength":2000,"nullable":true},"displayOrder":{"type":"integer","minimum":0,"default":0},"active":{"type":"boolean","default":true}}
+      required: ["name"]
+    TableAreaUpdate:
+      type: "object"
+      additionalProperties: false
+      properties: {"name":{"type":"string","maxLength":100},"description":{"type":"string","maxLength":2000,"nullable":true},"displayOrder":{"type":"integer","minimum":0},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["expectedVersion"]
+      description: "Missing/null keeps fields. Empty description clears it. At least one business field required."
+    TableAreaStatus:
+      type: "object"
+      additionalProperties: false
+      properties: {"active":{"type":"boolean"},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["active","expectedVersion"]
+    TableCreate:
+      type: "object"
+      additionalProperties: false
+      properties: {"areaId":{"type":"string","format":"uuid","nullable":true},"code":{"type":"string","maxLength":50,"minLength":1},"name":{"type":"string","maxLength":100,"minLength":1},"capacity":{"type":"integer","minimum":1,"maximum":32767,"default":4},"displayOrder":{"type":"integer","minimum":0,"default":0},"status":{"type":"string","enum":["AVAILABLE","INACTIVE"],"default":"AVAILABLE"}}
+      required: ["code","name"]
+    TableUpdate:
+      type: "object"
+      additionalProperties: false
+      properties: {"code":{"type":"string","maxLength":50},"name":{"type":"string","maxLength":100},"capacity":{"type":"integer","minimum":1,"maximum":32767},"displayOrder":{"type":"integer","minimum":0},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["expectedVersion"]
+    TableStatusUpdate:
+      type: "object"
+      additionalProperties: false
+      properties: {"status":{"type":"string","enum":["AVAILABLE","INACTIVE"]},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["status","expectedVersion"]
+    TableAreaAssignment:
+      type: "object"
+      additionalProperties: false
+      properties: {"areaId":{"type":"string","format":"uuid","nullable":true},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["areaId","expectedVersion"]
+      description: "areaId must be present; explicit null unassigns. Missing is INVALID_REQUEST_BODY."
+    TableVersionRequest:
+      type: "object"
+      additionalProperties: false
+      properties: {"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["expectedVersion"]
+    TableOpenSession:
+      type: "object"
+      additionalProperties: false
+      properties: {"guestCount":{"type":"integer","minimum":1,"maximum":32767,"default":1},"note":{"type":"string","maxLength":2000,"nullable":true},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["expectedVersion"]
+      description: "expectedVersion is the table version. Opening does not change table version. guestCount may exceed reference capacity."
+    TableUpdateSession:
+      type: "object"
+      additionalProperties: false
+      properties: {"guestCount":{"type":"integer","minimum":1,"maximum":32767},"note":{"type":"string","maxLength":2000,"nullable":true},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["expectedVersion"]
+      description: "OPEN only. Missing/null keeps fields; empty note clears. At least one business field required."
+    TableCancelSession:
+      type: "object"
+      additionalProperties: false
+      properties: {"reason":{"type":"string","maxLength":1000,"minLength":1},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
+      required: ["reason","expectedVersion"]
+      description: "Seating cancellation only. expectedVersion is session version. Retrying CANCELLED returns its original terminal data even with the initial version. CLOSED is reserved and cannot be cancelled."
+    TableQr:
+      type: "object"
+      additionalProperties: false
+      properties: {"tableId":{"type":"string","format":"uuid"},"qrToken":{"type":"string","pattern":"^[A-Za-z0-9_-]{43}$"},"qrPath":{"type":"string","description":"Relative future public-menu route /menu/qr/{qrToken}; no public route is implemented in this phase."},"version":{"type":"integer","format":"int64","minimum":0}}
+      required: ["tableId","qrToken","qrPath","version"]
+    TableSession:
+      type: "object"
+      additionalProperties: false
+      properties: {"id":{"type":"string","format":"uuid"},"sessionCode":{"type":"string","maxLength":50},"tableId":{"type":"string","format":"uuid"},"tableCode":{"type":"string","maxLength":50},"tableName":{"type":"string","maxLength":100},"status":{"type":"string","enum":["OPEN","CLOSED","CANCELLED"]},"guestCount":{"type":"integer","minimum":1,"maximum":32767},"note":{"type":"string","maxLength":2000,"nullable":true},"openedBy":{"type":"string","format":"uuid"},"openedAt":{"type":"string","format":"date-time"},"closedBy":{"type":"string","format":"uuid","nullable":true},"closedAt":{"type":"string","format":"date-time","nullable":true},"cancelReason":{"type":"string","maxLength":1000,"nullable":true},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}
+      required: ["id","sessionCode","tableId","tableCode","tableName","status","guestCount","note","openedBy","openedAt","closedBy","closedAt","cancelReason","version","createdAt","updatedAt"]
+    RestaurantTable:
+      type: "object"
+      additionalProperties: false
+      properties: {"id":{"type":"string","format":"uuid"},"code":{"type":"string","maxLength":50},"name":{"type":"string","maxLength":100},"capacity":{"type":"integer","minimum":1,"maximum":32767},"displayOrder":{"type":"integer","minimum":0},"status":{"type":"string","enum":["AVAILABLE","INACTIVE"]},"area":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"name":{"type":"string","maxLength":100},"active":{"type":"boolean"}},"required":["id","name","active"],"nullable":true},"occupied":{"type":"boolean"},"currentSession":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","format":"uuid"},"sessionCode":{"type":"string","maxLength":50},"guestCount":{"type":"integer"},"openedAt":{"type":"string","format":"date-time"},"version":{"type":"integer","format":"int64","minimum":0}},"required":["id","sessionCode","guestCount","openedAt","version"],"nullable":true},"canOpen":{"type":"boolean","description":"Configuration/occupancy hint only, not an authorization grant."},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}
+      required: ["id","code","name","capacity","displayOrder","status","area","occupied","currentSession","canOpen","version","createdAt","updatedAt"]
+    TableAreaPage:
+      type: "object"
+      additionalProperties: false
+      properties: {"content":{"type":"array","items":{"$ref":"#/components/schemas/TableArea"}},"page":{"type":"integer"},"size":{"type":"integer"},"totalElements":{"type":"integer","format":"int64"},"totalPages":{"type":"integer"}}
+      required: ["content","page","size","totalElements","totalPages"]
+    RestaurantTablePage:
+      type: "object"
+      additionalProperties: false
+      properties: {"content":{"type":"array","items":{"$ref":"#/components/schemas/RestaurantTable"}},"page":{"type":"integer"},"size":{"type":"integer"},"totalElements":{"type":"integer","format":"int64"},"totalPages":{"type":"integer"}}
+      required: ["content","page","size","totalElements","totalPages"]
+    TableSessionPage:
+      type: "object"
+      additionalProperties: false
+      properties: {"content":{"type":"array","items":{"$ref":"#/components/schemas/TableSession"}},"page":{"type":"integer"},"size":{"type":"integer"},"totalElements":{"type":"integer","format":"int64"},"totalPages":{"type":"integer"}}
+      required: ["content","page","size","totalElements","totalPages"]
     "MenuCreateGroup":
       "type": "object"
       "additionalProperties": false

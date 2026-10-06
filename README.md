@@ -36,6 +36,12 @@ QR ordering không còn trong mapping ba gói chuẩn, feature rows/lịch sử
 vẫn giữ. Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
 V14 triển khai API nhóm món và món bán với Strategy tạo item, soft delete, version và audit.
 Xem mục Menu trong docs/tenant-api.md và docs/openapi/tenant-api.yaml.
+V15 triển khai 21 API khu vực/bàn, QR quản trị và phiên xếp khách OPEN -> CANCELLED.
+Yêu cầu TABLE_MANAGEMENT và TABLE_* tương ứng; occupancy suy ra từ phiên OPEN,
+được bảo vệ bằng tenant lock, @Version và partial unique index. QR token không xuất
+hiện trong response bàn thông thường hoặc audit. Xem mục Tables trong docs/tenant-api.md.
+Chưa có public menu QR hoặc /close. Trước API tạo Order đầu tiên phải tích hợp policy
+kiểm tra sử dụng phiên thực tế và cùng transaction/lock cho tạo đơn và kết thúc phiên.
 Các feature order/payment/kitchen/inventory/report/AI vẫn chỉ là catalog, chưa có API nghiệp vụ.
 
 V13 đưa phân quyền nhân viên, màn hình bếp, báo cáo chi tiết và in/in lại phiếu bếp xuống BASIC;
