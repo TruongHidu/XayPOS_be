@@ -1,5 +1,7 @@
 # POS SaaS Backend
 
+Menu QR khách hàng (public, chỉ đọc): [API và Postman](docs/public-qr-menu-api.md) · [OpenAPI](docs/openapi/public-qr-menu-api.yaml).
+
 Backend POS SaaS nhà hàng, sử dụng Java 21, Spring Boot 4, PostgreSQL, Flyway, JPA và JWT.
 
 ## Chạy local không cần Docker

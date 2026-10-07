@@ -1,5 +1,7 @@
 # Tenant profile and staff API
 
+Customer-facing anonymous QR menu endpoints are documented separately in [Public QR menu API](public-qr-menu-api.md). Their anonymous access does not apply to any authenticated tenant endpoint below.
+
 All endpoints require `Authorization: Bearer <accessToken>`. The tenant comes exclusively from the authenticated principal. Request bodies must not contain `restaurantId`. Unknown properties are rejected. System accounts without a tenant cannot use these APIs. Responses never contain passwords, token material, `deletedAt`, raw restaurant settings, or `publicOrderToken`.
 
 ## Authorization

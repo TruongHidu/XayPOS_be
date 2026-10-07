@@ -18,6 +18,7 @@ public class UserAccountStatusFilter extends OncePerRequestFilter {
     private final SecurityErrorResponseWriter errors;
 
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
+        if (PublicQrMenuRequests.matches(request)) return true;
         String path = request.getServletPath();
         if ("/error".equals(path)) return true;
         if ("POST".equals(request.getMethod())) return path.equals("/api/v1/auth/login")

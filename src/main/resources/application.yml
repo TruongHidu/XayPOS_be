@@ -27,6 +27,15 @@ spring:
 server:
   port: 8080
 
+# Request URLs and JDBC parameter/result traces can expose table QR bearer tokens.
+# Keep these boundaries in environment-specific logging overrides as well.
+logging:
+  level:
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.hibernate.orm.jdbc.bind: OFF
+    org.hibernate.orm.jdbc.extract: OFF
+
 app:
   jobs:
     subscription-expiration:

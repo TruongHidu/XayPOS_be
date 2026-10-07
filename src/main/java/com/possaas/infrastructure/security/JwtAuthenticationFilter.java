@@ -26,6 +26,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtDecoder decoder;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return PublicQrMenuRequests.matches(request);
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, java.io.IOException {
         String header = request.getHeader("Authorization");

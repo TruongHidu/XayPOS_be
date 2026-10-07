@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS Public QR Menu
+  version: 1.0.0
+  description: Read-only customer menu. Table token selects the tenant; no login or OPEN session is required. Effective subscription snapshot must grant QR_MENU_VIEW. No ordering or payment.
+security: []
+paths:
+  /api/v1/public/qr-menu/{qrToken}:
+    get:
+      operationId: getPublicQrMenuContext
+      description: Resolve an available table and restaurant and list visible groups. Only this GET and its items GET are anonymous. Bearer headers are ignored.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      responses:
+        '200':
+          description: Public restaurant, table and groups sorted by displayOrder, name, id ascending.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicQrMenu'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Unavailable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/public/qr-menu/{qrToken}/items:
+    get:
+      operationId: listPublicQrMenuItems
+      description: Visible MENU_ITEMs only, including OUT_OF_STOCK. Hidden items/groups filtered before pagination. Stable id ASC tie-breaker; group data loaded in batch.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+        - name: q
+          in: query
+          description: Case-insensitive name-only search. Trimmed. Percent, underscore and backslash are literal characters.
+          schema: {type: string, maxLength: 100}
+        - name: groupId
+          in: query
+          description: Visible group in this restaurant. Invalid UUID gives 400; unknown, foreign or hidden group gives 404.
+          schema: {type: string, format: uuid}
+        - name: page
+          in: query
+          schema: {type: integer, format: int32, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}
+        - name: sortBy
+          in: query
+          schema: {type: string, enum: [name, salePrice], default: name}
+        - name: direction
+          in: query
+          description: asc or desc, case-insensitive.
+          schema: {type: string, default: asc, pattern: '^[aA][sS][cC]$|^[dD][eE][sS][cC]$'}
+      responses:
+        '200':
+          description: Public item page. Empty results have content=[], totalElements=0 and totalPages=0.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicMenuPage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Unavailable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    QrToken:
+      name: qrToken
+      in: path
+      required: true
+      description: Table QR token, not a JWT, session token or restaurant public_order_token. Malformed tokens return generic 404.
+      schema: {type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$'}
+  headers:
+    NoStore:
+      description: Do not cache responses in the browser, application, service worker or CDN.
+      schema: {type: string, example: no-store}
+  responses:
+    ValidationError:
+      description: VALIDATION_ERROR. No rejected values are echoed.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PublicError'}
+    Unavailable:
+      description: QR_MENU_UNAVAILABLE. No effective subscription or missing QR_MENU_VIEW in its snapshot.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PublicError'}
+    NotFound:
+      description: QR_MENU_NOT_FOUND for invalid, unknown, rotated or unavailable table links; PUBLIC_MENU_GROUP_NOT_FOUND for unknown, foreign or hidden group filters.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PublicError'}
+    InternalError:
+      description: INTERNAL_ERROR. Unexpected failures are not disguised as subscription denials and contain no exception details.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PublicError'}
+  schemas:
+    PublicQrMenu:
+      type: object
+      additionalProperties: false
+      required: [restaurant, table, groups]
+      properties:
+        restaurant:
+          type: object
+          additionalProperties: false
+          required: [name, currencyCode]
+          properties:
+            name: {type: string}
+            currencyCode: {type: string, minLength: 3, maxLength: 3, example: VND}
+        table:
+          type: object
+          additionalProperties: false
+          required: [code, name]
+          properties:
+            code: {type: string, example: B01}
+            name: {type: string}
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, displayOrder]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+              displayOrder: {type: integer, minimum: 0}
+    PublicMenuItem:
+      type: object
+      additionalProperties: false
+      required: [id, group, name, description, imageUrl, baseUnit, salePrice, availabilityStatus]
+      properties:
+        id: {type: string, format: uuid}
+        group:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+        name: {type: string}
+        description: {type: string, nullable: true}
+        imageUrl: {type: string, nullable: true}
+        baseUnit: {type: string}
+        salePrice: {type: number, minimum: 0, example: 50000.00}
+        availabilityStatus: {type: string, enum: [AVAILABLE, OUT_OF_STOCK]}
+    PublicMenuPage:
+      type: object
+      additionalProperties: false
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: {$ref: '#/components/schemas/PublicMenuItem'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
+    PublicError:
+      type: object
+      additionalProperties: false
+      required: [success, code, message, details, timestamp]
+      properties:
+        success: {type: boolean, enum: [false]}
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, QR_MENU_UNAVAILABLE, QR_MENU_NOT_FOUND, PUBLIC_MENU_GROUP_NOT_FOUND, INTERNAL_ERROR]
+        message: {type: string}
+        details: {type: object, additionalProperties: false}
+        timestamp: {type: string, format: date-time}
