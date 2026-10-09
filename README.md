@@ -1,5 +1,15 @@
 # POS SaaS Backend
 
+V19: tối đa một serving order/session (OPEN/CONFIRMED/PREPARING/READY/SERVED);
+create/append/update-item có ba CoR riêng, giữ Strategy DINE_IN/TAKEAWAY và hash legacy.
+GET /api/v1/table-sessions/{sessionId}/active-order hỗ trợ FE mở đúng đơn hiện tại.
+Migration fail nếu legacy duplicates, không tự sửa lịch sử:
+[SQL chẩn đoán](docs/order-serving-migration.md).
+
+ORDER cho nhân viên: [API/Postman](docs/order-api.md) · [OpenAPI](docs/openapi/order-api.yaml) · [Đồng bộ app/web](docs/order-submit-fe-sync.md). DRAFT legacy hoặc SUBMIT tạo+xác nhận một bước; gọi thêm vào đơn OPEN/CONFIRMED được chọn, snapshot giá, aggregate version, idempotency và usage guard phiên; chưa có KDS/payment/QR ordering.
+
+Menu chung nhà hàng/khách mang đi: [Public restaurant menu API](docs/public-restaurant-menu-api.md) · [OpenAPI](docs/openapi/public-restaurant-menu-api.yaml). Chỉ xem thực đơn, không cần bàn/phiên; quản lý link qua `/api/v1/restaurants/me/menu-link`.
+
 Menu QR khách hàng (public, chỉ đọc): [API và Postman](docs/public-qr-menu-api.md) · [OpenAPI](docs/openapi/public-qr-menu-api.yaml).
 
 Backend POS SaaS nhà hàng, sử dụng Java 21, Spring Boot 4, PostgreSQL, Flyway, JPA và JWT.
@@ -42,9 +52,17 @@ V15 triển khai 21 API khu vực/bàn, QR quản trị và phiên xếp khách 
 Yêu cầu TABLE_MANAGEMENT và TABLE_* tương ứng; occupancy suy ra từ phiên OPEN,
 được bảo vệ bằng tenant lock, @Version và partial unique index. QR token không xuất
 hiện trong response bàn thông thường hoặc audit. Xem mục Tables trong docs/tenant-api.md.
-Chưa có public menu QR hoặc /close. Trước API tạo Order đầu tiên phải tích hợp policy
-kiểm tra sử dụng phiên thực tế và cùng transaction/lock cho tạo đơn và kết thúc phiên.
-Các feature order/payment/kitchen/inventory/report/AI vẫn chỉ là catalog, chưa có API nghiệp vụ.
+Public menu QR và menu chung nhà hàng đã có API đọc riêng; chưa có /close.
+V16/V17 triển khai ORDER MVP và usage guard thực tế dùng chung restaurant lock
+với hủy phiên. Payment/kitchen/inventory/report/AI vẫn chưa có API nghiệp vụ.
+V18 thêm ledger `order_item_submissions`: tenant-scoped key cho append SUBMIT, replay không thêm dòng lần hai.
+Không gửi submissionMode vẫn DRAFT như cũ. SUBMIT tạo cần ORDER_CREATE + ORDER_UPDATE;
+append cần ORDER_UPDATE và key/version cố định cho một intent. Không tự gộp order theo bàn.
+V19 giới hạn tối đa một serving order/phiên. POST /api/v1/orders nay nhận optional
+tableId + SUBMIT: backend dùng phiên OPEN hiện có hoặc mở phiên mới cùng transaction
+với order CONFIRMED. Chỉ mở mới cần TABLE_OPEN; legacy tableSessionId và hash giữ nguyên.
+Không thêm /orders/from-table, payment/KDS/close; xem docs/order-api.md và
+docs/order-table-submit-implementation.md. Frontend handoff ở docs/order-submit-fe-sync.md.
 
 V13 đưa phân quyền nhân viên, màn hình bếp, báo cáo chi tiết và in/in lại phiếu bếp xuống BASIC;
 PRO có cùng bộ tính năng vận hành và thêm RECIPE_MANAGEMENT. maxStaff mặc định vẫn là BASIC=3,

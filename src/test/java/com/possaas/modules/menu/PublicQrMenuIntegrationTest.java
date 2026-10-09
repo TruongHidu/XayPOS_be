@@ -46,7 +46,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class PublicQrMenuIntegrationTest {
     private static final String SCHEMA = "it_public_qr_" + UUID.randomUUID().toString().replace("-", "");
     private static final Instant NOW = Instant.parse("2026-10-07T00:00:00Z");
-    private static final String BASE = "/api/v1/public/qr-menu/";
+    private static final String BASE = "/api/v1/public/menu/tables/";
     @TestConfiguration static class FixedTime {
         @Bean @Primary Clock publicQrClock() { return Clock.fixed(NOW, ZoneOffset.UTC); }
     }

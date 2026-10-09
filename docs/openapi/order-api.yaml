@@ -1,0 +1,1190 @@
+"openapi": "3.0.3"
+"info":
+  "title": "POS SaaS Staff Order MVP"
+  "version": "1.3.0"
+  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. No /orders/from-table route, QR ordering, KDS/payment/recipe/inventory deduction; occupancy stays in TABLE."
+"security":
+  -
+    "BearerAuth": []
+"paths":
+  "/api/v1/orders":
+    "get":
+      "operationId": "searchOrders"
+      "description": "Server pagination, no collection fetch-join/N+1. Stable id ASC tie-breaker. Requires JWT tenant context, ORDER_VIEW and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_VIEW"
+      "parameters":
+        -
+          "name": "status"
+          "in": "query"
+          "schema":
+            "$ref": "#/components/schemas/OrderStatus"
+        -
+          "name": "serviceType"
+          "in": "query"
+          "schema":
+            "$ref": "#/components/schemas/ServiceType"
+        -
+          "name": "tableSessionId"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "format": "uuid"
+        -
+          "name": "q"
+          "in": "query"
+          "description": "Trimmed case-insensitive orderCode search. Percent/underscore/backslash literal."
+          "schema":
+            "type": "string"
+            "maxLength": 100
+        -
+          "name": "page"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "minimum": 0
+            "default": 0
+        -
+          "name": "size"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "minimum": 1
+            "maximum": 100
+            "default": 20
+        -
+          "name": "sortBy"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "enum":
+              - "createdAt"
+              - "updatedAt"
+              - "orderCode"
+              - "totalAmount"
+            "default": "createdAt"
+        -
+          "name": "direction"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "pattern": "^[aA][sS][cC]$|^[dD][eE][sS][cC]$"
+            "default": "desc"
+      "responses":
+        "200":
+          "description": "Page of summaries; empty result is content=[] and totalElements/totalPages=0."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/OrderPage"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+    "post":
+      "operationId": "createOrder"
+      "description": "DRAFT default (absent/null) creates OPEN with ORDER_CREATE. SUBMIT requires ORDER_CREATE plus ORDER_UPDATE and creates CONFIRMED atomically; PENDING lines, no kitchen side effect. DINE_IN takes exactly one of tableSessionId (must already be OPEN; DRAFT/SUBMIT supported) or tableId (explicit SUBMIT only). tableId reuses OPEN seating or opens a new session only at persistence; opening also requires runtime TABLE_OPEN. Existing seating and replay do not require TABLE_OPEN. TABLE_MANAGEMENT required for DINE_IN; TAKEAWAY requires neither seating reference and POS_QUICK_ORDER. ORDER_MANAGEMENT always required. Auth/features/tenant lock and static shape checks before replay; live seating/menu checks after replay. Legacy DRAFT and create-submit-v1 hashes preserved when tableId absent/null; create-table-submit-v1 hashes original client tableId, never resolved session or live values. Same key/hash/actor returns original order's current resource; changed actor/payload/table/mode conflicts. Serving order blocks new create with 409, never auto-append. Any later write/confirmation/audit failure rolls back new session and order together."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_CREATE"
+      "parameters":
+        -
+          "name": "Idempotency-Key"
+          "in": "header"
+          "required": true
+          "description": "Stable, nonblank key scoped to tenant/create. Reuse the same key/payload for retry."
+          "schema":
+            "type": "string"
+            "minLength": 1
+            "maxLength": 100
+      "responses":
+        "200":
+          "description": "Resource replay: same orderId, current representation, no new audit/history/version. Idempotency-Replayed=true."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+            "Idempotency-Replayed":
+              "description": "CORS exposed replay indicator."
+              "schema":
+                "type": "boolean"
+                "example": true
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "201":
+          "description": "New OPEN (DRAFT) or CONFIRMED (SUBMIT) order, UNPAID/paidAmount=0. Idempotency-Replayed=false. Use returned version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+            "Idempotency-Replayed":
+              "description": "CORS exposed replay indicator."
+              "schema":
+                "type": "boolean"
+                "example": false
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CreateOrder"
+            "examples":
+              "submitFromTable":
+                "summary": "Create seating only when the staff sends the order"
+                "value":
+                  "serviceType": "DINE_IN"
+                  "sourceChannel": "WAITER"
+                  "tableId": "11111111-1111-4111-8111-111111111111"
+                  "submissionMode": "SUBMIT"
+                  "guestCount": 2
+                  "items": [{ "itemId": "22222222-2222-4222-8222-222222222222", "quantity": 1 }]
+              "legacySessionDraft":
+                "value":
+                  "serviceType": "DINE_IN"
+                  "sourceChannel": "WAITER"
+                  "tableSessionId": "33333333-3333-4333-8333-333333333333"
+                  "items": [{ "itemId": "22222222-2222-4222-8222-222222222222", "quantity": 1 }]
+              "takeawaySubmit":
+                "value":
+                  "serviceType": "TAKEAWAY"
+                  "sourceChannel": "CASHIER"
+                  "submissionMode": "SUBMIT"
+                  "items": [{ "itemId": "22222222-2222-4222-8222-222222222222", "quantity": 1 }]
+  "/api/v1/orders/{orderId}":
+    "get":
+      "operationId": "getOrder"
+      "description": "Snapshot-based detail including cancelled lines. Requires JWT tenant context, ORDER_VIEW and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_VIEW"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+    "patch":
+      "operationId": "updateOrder"
+      "description": "OPEN/UNPAID only. Absent/null fields unchanged; blank optional text clears. Source/type/session/currency/amounts immutable. No-op does not advance version/audit. Requires JWT tenant context, ORDER_UPDATE and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_UPDATE"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/UpdateOrder"
+  "/api/v1/orders/{orderId}/items":
+    "post":
+      "operationId": "addOrderItems"
+      "description": "DRAFT default accepts OPEN only, preserves legacy version-only retry semantics. SUBMIT accepts OPEN/CONFIRMED with UNPAID/zero paid; requires Idempotency-Key, plus TABLE_MANAGEMENT or POS_QUICK_ORDER by type. DINE_IN seating must still be OPEN/active. OPEN+SUBMIT rechecks all live items then confirms atomically. CONFIRMED preserves confirmedAt, does not audit another confirmation. Fresh independent lines/current snapshots; old lines unchanged, no merge/reprice. Requires ORDER_UPDATE and ORDER_MANAGEMENT. Replay checks actor/target/normalized ordered payload including original expectedVersion before mutable checks and returns current resource. Never auto-select or merge orders in session."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_UPDATE"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+        -
+          "name": "Idempotency-Key"
+          "in": "header"
+          "required": false
+          "description": "Required for SUBMIT, ignored for legacy DRAFT. Stable key for one addition; freeze target/body/expectedVersion on retry. Independent tenant-scoped append namespace."
+          "schema":
+            "type": "string"
+            "minLength": 1
+            "maxLength": 100
+      "responses":
+        "200":
+          "description": "New addition or resource replay, current OrderResponse. Use returned aggregate version; Idempotency-Replayed indicates replay."
+          "headers":
+            "Idempotency-Replayed":
+              "description": "True only for a matching successful SUBMIT append replay; false for a new addition/DRAFT."
+              "schema":
+                "type": "boolean"
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/AddItems"
+  "/api/v1/orders/{orderId}/items/{orderItemId}":
+    "patch":
+      "operationId": "updateOrderItem"
+      "description": "PENDING line of OPEN order only. Preserve unitPrice snapshot; child-only change advances root version even if Clock/total unchanged. Requires JWT tenant context, ORDER_UPDATE and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_UPDATE"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+        -
+          "name": "orderItemId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/UpdateItem"
+  "/api/v1/orders/{orderId}/items/{orderItemId}/cancel":
+    "post":
+      "operationId": "cancelOrderItem"
+      "description": "Application policy enforces the state-specific permission. Cancel PENDING only, preserve gross snapshot and exclude cancelled amount. Last live line cancellation cancels root. Terminal retry is no-op before stale-version check, after authorization. Requires JWT tenant context, ORDER_UPDATE (draft) or ORDER_CANCEL (confirmed) and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_UPDATE (draft) or ORDER_CANCEL (confirmed)"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+        -
+          "name": "orderItemId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CancelRequest"
+  "/api/v1/orders/{orderId}/confirm":
+    "post":
+      "operationId": "confirmOrder"
+      "description": "Legacy OPEN -> CONFIRMED; recheck all live sellability without repricing. Already CONFIRMED is idempotent before stale-version check. No KDS side effect; sentToKitchenAt remains null. Calling more uses append SUBMIT with an explicit existing orderId; old metadata/line edits remain OPEN only. Requires JWT tenant context, ORDER_UPDATE and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_UPDATE"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/VersionRequest"
+  "/api/v1/orders/{orderId}/cancel":
+    "post":
+      "operationId": "cancelOrder"
+      "description": "Cancel OPEN/CONFIRMED with no cooking/fulfilled items or financial obligations. Cancelled replay is idempotent before version check. Snapshot/history kept; no refund or session closure. Requires JWT tenant context, ORDER_CANCEL and ORDER_MANAGEMENT snapshot grant."
+      "security":
+        -
+          "BearerAuth": []
+      "x-permission": "ORDER_CANCEL"
+      "parameters":
+        -
+          "name": "orderId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Current OrderResponse; use returned aggregate version."
+          "headers":
+            "Cache-Control":
+              "description": "Responses are not cached."
+              "schema":
+                "type": "string"
+                "example": "no-store"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Order"
+        "400":
+          "$ref": "#/components/responses/BadRequest"
+        "401":
+          "$ref": "#/components/responses/Unauthorized"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "500":
+          "$ref": "#/components/responses/Internal"
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CancelRequest"
+  "/api/v1/table-sessions/{sessionId}/active-order":
+    "get":
+      "operationId": "getActiveSessionOrder"
+      "description": "Requires ORDER_VIEW and ORDER_MANAGEMENT snapshot grant. Tenant-scoped session ownership via TABLE port; read access does not require live OPEN seating. 200 current snapshot-based serving OrderResponse, or 204 without body. Serving statuses OPEN/CONFIRMED/PREPARING/READY/SERVED; independent of paymentStatus. Never select latest/first when data inconsistent; 409 INCONSISTENT_SERVING_ORDER_STATE. No audit/history writes."
+      "security":
+        - "BearerAuth": []
+      "x-permission": "ORDER_VIEW"
+      "parameters":
+        - "name": "sessionId"
+          "in": "path"
+          "required": true
+          "schema":
+            "type": "string"
+            "format": "uuid"
+      "responses":
+        "200":
+          "description": "Exactly one serving order, current representation."
+          "headers":
+            "Cache-Control":
+              "schema": { "type": "string", "example": "no-store" }
+          "content":
+            "application/json":
+              "schema": { "$ref": "#/components/schemas/Order" }
+        "204":
+          "description": "Owned session has no serving order; no response body."
+          "headers":
+            "Cache-Control":
+              "schema": { "type": "string", "example": "no-store" }
+        "400": { "$ref": "#/components/responses/BadRequest" }
+        "401": { "$ref": "#/components/responses/Unauthorized" }
+        "403": { "$ref": "#/components/responses/Forbidden" }
+        "404": { "$ref": "#/components/responses/NotFound" }
+        "409": { "$ref": "#/components/responses/Conflict" }
+        "500": { "$ref": "#/components/responses/Internal" }
+"components":
+  "securitySchemes":
+    "BearerAuth":
+      "type": "http"
+      "scheme": "bearer"
+      "bearerFormat": "JWT"
+  "responses":
+    "BadRequest":
+      "description": "VALIDATION_ERROR / INVALID_REQUEST_BODY / EMPTY_UPDATE_REQUEST / INVALID_IDEMPOTENCY_KEY / DINE_IN_SESSION_REQUIRED / AMBIGUOUS_ORDER_SEATING / TABLE_ORDER_REQUIRES_SUBMIT / TAKEAWAY_SESSION_NOT_ALLOWED / TAKEAWAY_TABLE_NOT_ALLOWED / serving-context or precision error."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+    "Unauthorized":
+      "description": "UNAUTHORIZED or ACCOUNT_INACTIVE."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+    "Forbidden":
+      "description": "FORBIDDEN / TENANT_ACCESS_DENIED / RESTAURANT_INACTIVE / SUBSCRIPTION_NOT_ACTIVE / FEATURE_NOT_ENTITLED."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+    "NotFound":
+      "description": "Tenant-scoped order, item, menu or table/session resource not found."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+    "Conflict":
+      "description": "CONCURRENT_ORDER_UPDATE / IDEMPOTENCY_KEY_REUSED / ORDER_CODE_CONFLICT / TABLE_SESSION_HAS_SERVING_ORDER / TABLE_ALREADY_OCCUPIED / INCONSISTENT_TABLE_SESSION_STATE / lifecycle, availability, currency or financial conflict."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+    "Internal":
+      "description": "INTERNAL_ERROR; no SQL or exception details."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/Error"
+  "schemas":
+    "OrderSubmissionMode":
+      "type": "string"
+      "nullable": true
+      "default": "DRAFT"
+      "enum":
+        - "DRAFT"
+        - "SUBMIT"
+      "description": "Command intent, not a status. Absent/null means legacy DRAFT."
+    "OrderStatus":
+      "type": "string"
+      "enum":
+        - "OPEN"
+        - "CONFIRMED"
+        - "PREPARING"
+        - "READY"
+        - "SERVED"
+        - "COMPLETED"
+        - "CANCELLED"
+    "OrderItemStatus":
+      "type": "string"
+      "enum":
+        - "PENDING"
+        - "COOKING"
+        - "READY"
+        - "SERVED"
+        - "CANCELLED"
+    "PaymentStatus":
+      "type": "string"
+      "enum":
+        - "UNPAID"
+        - "PARTIALLY_PAID"
+        - "PAID"
+        - "PARTIALLY_REFUNDED"
+        - "REFUNDED"
+    "ServiceType":
+      "type": "string"
+      "enum":
+        - "DINE_IN"
+        - "TAKEAWAY"
+    "SourceChannel":
+      "type": "string"
+      "enum":
+        - "CASHIER"
+        - "WAITER"
+        - "QR_STATIC"
+        - "QR_TABLE"
+    "CreateLine":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "itemId"
+        - "quantity"
+      "properties":
+        "itemId":
+          "type": "string"
+          "format": "uuid"
+        "quantity":
+          "type": "number"
+          "exclusiveMinimum": true
+          "minimum": 0
+          "maximum": 999999999.999
+          "multipleOf": 0.001
+        "note":
+          "type": "string"
+          "maxLength": 2000
+          "nullable": true
+    "CreateOrder":
+      "type": "object"
+      "additionalProperties": false
+      "description": "Three exclusive seating shapes. tableId is client intent only; response returns resolved tableSessionId. No expectedVersion required for the new tableId creation command: current table eligibility is checked under restaurant lock. Manual-open API retains its existing table version check."
+      "required":
+        - "serviceType"
+        - "sourceChannel"
+        - "items"
+      "properties":
+        "submissionMode":
+          "$ref": "#/components/schemas/OrderSubmissionMode"
+        "serviceType":
+          "$ref": "#/components/schemas/ServiceType"
+        "sourceChannel":
+          "type": "string"
+          "enum":
+            - "CASHIER"
+            - "WAITER"
+        "tableSessionId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "tableId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+          "description": "DINE_IN SUBMIT only, mutually exclusive with tableSessionId."
+        "guestCount":
+          "type": "integer"
+          "minimum": 1
+          "maximum": 32767
+          "nullable": true
+        "customerName":
+          "type": "string"
+          "maxLength": 100
+          "nullable": true
+        "customerPhone":
+          "type": "string"
+          "maxLength": 30
+          "nullable": true
+        "note":
+          "type": "string"
+          "maxLength": 2000
+          "nullable": true
+        "items":
+          "type": "array"
+          "minItems": 1
+          "maxItems": 100
+          "items":
+            "$ref": "#/components/schemas/CreateLine"
+      "oneOf":
+        - "description": "DINE_IN from table, explicit SUBMIT required"
+          "required": ["tableId", "submissionMode"]
+          "properties":
+            "serviceType": { "type": "string", "enum": ["DINE_IN"] }
+            "tableId": { "type": "string", "format": "uuid" }
+            "tableSessionId": { "type": "string", "nullable": true, "enum": [null] }
+            "submissionMode": { "type": "string", "enum": ["SUBMIT"] }
+        - "description": "Legacy DINE_IN using an already OPEN session, DRAFT or SUBMIT"
+          "required": ["tableSessionId"]
+          "properties":
+            "serviceType": { "type": "string", "enum": ["DINE_IN"] }
+            "tableSessionId": { "type": "string", "format": "uuid" }
+            "tableId": { "type": "string", "nullable": true, "enum": [null] }
+        - "description": "TAKEAWAY has neither seating reference"
+          "properties":
+            "serviceType": { "type": "string", "enum": ["TAKEAWAY"] }
+            "tableSessionId": { "type": "string", "nullable": true, "enum": [null] }
+            "tableId": { "type": "string", "nullable": true, "enum": [null] }
+    "UpdateOrder":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "expectedVersion"
+      "properties":
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "guestCount":
+          "type": "integer"
+          "minimum": 1
+          "maximum": 32767
+          "nullable": true
+        "customerName":
+          "type": "string"
+          "maxLength": 100
+          "nullable": true
+        "customerPhone":
+          "type": "string"
+          "maxLength": 30
+          "nullable": true
+        "note":
+          "type": "string"
+          "maxLength": 2000
+          "nullable": true
+    "AddItems":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "expectedVersion"
+        - "items"
+      "properties":
+        "submissionMode":
+          "$ref": "#/components/schemas/OrderSubmissionMode"
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "items":
+          "type": "array"
+          "minItems": 1
+          "maxItems": 100
+          "items":
+            "$ref": "#/components/schemas/CreateLine"
+    "UpdateItem":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "expectedVersion"
+      "properties":
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "quantity":
+          "type": "number"
+          "exclusiveMinimum": true
+          "minimum": 0
+          "maximum": 999999999.999
+          "multipleOf": 0.001
+          "nullable": true
+        "note":
+          "type": "string"
+          "maxLength": 2000
+          "nullable": true
+    "VersionRequest":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "expectedVersion"
+      "properties":
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+    "CancelRequest":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "expectedVersion"
+        - "reason"
+      "properties":
+        "expectedVersion":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "reason":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 1000
+          "pattern": ".*\\S.*"
+    "OrderItem":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "id"
+        - "itemId"
+        - "itemName"
+        - "unit"
+        - "quantity"
+        - "unitPrice"
+        - "discountAmount"
+        - "lineTotal"
+        - "status"
+        - "note"
+        - "cancelReason"
+        - "sentToKitchenAt"
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "itemId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "itemName":
+          "type": "string"
+          "maxLength": 150
+        "unit":
+          "type": "string"
+          "maxLength": 30
+        "quantity":
+          "type": "number"
+          "exclusiveMinimum": true
+          "minimum": 0
+          "maximum": 999999999.999
+          "multipleOf": 0.001
+        "unitPrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "discountAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "lineTotal":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "status":
+          "$ref": "#/components/schemas/OrderItemStatus"
+        "note":
+          "type": "string"
+          "nullable": true
+        "cancelReason":
+          "type": "string"
+          "nullable": true
+        "sentToKitchenAt":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+    "Order":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "id"
+        - "orderCode"
+        - "serviceType"
+        - "sourceChannel"
+        - "tableSessionId"
+        - "status"
+        - "paymentStatus"
+        - "customerName"
+        - "customerPhone"
+        - "guestCount"
+        - "note"
+        - "currencyCode"
+        - "subtotalAmount"
+        - "discountAmount"
+        - "taxAmount"
+        - "serviceChargeAmount"
+        - "totalAmount"
+        - "paidAmount"
+        - "createdBy"
+        - "confirmedAt"
+        - "completedAt"
+        - "cancelledAt"
+        - "cancelReason"
+        - "createdAt"
+        - "updatedAt"
+        - "version"
+        - "items"
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "orderCode":
+          "type": "string"
+          "maxLength": 50
+        "serviceType":
+          "$ref": "#/components/schemas/ServiceType"
+        "sourceChannel":
+          "$ref": "#/components/schemas/SourceChannel"
+        "tableSessionId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "status":
+          "$ref": "#/components/schemas/OrderStatus"
+        "paymentStatus":
+          "$ref": "#/components/schemas/PaymentStatus"
+        "customerName":
+          "type": "string"
+          "maxLength": 100
+          "nullable": true
+        "customerPhone":
+          "type": "string"
+          "maxLength": 30
+          "nullable": true
+        "guestCount":
+          "type": "integer"
+          "minimum": 1
+          "maximum": 32767
+        "note":
+          "type": "string"
+          "nullable": true
+        "currencyCode":
+          "type": "string"
+          "minLength": 3
+          "maxLength": 3
+        "subtotalAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "discountAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "taxAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "serviceChargeAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "totalAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "paidAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "createdBy":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "confirmedAt":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "completedAt":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "cancelledAt":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "cancelReason":
+          "type": "string"
+          "nullable": true
+        "createdAt":
+          "type": "string"
+          "format": "date-time"
+        "updatedAt":
+          "type": "string"
+          "format": "date-time"
+        "version":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "items":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/OrderItem"
+    "OrderSummary":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "id"
+        - "orderCode"
+        - "serviceType"
+        - "sourceChannel"
+        - "tableSessionId"
+        - "status"
+        - "paymentStatus"
+        - "customerName"
+        - "guestCount"
+        - "currencyCode"
+        - "totalAmount"
+        - "paidAmount"
+        - "createdAt"
+        - "updatedAt"
+        - "version"
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "orderCode":
+          "type": "string"
+          "maxLength": 50
+        "serviceType":
+          "$ref": "#/components/schemas/ServiceType"
+        "sourceChannel":
+          "$ref": "#/components/schemas/SourceChannel"
+        "tableSessionId":
+          "type": "string"
+          "format": "uuid"
+          "nullable": true
+        "status":
+          "$ref": "#/components/schemas/OrderStatus"
+        "paymentStatus":
+          "$ref": "#/components/schemas/PaymentStatus"
+        "customerName":
+          "type": "string"
+          "maxLength": 100
+          "nullable": true
+        "guestCount":
+          "type": "integer"
+          "minimum": 1
+          "maximum": 32767
+        "currencyCode":
+          "type": "string"
+          "minLength": 3
+          "maxLength": 3
+        "totalAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "paidAmount":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+        "createdAt":
+          "type": "string"
+          "format": "date-time"
+        "updatedAt":
+          "type": "string"
+          "format": "date-time"
+        "version":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+    "OrderPage":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "content"
+        - "page"
+        - "size"
+        - "totalElements"
+        - "totalPages"
+      "properties":
+        "content":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/OrderSummary"
+        "page":
+          "type": "integer"
+          "minimum": 0
+        "size":
+          "type": "integer"
+          "minimum": 1
+          "maximum": 100
+        "totalElements":
+          "type": "integer"
+          "format": "int64"
+          "minimum": 0
+        "totalPages":
+          "type": "integer"
+          "minimum": 0
+    "Error":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "success"
+        - "code"
+        - "message"
+        - "fieldErrors"
+        - "timestamp"
+      "properties":
+        "success":
+          "type": "boolean"
+          "enum":
+            - false
+        "code":
+          "type": "string"
+        "message":
+          "type": "string"
+        "fieldErrors":
+          "type": "object"
+          "additionalProperties":
+            "type": "string"
+        "timestamp":
+          "type": "string"
+          "format": "date-time"
+

@@ -25,7 +25,7 @@ public class TenantRestaurantStatusFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (PublicQrMenuRequests.matches(request)) return true;
+        if (PublicMenuRequests.matches(request)) return true;
         String path = request.getServletPath();
         String method = request.getMethod();
 

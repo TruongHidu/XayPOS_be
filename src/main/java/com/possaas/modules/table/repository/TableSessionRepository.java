@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 public interface TableSessionRepository extends JpaRepository<TableSession, UUID>, JpaSpecificationExecutor<TableSession> {
     Optional<TableSession> findByIdAndRestaurantId(UUID id, UUID restaurantId);
     Optional<TableSession> findByRestaurantIdAndTableIdAndStatus(UUID restaurantId, UUID tableId, TableSessionStatus status);
+    List<TableSession> findAllByRestaurantIdAndTableIdAndStatus(UUID restaurantId, UUID tableId, TableSessionStatus status);
     boolean existsByRestaurantIdAndTableIdAndStatus(UUID restaurantId, UUID tableId, TableSessionStatus status);
     List<TableSession> findAllByRestaurantIdAndTableIdInAndStatus(UUID restaurantId, Collection<UUID> tableIds, TableSessionStatus status);
 

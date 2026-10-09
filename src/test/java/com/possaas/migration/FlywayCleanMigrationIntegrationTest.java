@@ -40,8 +40,12 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("15");
-            assertThat(countTables(schema)).isEqualTo(17);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
+            assertThat(countTables(schema)).isEqualTo(21);
+            assertThat(tableExists(schema, "order_item_submissions")).isTrue();
+            assertThat(tableExists(schema, "orders")).isTrue();
+            assertThat(tableExists(schema, "order_items")).isTrue();
+            assertThat(tableExists(schema, "order_item_status_history")).isTrue();
             assertThat(tableExists(schema, "table_areas")).isTrue();
             assertThat(tableExists(schema, "restaurant_tables")).isTrue();
             assertThat(tableExists(schema, "table_sessions")).isTrue();
@@ -213,6 +217,32 @@ class FlywayCleanMigrationIntegrationTest {
                 Statement statement = connection.createStatement()) {
             statement.execute("CREATE SCHEMA \"" + schema + "\"");
         }
+    }
+
+    @Test
+    void v19RejectsDuplicateServingOrdersWithoutChangingData() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");
+        createSchema(schema);
+        String prefix="\""+schema+"\".";
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("18").load().migrate();
+            try(Connection connection=dataSource.getConnection(); Statement statement=connection.createStatement()) {
+                statement.execute("INSERT INTO "+prefix+"restaurants(id,code,name,status) VALUES('00000000-0000-0000-0000-000000000001','DUP19','Fixture','ACTIVE')");
+                statement.execute("INSERT INTO "+prefix+"users(id,restaurant_id,role_id,email,password_hash,name) SELECT '00000000-0000-0000-0000-000000000004'::uuid,'00000000-0000-0000-0000-000000000001'::uuid,id,'v19@example.test','fixture','Fixture' FROM "+prefix+"roles WHERE code='OWNER' AND restaurant_id IS NULL");
+                statement.execute("INSERT INTO "+prefix+"restaurant_tables(id,restaurant_id,code,name,status,qr_token,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','B1','Fixture','AVAILABLE','v19-test-token',now(),now())");
+                statement.execute("INSERT INTO "+prefix+"table_sessions(id,restaurant_id,table_id,session_code,status,opened_by,opened_at,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','S1','OPEN','00000000-0000-0000-0000-000000000004',now(),now(),now())");
+                statement.execute("INSERT INTO "+prefix+"orders(restaurant_id,table_session_id,order_code,service_type,source_channel,status,currency_code,created_at,updated_at,idempotency_key,request_hash) "
+                    +"SELECT '00000000-0000-0000-0000-000000000001'::uuid,'00000000-0000-0000-0000-000000000003'::uuid,'DUP-'||i,'DINE_IN','WAITER','OPEN','VND',now(),now(),'key-'||i,repeat('a',64) FROM generate_series(1,2) i");
+            }
+            var upgrade=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();
+            assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("V19: duplicate serving orders per session");
+            try(Connection connection=dataSource.getConnection(); Statement statement=connection.createStatement();
+                ResultSet rows=statement.executeQuery("SELECT count(*),count(*) FILTER(WHERE status='OPEN') FROM "+prefix+"orders")) {
+                rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); assertThat(rows.getInt(2)).isEqualTo(2);
+            }
+        } finally { dropTestSchema(schema); }
     }
 
     private int countTables(String schema) throws Exception {

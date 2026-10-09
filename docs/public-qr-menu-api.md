@@ -2,6 +2,10 @@
 
 Backend-only, read-only API for the customer menu website. OpenAPI: [public-qr-menu-api.yaml](openapi/public-qr-menu-api.yaml).
 
+Public API paths use `/api/v1/public/menu/tables/{qrToken}` and its `/items` suffix. The former `/api/v1/public/qr-menu/*` paths are no longer exposed; the browser QR route `/qr/{qrToken}` is unchanged.
+
+Menu chung nhà hàng/khách mang đi (không gắn bàn): [Public restaurant menu API](public-restaurant-menu-api.md). Hai luồng dùng chung món, visibility và pagination; token và context được resolve riêng.
+
 Implementation files and actual verification results: [implementation report](public-qr-menu-implementation.md).
 
 ## Scope and flow
@@ -26,7 +30,7 @@ No Authorization, restaurant ID header, cookies or request body are required. A 
 
 Successful and controller-handled error responses carry `Cache-Control: no-store`. Do not store these responses in a service worker, CDN or application cache.
 
-## GET /api/v1/public/qr-menu/{qrToken}
+## GET /api/v1/public/menu/tables/{qrToken}
 
 Example success (200):
 
@@ -42,7 +46,7 @@ Example success (200):
 
 Only active, undeleted groups of this restaurant are returned. Empty groups are allowed. Sort: `displayOrder ASC, name ASC, id ASC`. An empty menu has `groups: []`.
 
-## GET /api/v1/public/qr-menu/{qrToken}/items
+## GET /api/v1/public/menu/tables/{qrToken}/items
 
 Optional query parameters:
 
@@ -101,21 +105,23 @@ Public responses never include `costPrice`, SKU, inventory tracking, recipes, me
   "success": false,
   "code": "QR_MENU_NOT_FOUND",
   "message": "Menu QR không còn khả dụng.",
-  "details": {},
+  "fieldErrors": {},
   "timestamp": "2026-10-07T00:00:00Z"
 }
 ```
 
 Messages are human-readable; use HTTP status and `code` for website behavior. Errors do not echo the URL, token, rejected query values, SQL or exception details.
 
+The existing table QR error contract uses `fieldErrors`; the new restaurant-menu controller contract uses `details`. This documentation correction does not change table QR response JSON.
+
 ## Postman smoke test
 
 Set environment variables `baseUrl` (for example `http://localhost:8080`) and `qrToken` obtained from the existing authorized TABLE API. Select **No Auth**, including disabling inherited collection auth.
 
 ```text
-GET {{baseUrl}}/api/v1/public/qr-menu/{{qrToken}}
-GET {{baseUrl}}/api/v1/public/qr-menu/{{qrToken}}/items?page=0&size=20&sortBy=salePrice&direction=asc
-GET {{baseUrl}}/api/v1/public/qr-menu/{{qrToken}}/items?q=phở
+GET {{baseUrl}}/api/v1/public/menu/tables/{{qrToken}}
+GET {{baseUrl}}/api/v1/public/menu/tables/{{qrToken}}/items?page=0&size=20&sortBy=salePrice&direction=asc
+GET {{baseUrl}}/api/v1/public/menu/tables/{{qrToken}}/items?q=phở
 ```
 
 Test with a QR_MENU_VIEW-only snapshot, an empty menu, out-of-stock items, disabled groups, another restaurant's group ID, expired subscription and rotated token. Verify that `costPrice` is absent and Cache-Control includes no-store. Do not paste real production QR tokens into shared examples.
@@ -125,7 +131,7 @@ Test with a QR_MENU_VIEW-only snapshot, an empty menu, out-of-stock items, disab
 - QR links are shareable bearer-like public links, not proof that a customer is physically at a table. No ordering/payment capability is implied.
 - Rotation invalidates the old token for subsequent requests. Backend cannot retract content already downloaded or displayed in a browser.
 - Application defaults keep Spring Web/Security request debugging off and Hibernate JDBC bind/extract tracing off to avoid recording tokens. Preserve these settings in environment overrides. Do not enable request/response tracing on these routes.
-- Reverse proxy, load balancer, CDN, WAF, access logs and APM must mask the token segment in `/api/v1/public/qr-menu/{redacted}` (and `/items`) or disable URL logging for these routes. Redact Referer values too; use `Referrer-Policy: no-referrer` on the customer website. Never use tokens as metric labels.
+- Reverse proxy, load balancer, CDN, WAF, access logs and APM must mask the token segment in `/api/v1/public/menu/tables/{redacted}` (and `/items`) or disable URL logging for these routes. Redact Referer values too; use `Referrer-Policy: no-referrer` on the customer website. Never use tokens as metric labels.
 - Apply edge rate limits to public endpoints and bound timeouts. This change adds paging limits but does not introduce a distributed rate-limiting platform.
 - No new migration is needed: the existing table migration already enforces unique `qr_token`. No existing migration is edited.
 - Not included: frontend, QR image generation, customer login, carts, ordering, session mutation, payment, recipes, subscription billing or caching.

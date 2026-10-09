@@ -1,18 +1,21 @@
 package com.possaas.modules.table.service;
 
 import com.possaas.common.exception.ConflictException;
-import java.security.SecureRandom;
-import java.util.Base64;
+import com.possaas.common.security.PublicLinkTokenGenerator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class TableQrTokenGenerator {
-    private final SecureRandom random = new SecureRandom();
+    private final PublicLinkTokenGenerator tokens;
+
+    public TableQrTokenGenerator() { this(new PublicLinkTokenGenerator()); }
+
+    @Autowired
+    public TableQrTokenGenerator(PublicLinkTokenGenerator tokens) { this.tokens = tokens; }
 
     public String generate() {
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        return tokens.generate();
     }
 
     public String rotate(String previous) {

@@ -1,5 +1,6 @@
 package com.possaas.modules.menu.controller;
 
+import com.possaas.infrastructure.security.PublicQrMenuRequests;
 import com.possaas.modules.menu.dto.*;
 import com.possaas.modules.menu.service.PublicQrMenuQueryService;
 import com.possaas.modules.subscription.dto.PageResponse;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/public/qr-menu")
+@RequestMapping(PublicQrMenuRequests.BASE_PATH)
 public class PublicQrMenuController {
     private final PublicQrMenuQueryService query;
 

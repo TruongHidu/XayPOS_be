@@ -8,6 +8,7 @@ import com.possaas.modules.menu.dto.PublicMenuSearch;
 import com.possaas.modules.menu.entity.ItemGroup;
 import com.possaas.modules.menu.service.PublicMenuVisibilityPolicy;
 import com.possaas.modules.menu.service.PublicQrMenuAccessPolicy;
+import com.possaas.modules.menu.service.PublicMenuAccessPolicy;
 import com.possaas.modules.subscription.application.port.FeatureAccessChecker;
 import java.time.Instant;
 import java.util.UUID;
@@ -33,7 +34,7 @@ class PublicQrMenuPolicyTest {
 
     @Test void mapsOnlyExpectedEntitlementDenials() {
         var features = mock(FeatureAccessChecker.class);
-        var policy = new PublicQrMenuAccessPolicy(features);
+        var policy = new PublicQrMenuAccessPolicy(new PublicMenuAccessPolicy(features));
         var tenant = UUID.randomUUID();
         for (String code : new String[]{"FEATURE_NOT_ENTITLED", "SUBSCRIPTION_NOT_ACTIVE"}) {
             doThrow(new BusinessException(HttpStatus.FORBIDDEN, code, "private")).when(features).requireFeature(tenant, "QR_MENU_VIEW");

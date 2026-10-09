@@ -5,7 +5,7 @@ info:
   description: Read-only customer menu. Table token selects the tenant; no login or OPEN session is required. Effective subscription snapshot must grant QR_MENU_VIEW. No ordering or payment.
 security: []
 paths:
-  /api/v1/public/qr-menu/{qrToken}:
+  /api/v1/public/menu/tables/{qrToken}:
     get:
       operationId: getPublicQrMenuContext
       description: Resolve an available table and restaurant and list visible groups. Only this GET and its items GET are anonymous. Bearer headers are ignored.
@@ -30,7 +30,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/v1/public/qr-menu/{qrToken}/items:
+  /api/v1/public/menu/tables/{qrToken}/items:
     get:
       operationId: listPublicQrMenuItems
       description: Visible MENU_ITEMs only, including OUT_OF_STOCK. Hidden items/groups filtered before pagination. Stable id ASC tie-breaker; group data loaded in batch.
@@ -182,12 +182,12 @@ components:
     PublicError:
       type: object
       additionalProperties: false
-      required: [success, code, message, details, timestamp]
+      required: [success, code, message, fieldErrors, timestamp]
       properties:
         success: {type: boolean, enum: [false]}
         code:
           type: string
           enum: [VALIDATION_ERROR, QR_MENU_UNAVAILABLE, QR_MENU_NOT_FOUND, PUBLIC_MENU_GROUP_NOT_FOUND, INTERNAL_ERROR]
         message: {type: string}
-        details: {type: object, additionalProperties: false}
+        fieldErrors: {type: object, additionalProperties: false}
         timestamp: {type: string, format: date-time}

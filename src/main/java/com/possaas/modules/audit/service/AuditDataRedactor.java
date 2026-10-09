@@ -27,7 +27,11 @@ public class AuditDataRedactor {
         "tokenhash",
         "authorization",
         "secret",
-        "publicordertoken"
+        "publicordertoken",
+        "menutoken",
+        "restaurantmenutoken",
+        "expectedtoken",
+        "menupath"
     );
 
     public Map<String, Object> redact(Map<String, Object> source) {

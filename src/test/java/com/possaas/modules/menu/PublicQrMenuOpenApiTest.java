@@ -13,7 +13,7 @@ class PublicQrMenuOpenApiTest {
             JsonNode root = new ObjectMapper().valueToTree(new Yaml().load(input));
             assertThat(root.path("paths").size()).isEqualTo(2);
             root.path("paths").fields().forEachRemaining(path -> {
-                assertThat(path.getKey()).startsWith("/api/v1/public/qr-menu/{qrToken}");
+                assertThat(path.getKey()).startsWith("/api/v1/public/menu/tables/{qrToken}");
                 assertThat(path.getValue().size()).isEqualTo(1);
                 var get = path.getValue().path("get");
                 assertThat(get.path("security").isArray()).isTrue();

@@ -3,6 +3,7 @@ package com.possaas.modules.restaurant.service;
 import com.possaas.common.exception.BusinessException;
 import com.possaas.common.exception.ConflictException;
 import com.possaas.common.exception.ResourceNotFoundException;
+import com.possaas.common.security.PublicLinkTokenGenerator;
 import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.auth.dto.AuthResponse;
 import com.possaas.modules.auth.dto.RegisterRestaurantRequest;
@@ -15,9 +16,7 @@ import com.possaas.modules.restaurant.entity.RestaurantStatus;
 import com.possaas.modules.restaurant.repository.RestaurantRepository;
 import com.possaas.modules.user.entity.User;
 import com.possaas.modules.user.repository.UserRepository;
-import java.security.SecureRandom;
 import java.time.ZoneId;
-import java.util.Base64;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class RestaurantRegistrationService {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
     private final RestaurantRepository restaurantRepository;
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
@@ -38,6 +35,7 @@ public class RestaurantRegistrationService {
     private final PermissionService permissionService;
     private final AuthTokenService authTokenService;
     private final AuditService auditService;
+    private final PublicLinkTokenGenerator publicLinkTokens;
 
     @Transactional
     public AuthResponse register(RegisterRestaurantRequest request, String ipAddress) {
@@ -108,7 +106,7 @@ public class RestaurantRegistrationService {
         restaurant.setAddress(request.address());
         restaurant.setTimezone(data.timezone());
         restaurant.setCurrencyCode(data.currencyCode());
-        restaurant.setPublicOrderToken(generatePublicOrderToken());
+        restaurant.setPublicOrderToken(publicLinkTokens.generate());
         restaurant.setStatus(RestaurantStatus.ACTIVE);
         return restaurantRepository.saveAndFlush(restaurant);
     }
@@ -127,12 +125,6 @@ public class RestaurantRegistrationService {
         owner.setPhone(request.ownerPhone());
         owner.setPasswordHash(passwordEncoder.encode(request.password()));
         return userRepository.saveAndFlush(owner);
-    }
-
-    private static String generatePublicOrderToken() {
-        byte[] bytes = new byte[32];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     private record RegistrationData(

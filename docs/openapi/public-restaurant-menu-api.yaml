@@ -1,0 +1,236 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS Public Restaurant Menu
+  version: 1.0.0
+  description: Shared restaurant menu for takeaway browsing without a table or session. Read-only; no orders or payment. menuToken maps to restaurants.public_order_token.
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/public/menu/restaurants/{menuToken}:
+    get:
+      operationId: getPublicRestaurantMenu
+      description: Anonymous restaurant context and visible groups. ACTIVE/undeleted restaurant and QR_MENU_VIEW in an effective subscription snapshot required. Bearer headers ignored.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/MenuToken'
+      responses:
+        '200':
+          description: Public context without table, session, token or tenant UUID.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicRestaurantMenu'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Unavailable'}
+        '404': {$ref: '#/components/responses/PublicNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/public/menu/restaurants/{menuToken}/items:
+    get:
+      operationId: listPublicRestaurantMenuItems
+      description: Shared MENU_ITEM visibility rules including OUT_OF_STOCK and ungrouped items. SQL filtering before pagination/count; batch group mapping. No costPrice or internal fields.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/MenuToken'
+        - name: q
+          in: query
+          description: Trimmed case-insensitive name search; percent, underscore and backslash are literal characters.
+          schema: {type: string, maxLength: 100}
+        - name: groupId
+          in: query
+          description: Visible group of this restaurant. Foreign, missing or hidden group gives PUBLIC_MENU_GROUP_NOT_FOUND.
+          schema: {type: string, format: uuid}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: sortBy
+          in: query
+          schema: {type: string, enum: [name, salePrice], default: name}
+        - name: direction
+          in: query
+          description: asc or desc, case-insensitive; id ASC is always the tie-breaker.
+          schema: {type: string, default: asc, pattern: '^[aA][sS][cC]$|^[dD][eE][sS][cC]$'}
+      responses:
+        '200':
+          description: Public menu page; empty menu/filter result is content=[], totalElements=0, totalPages=0.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema: {$ref: 'public-qr-menu-api.yaml#/components/schemas/PublicMenuPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Unavailable'}
+        '404': {$ref: '#/components/responses/PublicNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/restaurants/me/menu-link:
+    get:
+      operationId: getRestaurantMenuLink
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE (OWNER/MANAGER defaults). Read only; null token gives PUBLIC_MENU_LINK_NOT_INITIALIZED. No subscription/QR feature requirement for management.
+      security:
+        - BearerAuth: []
+      responses:
+        '200': {$ref: '#/components/responses/MenuLink'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: initializeRestaurantMenuLink
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE. No body. Idempotent initialization under pessimistic restaurant lock; existing token returned unchanged. One audit only when initialized.
+      security:
+        - BearerAuth: []
+      responses:
+        '200': {$ref: '#/components/responses/MenuLink'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/restaurants/me/menu-link/rotate:
+    post:
+      operationId: rotateRestaurantMenuLink
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE. Compare expectedToken under pessimistic lock, rotate and audit atomically. No expectedVersion; Restaurant has no @Version. Old public link invalid for subsequent requests; downloaded content cannot be retracted.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotateMenuLink'}
+      responses:
+        '200': {$ref: '#/components/responses/MenuLink'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+components:
+  securitySchemes:
+    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    MenuToken:
+      name: menuToken
+      in: path
+      required: true
+      description: Restaurant public_order_token; not a table QR token. Malformed token returns generic 404.
+      schema: {type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$'}
+  headers:
+    NoStore:
+      description: Do not cache token responses or public menu data.
+      schema: {type: string, example: no-store}
+  responses:
+    MenuLink:
+      description: Existing, initialized or newly rotated restaurant menu link. Placeholder web path must be combined with the frontend origin.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RestaurantMenuLink'}
+    BadRequest:
+      description: VALIDATION_ERROR or INVALID_REQUEST_BODY; no rejected values are echoed.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+    Unavailable:
+      description: PUBLIC_MENU_UNAVAILABLE; no effective subscription or missing QR_MENU_VIEW snapshot grant.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+    PublicNotFound:
+      description: PUBLIC_MENU_NOT_FOUND for invalid/unknown/rotated/unavailable restaurant links, or PUBLIC_MENU_GROUP_NOT_FOUND for group filters.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+    LinkNotFound:
+      description: PUBLIC_MENU_LINK_NOT_INITIALIZED or RESTAURANT_NOT_FOUND.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+    Conflict:
+      description: CONCURRENT_MENU_LINK_UPDATE or PUBLIC_MENU_TOKEN_CONFLICT. Mutation is rolled back.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+    Unauthorized:
+      description: Authentication required or ACCOUNT_INACTIVE. Existing security-filter error contract is preserved.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SecurityError'}
+    Forbidden:
+      description: FORBIDDEN / TENANT_ACCESS_DENIED from controller, or RESTAURANT_INACTIVE from existing security filter.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: '#/components/schemas/MenuError'}
+              - {$ref: '#/components/schemas/SecurityError'}
+    InternalError:
+      description: INTERNAL_ERROR. No SQL, token, URL or exception details.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MenuError'}
+  schemas:
+    PublicRestaurantMenu:
+      type: object
+      additionalProperties: false
+      required: [restaurant, groups]
+      properties:
+        restaurant:
+          $ref: 'public-qr-menu-api.yaml#/components/schemas/PublicQrMenu/properties/restaurant'
+        groups:
+          $ref: 'public-qr-menu-api.yaml#/components/schemas/PublicQrMenu/properties/groups'
+    RestaurantMenuLink:
+      type: object
+      additionalProperties: false
+      required: [menuToken, menuPath]
+      properties:
+        menuToken: {type: string, maxLength: 128, description: 'Maps to restaurants.public_order_token; generated tokens have 43 base64url characters.'}
+        menuPath: {type: string, description: 'Frontend relative path /menu/{menuToken}; no domain hardcoded.'}
+    RotateMenuLink:
+      type: object
+      additionalProperties: false
+      required: [expectedToken]
+      properties:
+        expectedToken: {type: string, minLength: 1, maxLength: 128, description: 'Nonblank currently stored token from GET. Compared without normalization; never logged or audited.'}
+    MenuError:
+      type: object
+      additionalProperties: false
+      required: [success, code, message, details, timestamp]
+      properties:
+        success: {type: boolean, enum: [false]}
+        code:
+          type: string
+          enum: [PUBLIC_MENU_NOT_FOUND, PUBLIC_MENU_UNAVAILABLE, PUBLIC_MENU_GROUP_NOT_FOUND, VALIDATION_ERROR, INVALID_REQUEST_BODY, PUBLIC_MENU_LINK_NOT_INITIALIZED, CONCURRENT_MENU_LINK_UPDATE, PUBLIC_MENU_TOKEN_CONFLICT, RESTAURANT_NOT_FOUND, FORBIDDEN, TENANT_ACCESS_DENIED, INTERNAL_ERROR]
+        message: {type: string}
+        details: {type: object, additionalProperties: false}
+        timestamp: {type: string, format: date-time}
+    SecurityError:
+      type: object
+      additionalProperties: false
+      required: [success, code, message, fieldErrors, timestamp]
+      properties:
+        success: {type: boolean, enum: [false]}
+        code: {type: string}
+        message: {type: string}
+        fieldErrors: {type: object, additionalProperties: {type: string}}
+        timestamp: {type: string, format: date-time}

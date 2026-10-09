@@ -1,5 +1,9 @@
 # Tenant profile and staff API
 
+Đơn hàng nhân viên: [ORDER MVP API](order-api.md), namespace `/api/v1/orders`, permission ORDER_* và feature ORDER_MANAGEMENT.
+
+Lấy/khởi tạo/đổi link menu chung nhà hàng: [Public restaurant menu API](public-restaurant-menu-api.md), nhóm `/api/v1/restaurants/me/menu-link` yêu cầu `RESTAURANT_PROFILE_UPDATE`.
+
 Customer-facing anonymous QR menu endpoints are documented separately in [Public QR menu API](public-qr-menu-api.md). Their anonymous access does not apply to any authenticated tenant endpoint below.
 
 All endpoints require `Authorization: Bearer <accessToken>`. The tenant comes exclusively from the authenticated principal. Request bodies must not contain `restaurantId`. Unknown properties are rejected. System accounts without a tenant cannot use these APIs. Responses never contain passwords, token material, `deletedAt`, raw restaurant settings, or `publicOrderToken`.
@@ -595,15 +599,23 @@ raw SQL/details. Authentication/feature checks may precede resource lookup.
 
 Only OPEN -> CANCELLED is exposed. Cancel undoes a seating session; it does not
 cancel orders, refund money or confirm settlement. CLOSED is reserved. There is
-no /close API, order/payment implementation, public menu, merge/split/move-session,
-reservation or realtime integration.
+no /close API, payment implementation, merge/split/move-session, reservation or realtime integration.
+ORDER MVP is now available separately in [order-api.md](order-api.md); public menus are documented separately.
 
-Before introducing the first order write:
-1. Implement a real session-usage policy for cancellation and closure.
-2. Require order creation and session termination to share the transaction/lock
-   protocol; a separate check outside the lock is insufficient.
-3. Require all orders/financial obligations to satisfy closure rules.
-4. Fail closed if the integration is missing; never use an always-empty adapter.
+Staff may now send DINE_IN orders using POST /api/v1/orders with tableId + SUBMIT:
+an OPEN session is reused, or seating is opened only when the order is sent.
+Opening new seating requires TABLE_OPEN at runtime in addition to ORDER permissions
+and TABLE_MANAGEMENT/ORDER_MANAGEMENT. Existing seating needs no TABLE_OPEN.
+The TABLE-owned mandatory-transaction writer is shared with manual-open; manual-open
+retains table expectedVersion and existing HTTP contract. New seating and its audit
+roll back if the order fails. No /orders/from-table or /close route was added.
+
+V16/V17 install a mandatory TableSessionUsagePolicy backed by the ORDER repository.
+Order creation and session cancellation share the restaurant transaction/write lock.
+Cancellation is blocked when any related order is not CANCELLED, paidAmount > 0,
+or paymentStatus is not UNPAID. If all orders are cancelled and have no financial
+obligations, seating cancellation is allowed. Usage query failures roll back the
+cancellation; a missing adapter prevents startup. This is not bill closure.
 
 V15 adds only the three table-domain tables and constraints; V1-V14 and role grants
 are unchanged. TableIntegrationTest creates/drops its own UUID-named PostgreSQL

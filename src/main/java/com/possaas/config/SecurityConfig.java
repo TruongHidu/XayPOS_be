@@ -1,7 +1,7 @@
 package com.possaas.config;
 
 import com.possaas.infrastructure.security.JwtAuthenticationFilter;
-import com.possaas.infrastructure.security.PublicQrMenuRequests;
+import com.possaas.infrastructure.security.PublicMenuRequests;
 import com.possaas.infrastructure.security.RestAccessDeniedHandler;
 import com.possaas.infrastructure.security.RestAuthenticationEntryPoint;
 import com.possaas.infrastructure.security.TenantRestaurantStatusFilter;
@@ -39,7 +39,7 @@ public class SecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers(PublicQrMenuRequests.GET_ENDPOINTS).permitAll()
+                .requestMatchers(PublicMenuRequests.GET_ENDPOINTS).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register-restaurant", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/packages", "/api/v1/packages/**").permitAll()
                 .requestMatchers("/error").permitAll()

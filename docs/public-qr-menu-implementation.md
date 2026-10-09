@@ -2,10 +2,12 @@
 
 Verified on 2026-10-07 with Java 21 and local PostgreSQL.
 
+URL update 2026-10-08: table menu API paths use `/api/v1/public/menu/tables/{qrToken}` and `/items`; the web client and its MSW tests use these paths. The browser route `/qr/{qrToken}` remains unchanged. Verification of both public-menu families passed 70 backend tests; web QR verification passed 24 tests. See [restaurant-menu implementation report](public-restaurant-menu-implementation.md) for the existing build/test limitations.
+
 ## Delivered
 
-- GET `/api/v1/public/qr-menu/{qrToken}`: restaurant/table public context and visible groups.
-- GET `/api/v1/public/qr-menu/{qrToken}/items`: filtered, paginated public item list.
+- GET `/api/v1/public/menu/tables/{qrToken}`: restaurant/table public context and visible groups.
+- GET `/api/v1/public/menu/tables/{qrToken}/items`: filtered, paginated public item list.
 - Token resolution is in TABLE; public menu query, access/visibility policy, mapper and DTOs are in MENU. Controllers contain no persistence/business rules.
 - Existing FeatureAccessChecker/EntitlementService supplies effective snapshot access using Clock. Public reads perform no audit, session, order or subscription mutations.
 - Shared exact GET matcher is used by Spring Security and all three bearer/session filters. Existing internal authorization remains unchanged.

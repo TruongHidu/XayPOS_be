@@ -13,6 +13,7 @@ public interface RestaurantRepository extends JpaRepository<Restaurant, UUID> {
     boolean existsByCode(String code);
     Optional<Restaurant> findByCodeAndDeletedAtIsNull(String code);
     Optional<Restaurant> findByIdAndDeletedAtIsNull(UUID id);
+    Optional<Restaurant> findByPublicOrderToken(String token);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Restaurant r where r.id = :id and r.deletedAt is null")

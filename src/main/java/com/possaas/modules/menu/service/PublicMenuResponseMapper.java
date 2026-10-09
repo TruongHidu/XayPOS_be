@@ -2,6 +2,8 @@ package com.possaas.modules.menu.service;
 
 import com.possaas.modules.menu.dto.PublicMenuItemResponse;
 import com.possaas.modules.menu.dto.PublicQrMenuResponse;
+import com.possaas.modules.menu.dto.PublicRestaurantMenuResponse;
+import com.possaas.modules.restaurant.dto.PublicRestaurantMenuContext;
 import com.possaas.modules.menu.entity.Item;
 import com.possaas.modules.menu.entity.ItemGroup;
 import com.possaas.modules.menu.repository.ItemGroupRepository;
@@ -15,6 +17,12 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class PublicMenuResponseMapper {
     private final ItemGroupRepository groups;
+
+    public PublicRestaurantMenuResponse context(PublicRestaurantMenuContext context, List<ItemGroup> visibleGroups) {
+        return new PublicRestaurantMenuResponse(
+                new PublicRestaurantMenuResponse.Restaurant(context.restaurantName(), context.currencyCode()),
+                visibleGroups.stream().map(g -> new PublicRestaurantMenuResponse.Group(g.getId(), g.getName(), g.getDisplayOrder())).toList());
+    }
 
     public PublicQrMenuResponse context(PublicQrTableContext context, List<ItemGroup> visibleGroups) {
         return new PublicQrMenuResponse(
