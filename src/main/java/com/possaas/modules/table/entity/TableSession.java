@@ -11,7 +11,7 @@ import lombok.Setter;
 @Entity
 @Table(name = "table_sessions")
 public class TableSession extends TableRecord {
-    @Column(name = "table_id", nullable = false, updatable = false)
+    @Column(name = "table_id", nullable = false)
     private UUID tableId;
     @Column(name = "session_code", nullable = false, length = 50, updatable = false)
     private String sessionCode;

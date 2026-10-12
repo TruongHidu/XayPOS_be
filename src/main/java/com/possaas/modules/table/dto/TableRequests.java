@@ -29,4 +29,6 @@ public final class TableRequests {
             @NotNull @Min(0) Long expectedVersion) {}
     public record CancelSession(@NotBlank @Size(max = 1000) String reason,
             @NotNull @Min(0) Long expectedVersion) {}
+    public record TransferSession(@NotNull UUID targetTableId, @NotNull @Min(0) Long expectedVersion,
+            @Size(max = 1000) String reason) {}
 }

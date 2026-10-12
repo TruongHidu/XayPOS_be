@@ -40,8 +40,9 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
-            assertThat(countTables(schema)).isEqualTo(21);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("20");
+            assertThat(countTables(schema)).isEqualTo(22);
+            assertThat(tableExists(schema, "table_session_transfers")).isTrue();
             assertThat(tableExists(schema, "order_item_submissions")).isTrue();
             assertThat(tableExists(schema, "orders")).isTrue();
             assertThat(tableExists(schema, "order_items")).isTrue();
@@ -243,6 +244,47 @@ class FlywayCleanMigrationIntegrationTest {
                 rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); assertThat(rows.getInt(2)).isEqualTo(2);
             }
         } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v20PreservesV19SeatingOrdersQrAndPermissionOverrides() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");
+        createSchema(schema);
+        String prefix="\""+schema+"\".";
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("19").load().migrate();
+            java.util.Map<String,String> before=new java.util.LinkedHashMap<>();
+            try(Connection connection=dataSource.getConnection(); Statement statement=connection.createStatement()) {
+                statement.execute("INSERT INTO "+prefix+"restaurants(id,code,name,status) VALUES('00000000-0000-0000-0000-000000000001','UP20','Fixture','ACTIVE')");
+                statement.execute("INSERT INTO "+prefix+"users(id,restaurant_id,role_id,email,password_hash,name) SELECT '00000000-0000-0000-0000-000000000004'::uuid,'00000000-0000-0000-0000-000000000001'::uuid,id,'v20@example.test','fixture','Fixture' FROM "+prefix+"roles WHERE code='OWNER' AND restaurant_id IS NULL");
+                statement.execute("INSERT INTO "+prefix+"restaurant_tables(id,restaurant_id,code,name,status,qr_token,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','B1','Fixture','AVAILABLE','v20-preserved-token',now(),now())");
+                statement.execute("INSERT INTO "+prefix+"table_sessions(id,restaurant_id,table_id,session_code,status,opened_by,opened_at,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','S1','OPEN','00000000-0000-0000-0000-000000000004',now(),now(),now())");
+                statement.execute("INSERT INTO "+prefix+"orders(restaurant_id,table_session_id,order_code,service_type,source_channel,status,currency_code,created_at,updated_at,idempotency_key,request_hash) VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','O1','DINE_IN','WAITER','CONFIRMED','VND',now(),now(),'old-create-key',repeat('a',64))");
+                // Existing custom permission/override must survive ON CONFLICT and default role grants.
+                statement.execute("INSERT INTO "+prefix+"permissions(code,module,name) VALUES('TABLE_TRANSFER','TABLE','Existing custom permission')");
+                statement.execute("INSERT INTO "+prefix+"user_permissions(user_id,permission_id,effect) SELECT '00000000-0000-0000-0000-000000000004'::uuid,id,'DENY' FROM "+prefix+"permissions WHERE code='TABLE_TRANSFER'");
+                statement.execute("INSERT INTO "+prefix+"restaurant_subscriptions(restaurant_id,package_id,status,start_at,end_at,price_amount,currency_code,feature_snapshot) SELECT '00000000-0000-0000-0000-000000000001'::uuid,id,'ACTIVE',now(),now()+interval '1 day',0,'VND','{\"features\":[]}'::jsonb FROM "+prefix+"packages WHERE code='PRO'");
+                for(String table:java.util.List.of("restaurant_tables","table_sessions","orders","user_permissions","packages","package_features","restaurant_subscriptions"))
+                    before.put(table,tableSnapshot(statement,prefix,table));
+            }
+            var flyway=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();
+            flyway.migrate(); flyway.validate();
+            try(Connection connection=dataSource.getConnection(); Statement statement=connection.createStatement()) {
+                for(var entry:before.entrySet()) assertThat(tableSnapshot(statement,prefix,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                try(ResultSet rows=statement.executeQuery("SELECT count(*) FROM "+prefix+"table_session_transfers")) { rows.next(); assertThat(rows.getLong(1)).isZero(); }
+                try(ResultSet rows=statement.executeQuery("SELECT string_agg(r.code,',' ORDER BY r.code) FROM "+prefix+"roles r JOIN "+prefix+"role_permissions rp ON rp.role_id=r.id JOIN "+prefix+"permissions p ON p.id=rp.permission_id WHERE p.code='TABLE_TRANSFER'")) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo("MANAGER,OWNER,WAITER");
+                }
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    private String tableSnapshot(Statement statement,String prefix,String table) throws Exception {
+        try(ResultSet rows=statement.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text FROM "+prefix+table+" t")) {
+            rows.next(); return rows.getString(1);
+        }
     }
 
     private int countTables(String schema) throws Exception {

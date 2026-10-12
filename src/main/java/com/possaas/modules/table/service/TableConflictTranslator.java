@@ -14,6 +14,9 @@ public final class TableConflictTranslator {
                     case "uq_restaurant_table_code": return new ConflictException("TABLE_CODE_EXISTS", "Table code is reserved");
                     case "uq_restaurant_table_qr": return new ConflictException("QR_TOKEN_CONFLICT", "QR token conflict; retry");
                     case "ux_table_session_open": return new ConflictException("TABLE_ALREADY_OCCUPIED", "Table already has an open session");
+                    // A uniqueness failure alone cannot establish a mismatched fingerprint.
+                    case "uq_table_transfer_key", "uq_table_transfer_version":
+                        return new ConflictException("CONCURRENT_TABLE_UPDATE", "Table transfer conflicts with a concurrent request");
                     default: break;
                 }
             }

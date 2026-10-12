@@ -6,9 +6,11 @@ import com.possaas.modules.subscription.dto.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -21,6 +23,8 @@ import org.springframework.web.bind.annotation.*;
 public class TableSessionController {
     private final TableSessionCommandService command;
     private final TableSessionQueryService query;
+    private final TableSessionTransferService transfer;
+    private final TableSessionTransferQueryService transfers;
 
     @GetMapping @PreAuthorize("hasAuthority('TABLE_VIEW')")
     public PageResponse<TableSessionResponse> search(@Valid @ModelAttribute TableSearch.Sessions search) {
@@ -40,5 +44,21 @@ public class TableSessionController {
     @PostMapping("/{sessionId}/cancel") @PreAuthorize("hasAuthority('TABLE_CLOSE')")
     public TableSessionResponse cancel(@PathVariable UUID sessionId, @Valid @RequestBody TableRequests.CancelSession request, HttpServletRequest http) {
         return command.cancel(sessionId, request, http.getRemoteAddr());
+    }
+
+    @PostMapping("/{sessionId}/transfer") @PreAuthorize("hasAuthority('TABLE_TRANSFER')")
+    public ResponseEntity<TableSessionResponse> transfer(@PathVariable UUID sessionId,
+            @Valid @RequestBody TableRequests.TransferSession request,
+            @RequestHeader(name = "Idempotency-Key", required = false) String key, HttpServletRequest http) {
+        var result = transfer.transfer(sessionId, request, key, http.getRemoteAddr());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header("Idempotency-Replayed", Boolean.toString(result.replay())).body(result.response());
+    }
+
+    @GetMapping("/{sessionId}/transfers") @PreAuthorize("hasAuthority('TABLE_VIEW')")
+    public ResponseEntity<PageResponse<TableSessionTransferResponse>> transfers(@PathVariable UUID sessionId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(transfers.history(sessionId, page, size));
     }
 }

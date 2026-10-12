@@ -23,7 +23,15 @@ class TableOpenApiTest {
                     });
                 }
             });
-            assertThat(operations).hasSize(21);
+            assertThat(operations).hasSize(23);
+            var transfer = root.path("paths").path("/api/v1/table-sessions/{sessionId}/transfer").path("post");
+            assertThat(transfer.path("description").asText()).contains("TABLE_TRANSFER", "TABLE_MANAGEMENT");
+            assertThat(transfer.path("parameters").toString()).contains("Idempotency-Key");
+            assertThat(transfer.at("/responses/200/headers").has("Idempotency-Replayed")).isTrue();
+            assertThat(transfer.at("/responses/200/headers").has("Cache-Control")).isTrue();
+            assertThat(root.at("/components/schemas/TableTransferSession/required").toString()).contains("targetTableId", "expectedVersion");
+            assertThat(root.at("/components/schemas/TableSessionTransfer/properties").has("requestHash")).isFalse();
+            assertThat(root.at("/components/schemas/TableSessionTransfer/properties").has("idempotencyKey")).isFalse();
             references(root, root);
             var assignment = root.at("/components/schemas/TableAreaAssignment");
             assertThat(assignment.path("required").toString()).contains("areaId", "expectedVersion");

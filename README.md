@@ -1,5 +1,10 @@
 # POS SaaS Backend
 
+V20: chuyển phiên OPEN sang bàn trống, giữ nguyên order/món, history append-only và
+idempotent resource replay. Permission TABLE_TRANSFER + TABLE_MANAGEMENT;
+default OWNER/MANAGER/WAITER. Refresh/login lại để JWT nhận quyền mới.
+[API/Postman](docs/table-session-transfer-api.md) · [Đồng bộ FE](docs/table-session-transfer-fe-sync.md).
+
 V19: tối đa một serving order/session (OPEN/CONFIRMED/PREPARING/READY/SERVED);
 create/append/update-item có ba CoR riêng, giữ Strategy DINE_IN/TAKEAWAY và hash legacy.
 GET /api/v1/table-sessions/{sessionId}/active-order hỗ trợ FE mở đúng đơn hiện tại.

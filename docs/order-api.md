@@ -1,5 +1,11 @@
 # ORDER MVP API
 
+Chuyển bàn thuộc TABLE: [API chuyển phiên](table-session-transfer-api.md).
+Transfer giữ nguyên orderId/tableSessionId, order version, trạng thái và mọi dòng món;
+session.tableId là bàn hiện tại/cuối cùng, không phải snapshot nơi tạo order lịch sử.
+Active-order và gọi thêm vẫn dùng cùng session/order sau chuyển. Original create/append
+retry giữ nguyên payload/key (kể cả tableId nguồn cũ); không đổi fingerprint hoặc CoR/Strategy.
+
 Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; chưa có QR ordering, KDS, payment, đóng bill, recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml).
 
 Files và kết quả test thực tế: [order-implementation.md](order-implementation.md).

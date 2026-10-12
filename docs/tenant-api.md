@@ -599,7 +599,9 @@ raw SQL/details. Authentication/feature checks may precede resource lookup.
 
 Only OPEN -> CANCELLED is exposed. Cancel undoes a seating session; it does not
 cancel orders, refund money or confirm settlement. CLOSED is reserved. There is
-no /close API, payment implementation, merge/split/move-session, reservation or realtime integration.
+no /close API, payment implementation, merge/split, reservation or realtime integration.
+V20 adds moving an OPEN session to an empty table without changing its orders:
+[transfer API](table-session-transfer-api.md) and [FE synchronization](table-session-transfer-fe-sync.md).
 ORDER MVP is now available separately in [order-api.md](order-api.md); public menus are documented separately.
 
 Staff may now send DINE_IN orders using POST /api/v1/orders with tableId + SUBMIT:
