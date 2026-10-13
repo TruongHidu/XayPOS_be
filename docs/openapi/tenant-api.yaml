@@ -1775,7 +1775,7 @@ components:
       additionalProperties: false
       properties: {"reason":{"type":"string","maxLength":1000,"minLength":1},"expectedVersion":{"type":"integer","format":"int64","minimum":0}}
       required: ["reason","expectedVersion"]
-      description: "Seating cancellation only. expectedVersion is session version. Retrying CANCELLED returns its original terminal data even with the initial version. CLOSED is reserved and cannot be cancelled."
+      description: "Seating cancellation only. expectedVersion is session version. Retrying CANCELLED returns its original terminal data even with the initial version. CLOSED sessions cannot be cancelled; see kitchen-lifecycle-api.yaml for /close."
     TableQr:
       type: "object"
       additionalProperties: false

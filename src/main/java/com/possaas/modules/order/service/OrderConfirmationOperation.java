@@ -5,6 +5,7 @@ import com.possaas.common.security.CurrentUser;
 import com.possaas.modules.menu.application.port.OrderMenuQuery;
 import com.possaas.modules.order.entity.*;
 import com.possaas.modules.order.repository.OrderRepository;
+import com.possaas.modules.order.repository.OrderItemRepository;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class OrderConfirmationOperation {
     private final OrderMenuQuery menu;
     private final OrderMoneyCalculator money;
     private final OrderRepository orders;
+    private final OrderItemRepository items;
     private final OrderAudit audit;
 
     @Transactional(propagation=Propagation.MANDATORY)
@@ -26,6 +28,9 @@ public class OrderConfirmationOperation {
         validate(order,lines,actor);
         var before=audit.snapshot(order,lines);
         order.setStatus(OrderStatus.CONFIRMED); order.setConfirmedAt(now);
+        lines.stream().filter(line -> line.getStatus()==OrderItemStatus.PENDING && line.getSentToKitchenAt()==null)
+            .forEach(line -> line.setSentToKitchenAt(now));
+        items.saveAll(lines);
         money.recalculate(order,lines); order.changed(now); orders.saveAndFlush(order);
         audit.record(actor,"ORDER_CONFIRMED",order,before,lines,ip); orders.flush();
     }

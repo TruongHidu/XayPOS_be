@@ -61,7 +61,7 @@ class OrderPolicyTest {
         assertThatThrownBy(()->lifecycle.requireEditable(order)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(()->append.requireAppendable(order,OrderSubmissionMode.DRAFT,"VND")).isInstanceOf(BusinessException.class);
         order.setStatus(OrderStatus.PREPARING);
-        assertThatThrownBy(()->append.requireAppendable(order,OrderSubmissionMode.SUBMIT,"VND")).isInstanceOf(BusinessException.class);
+        append.requireAppendable(order,OrderSubmissionMode.SUBMIT,"VND");
     }
 
     @Test void strategiesResolveTheirOwnSeatingRulesAndFactoryDelegates() {
@@ -94,6 +94,36 @@ class OrderPolicyTest {
         var cancelled=new OrderItem(); cancelled.setStatus(OrderItemStatus.CANCELLED); cancelled.setLineTotal(new BigDecimal("20.00"));
         money.recalculate(order,List.of(live,cancelled)); assertThat(order.getTotalAmount()).isEqualByComparingTo("10.01");
         assertThat(cancelled.getLineTotal()).isEqualByComparingTo("20.00");
+    }
+    @Test void servingAggregateHandlesMixedBatchesAndNeverOverwritesTerminalStates() {
+        var policy=new OrderServingStatusPolicy(); var order=new Order(); order.setStatus(OrderStatus.CONFIRMED);
+        var first=new OrderItem(); var second=new OrderItem();
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.CONFIRMED);
+        first.setStatus(OrderItemStatus.COOKING);
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.PREPARING);
+        first.setStatus(OrderItemStatus.READY); second.setStatus(OrderItemStatus.SERVED);
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.READY);
+        first.setStatus(OrderItemStatus.SERVED);
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.SERVED);
+        second.setStatus(OrderItemStatus.PENDING);
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.PREPARING);
+        order.setStatus(OrderStatus.COMPLETED);
+        assertThat(policy.aggregate(order,List.of(first,second))).isEqualTo(OrderStatus.COMPLETED);
+    }
+    @Test void transitionAndCompletionPoliciesKeepPaymentAndServingIndependent() {
+        var transitions=new OrderItemTransitionPolicy(); var completion=new OrderCompletionPolicy();
+        var order=new Order(); order.setStatus(OrderStatus.CONFIRMED);
+        var line=new OrderItem();
+        assertThat(transitions.requireTransition(line.getStatus(),OrderItemStatus.PENDING,OrderItemStatus.COOKING)).isTrue();
+        assertThat(transitions.requireTransition(OrderItemStatus.COOKING,OrderItemStatus.PENDING,OrderItemStatus.COOKING)).isFalse();
+        assertThatThrownBy(()->transitions.requireTransition(OrderItemStatus.READY,OrderItemStatus.PENDING,OrderItemStatus.COOKING))
+            .isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.getCode()).isEqualTo("INVALID_ORDER_ITEM_TRANSITION"));
+        assertThatThrownBy(()->completion.requireCompletable(order,List.of(line)))
+            .isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.getCode()).isEqualTo("ORDER_NOT_PAID"));
+        order.setPaymentStatus(OrderPaymentStatus.PAID); order.setTotalAmount(BigDecimal.TEN); order.setPaidAmount(BigDecimal.TEN);
+        assertThatThrownBy(()->completion.requireCompletable(order,List.of(line)))
+            .isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.getCode()).isEqualTo("ORDER_NOT_READY_FOR_COMPLETION"));
+        line.setStatus(OrderItemStatus.SERVED); completion.requireCompletable(order,List.of(line));
     }
     @Test void lifecycleSeparatesPaymentVersionAndLineCancellationPermissions() {
         var policy=new OrderLifecyclePolicy(); var order=new Order(); var line=new OrderItem();

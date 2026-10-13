@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS manual payment MVP
+  version: 1.0.0
+  description: Full CASH/TRANSFER settlement confirmed by staff. No SePay or bank verification.
+servers:
+  - url: /
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/orders/{orderId}/payments:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      summary: Record a full manual payment
+      description: Requires PAYMENT_CREATE, PAYMENT_CONFIRM and PAYMENT_MANAGEMENT. TRANSFER is staff-confirmed only. Does not complete the order or close seating.
+      operationId: recordManualPayment
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordManualPaymentRequest'
+            examples:
+              cash:
+                value: {expectedOrderVersion: 3, paymentMethod: CASH, amount: 150000.00}
+              transfer:
+                value: {expectedOrderVersion: 3, paymentMethod: TRANSFER, amount: 150000.00, referenceNo: BANK-TXN-123456}
+      responses:
+        '201':
+          description: Payment SUCCESS recorded. Idempotency-Replayed is false.
+          headers:
+            Idempotency-Replayed:
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentResponse'}
+        '200':
+          description: Exact successful replay. Idempotency-Replayed is true.
+          headers:
+            Idempotency-Replayed:
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+    get:
+      summary: List payments of an order
+      description: Requires PAYMENT_VIEW and PAYMENT_MANAGEMENT.
+      operationId: listOrderPayments
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: Paginated payment history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentPage'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/orders/{orderId}/payments/{paymentId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+      - name: paymentId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      summary: Get one order payment
+      description: Requires PAYMENT_VIEW and PAYMENT_MANAGEMENT; payment must belong to order and tenant.
+      operationId: getOrderPayment
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PaymentResponse'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    Error:
+      description: Project error response; code identifies business/authorization/concurrency failure.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    RecordManualPaymentRequest:
+      type: object
+      required: [expectedOrderVersion, paymentMethod, amount]
+      properties:
+        expectedOrderVersion: {type: integer, format: int64, minimum: 0}
+        paymentMethod: {type: string, enum: [CASH, TRANSFER]}
+        amount: {type: number, multipleOf: 0.01, exclusiveMinimum: 0}
+        referenceNo: {type: string, maxLength: 100, description: Required for manual TRANSFER}
+    PaymentResponse:
+      type: object
+      required: [id, orderId, paymentCode, amount, currencyCode, paymentMethod, confirmationSource, status, requestedAt, paidAt, createdBy]
+      properties:
+        id: {type: string, format: uuid}
+        orderId: {type: string, format: uuid}
+        paymentCode: {type: string}
+        amount: {type: number}
+        currencyCode: {type: string, example: VND}
+        paymentMethod: {type: string, enum: [CASH, TRANSFER]}
+        confirmationSource: {type: string, enum: [STAFF_MANUAL, PROVIDER_WEBHOOK]}
+        provider: {type: string, nullable: true}
+        status: {type: string, enum: [PENDING, SUCCESS, FAILED, CANCELLED]}
+        referenceNo: {type: string, nullable: true}
+        requestedAt: {type: string, format: date-time}
+        paidAt: {type: string, format: date-time}
+        createdBy: {type: string, format: uuid}
+    PaymentPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/PaymentResponse'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+    ErrorResponse:
+      type: object
+      properties:
+        success: {type: boolean, example: false}
+        code: {type: string, example: ORDER_ALREADY_PAID}
+        message: {type: string}
+        fieldErrors: {type: object, additionalProperties: {type: string}}
+        timestamp: {type: string, format: date-time}

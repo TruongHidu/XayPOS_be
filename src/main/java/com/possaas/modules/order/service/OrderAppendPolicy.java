@@ -15,8 +15,10 @@ public class OrderAppendPolicy {
     public void requireAppendable(Order order,OrderSubmissionMode mode,String restaurantCurrency) {
         if(mode==OrderSubmissionMode.DRAFT) lifecycle.requireEditable(order);
         else {
-            if(order.getStatus()!=OrderStatus.OPEN && order.getStatus()!=OrderStatus.CONFIRMED)
-                throw new ConflictException("INVALID_ORDER_TRANSITION","Only OPEN or CONFIRMED orders accept submitted additions");
+            if(order.getStatus()!=OrderStatus.OPEN && order.getStatus()!=OrderStatus.CONFIRMED
+                    && order.getStatus()!=OrderStatus.PREPARING && order.getStatus()!=OrderStatus.READY
+                    && order.getStatus()!=OrderStatus.SERVED)
+                throw new ConflictException("INVALID_ORDER_TRANSITION","Only serving orders accept submitted additions");
             lifecycle.requireUnpaid(order);
         }
         if(!order.getCurrencyCode().equals(restaurantCurrency))

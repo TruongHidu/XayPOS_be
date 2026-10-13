@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 public interface OrderRepository extends JpaRepository<Order,UUID>, JpaSpecificationExecutor<Order> {
     Optional<Order> findByIdAndRestaurantId(UUID id, UUID tenant);
     Optional<Order> findByRestaurantIdAndIdempotencyKey(UUID tenant, String key);
+    List<Order> findAllByRestaurantIdAndTableSessionId(UUID tenant,UUID sessionId);
     boolean existsByRestaurantIdAndTableSessionIdAndServiceTypeAndStatusIn(
         UUID tenant, UUID sessionId, ServiceType type, Collection<OrderStatus> statuses);
     List<Order> findAllByRestaurantIdAndTableSessionIdAndServiceTypeAndStatusIn(

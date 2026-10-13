@@ -1,0 +1,119 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS kitchen and order completion
+  version: 1.0.0
+  description: "PAID, SERVED, COMPLETED and session CLOSED are separate. KDS continues after payment. All resources are tenant-scoped from JWT."
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/kitchen/items:
+    get:
+      operationId: listKitchenItems
+      description: "KITCHEN_VIEW + KITCHEN_DISPLAY. Stable queue sorted by coalesce(sentToKitchenAt,createdAt), id. Includes paid but unserved orders and the table currently attached to the session. No OPEN drafts or terminal orders."
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [PENDING, COOKING, READY], default: PENDING}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Paginated kitchen queue, content: {application/json: {schema: {$ref: '#/components/schemas/KitchenPage'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/orders/{orderId}/items/{orderItemId}/start-cooking:
+    post:
+      operationId: startCooking
+      description: "KITCHEN_START_COOKING + KITCHEN_DISPLAY; PENDING -> COOKING only. Exact retry is no-op."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/items/{orderItemId}/mark-ready:
+    post:
+      operationId: markReady
+      description: "KITCHEN_MARK_READY + KITCHEN_DISPLAY; COOKING -> READY only."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/items/{orderItemId}/mark-served:
+    post:
+      operationId: markServed
+      description: "ORDER_MARK_SERVED + ORDER_MANAGEMENT; READY -> SERVED only, including paid orders."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/complete:
+    post:
+      operationId: completeOrder
+      description: "ORDER_COMPLETE + ORDER_MANAGEMENT. Requires PAID/full amount and all live items SERVED. No payment or session side effect."
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/VersionRequest'}}}}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/table-sessions/{sessionId}/close:
+    post:
+      operationId: closeTableSession
+      description: "TABLE_CLOSE + TABLE_MANAGEMENT. Needs at least one paid COMPLETED order and every associated order terminal/settled. CASHIER has no TABLE_CLOSE default grant."
+      parameters: [{$ref: '#/components/parameters/SessionId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/VersionRequest'}}}}
+      responses:
+        '200': {description: CLOSED session, content: {application/json: {schema: {$ref: '#/components/schemas/TableSession'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  securitySchemes:
+    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    OrderId: {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+    OrderItemId: {name: orderItemId, in: path, required: true, schema: {type: string, format: uuid}}
+    SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
+  requestBodies:
+    OrderItemTransition:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, required: [expectedOrderVersion], additionalProperties: false, properties: {expectedOrderVersion: {type: integer, format: int64, minimum: 0}}}
+  responses:
+    OrderUpdated: {description: Current OrderResponse with new version, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}
+    BadRequest: {description: INVALID_REQUEST_BODY or VALIDATION_ERROR, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden: {description: FORBIDDEN or FEATURE_NOT_ENTITLED, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: Tenant-scoped resource not found, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Conflict: {description: Invalid transition, readiness or concurrent update, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    VersionRequest: {type: object, required: [expectedVersion], additionalProperties: false, properties: {expectedVersion: {type: integer, format: int64, minimum: 0}}}
+    KitchenPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/KitchenItem'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+    KitchenItem:
+      type: object
+      properties:
+        orderId: {type: string, format: uuid}
+        orderCode: {type: string}
+        orderVersion: {type: integer, format: int64}
+        orderItemId: {type: string, format: uuid}
+        itemName: {type: string}
+        quantity: {type: number}
+        unit: {type: string}
+        note: {type: string, nullable: true}
+        itemStatus: {type: string, enum: [PENDING, COOKING, READY]}
+        serviceType: {type: string, enum: [DINE_IN, TAKEAWAY]}
+        createdAt: {type: string, format: date-time}
+        sentToKitchenAt: {type: string, format: date-time, nullable: true}
+        sessionId: {type: string, format: uuid, nullable: true}
+        tableId: {type: string, format: uuid, nullable: true}
+        tableCode: {type: string, nullable: true}
+        tableName: {type: string, nullable: true}
+    Order: {type: object, description: "Existing OrderResponse; see order-api.yaml", additionalProperties: true}
+    TableSession: {type: object, description: "Existing TableSessionResponse; see tenant-api.yaml", additionalProperties: true}
+    Error:
+      type: object
+      properties:
+        success: {type: boolean, enum: [false]}
+        code: {type: string}
+        message: {type: string}
+        fieldErrors: {type: object}
+        timestamp: {type: string, format: date-time}

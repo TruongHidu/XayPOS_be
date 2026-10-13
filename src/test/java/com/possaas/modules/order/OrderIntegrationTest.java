@@ -16,6 +16,7 @@ import com.possaas.modules.menu.repository.*;
 import com.possaas.modules.order.entity.*;
 import com.possaas.modules.order.repository.*;
 import com.possaas.modules.order.service.OrderCodeGenerator;
+import com.possaas.modules.payment.repository.PaymentRepository;
 import com.possaas.modules.restaurant.entity.Restaurant;
 import com.possaas.modules.restaurant.repository.RestaurantRepository;
 import com.possaas.modules.subscription.domain.SubscriptionFeatureSnapshot;
@@ -60,7 +61,7 @@ class OrderIntegrationTest {
     private static final String SCHEMA="it_order_"+UUID.randomUUID().toString().replace("-","");
     private static final Instant NOW=Instant.parse("2026-10-08T00:00:00Z");
     private static final String ORDERS="/api/v1/orders";
-    private static final Set<String> ALL=Set.of("ORDER_VIEW","ORDER_CREATE","ORDER_UPDATE","ORDER_CANCEL","TABLE_VIEW","TABLE_CLOSE","TABLE_OPEN");
+    private static final Set<String> ALL=Set.of("ORDER_VIEW","ORDER_CREATE","ORDER_UPDATE","ORDER_CANCEL","ORDER_MARK_SERVED","ORDER_COMPLETE","KITCHEN_VIEW","KITCHEN_START_COOKING","KITCHEN_MARK_READY","TABLE_VIEW","TABLE_CLOSE","TABLE_OPEN","TABLE_TRANSFER","PAYMENT_VIEW","PAYMENT_CREATE","PAYMENT_CONFIRM");
     @TestConfiguration static class FixedTime { @Bean @Primary Clock orderClock() { return Clock.fixed(NOW,ZoneOffset.UTC); } }
     @DynamicPropertySource static void isolatedSchema(DynamicPropertyRegistry properties) {
         String base=System.getenv().getOrDefault("DB_URL","jdbc:postgresql://localhost:5432/kiot_tay_db");
@@ -77,6 +78,7 @@ class OrderIntegrationTest {
     @MockitoSpyBean TableLifecyclePolicy tableLifecycle;
     @Autowired OrderSeatingCommand seatingCommand;
     @Autowired PlatformTransactionManager transactions;
+    @Autowired PaymentRepository payments;
     @MockitoSpyBean OrderRepository orders; @Autowired OrderItemRepository lines;
     @MockitoSpyBean com.possaas.modules.order.service.OrderSessionServingPolicy serving;
     @MockitoSpyBean OrderItemSubmissionRepository submissionLedger;
@@ -206,7 +208,7 @@ class OrderIntegrationTest {
     }
     @Test void confirmIsIdempotentAndBlocksFurtherEditsWithoutFakeKitchenHistory() throws Exception {
         var order=create(false); var confirmed=call(post(path(order)+"/confirm"),Map.of("expectedVersion",order.version())); confirmed.expect(200);
-        assertThat(confirmed.body.path("status").asText()).isEqualTo("CONFIRMED"); assertThat(confirmed.body.path("items").get(0).path("sentToKitchenAt").isNull()).isTrue();
+        assertThat(confirmed.body.path("status").asText()).isEqualTo("CONFIRMED"); assertThat(confirmed.body.path("items").get(0).path("sentToKitchenAt").asText()).isEqualTo(NOW.toString());
         var replay=call(post(path(order)+"/confirm"),Map.of("expectedVersion",order.version())); assertThat(replay.body).isEqualTo(confirmed.body);
         call(post(path(order)+"/items"),Map.of("expectedVersion",confirmed.version(),"items",List.of(lineRequest(f.item.getId(),"1",null)))).error(409,"ORDER_NOT_EDITABLE");
         call(patch(path(order)+"/items/"+order.lineId()),Map.of("expectedVersion",confirmed.version(),"quantity",3)).error(409,"ORDER_NOT_EDITABLE");
@@ -437,7 +439,7 @@ class OrderIntegrationTest {
         jdbc.update("update order_items set status='COOKING' where id=?",cooking);
         var cancelled=call(post(path(order)+"/items/"+order.lineId()+"/cancel"),Map.of("expectedVersion",confirmed.version(),"reason","void pending")); cancelled.expect(200);
         assertThat(cancelled.body.path("items").get(1).path("status").asText()).isEqualTo("COOKING");
-        assertThat(cancelled.body.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(cancelled.body.path("status").asText()).isEqualTo("PREPARING");
         call(post(path(order)+"/items/"+cooking+"/cancel"),Map.of("expectedVersion",cancelled.version(),"reason","not allowed")).error(409,"ORDER_ITEM_NOT_EDITABLE");
     }
 
@@ -467,7 +469,7 @@ class OrderIntegrationTest {
             assertThat(order.body.path("paymentStatus").asText()).isEqualTo("UNPAID");
             assertThat(order.body.path("paidAmount").decimalValue()).isZero();
             assertThat(order.body.path("items").get(0).path("status").asText()).isEqualTo("PENDING");
-            assertThat(order.body.path("items").get(0).path("sentToKitchenAt").isNull()).isTrue();
+            assertThat(order.body.path("items").get(0).path("sentToKitchenAt").asText()).isEqualTo(NOW.toString());
             assertThat(detail(order).body).isEqualTo(order.body); assertThat(history(order.lineId())).hasSize(1);
         }
         assertThat(events("ORDER_CREATED")).isEqualTo(2); assertThat(events("ORDER_CONFIRMED")).isEqualTo(2);
@@ -503,7 +505,7 @@ class OrderIntegrationTest {
         for(int index:List.of(1,2)) { var line=added.body.path("items").get(index); assertThat(line.path("unitPrice").decimalValue()).isEqualByComparingTo("60000");
             assertThat(line.path("itemName").asText()).isEqualTo("New Pho"); assertThat(line.path("unit").asText()).isEqualTo("plate");
             assertThat(line.path("id").asText()).isNotEqualTo(order.lineId().toString()); assertThat(line.path("status").asText()).isEqualTo("PENDING");
-            assertThat(line.path("sentToKitchenAt").isNull()).isTrue(); assertThat(history(UUID.fromString(line.path("id").asText()))).hasSize(1); }
+            assertThat(line.path("sentToKitchenAt").asText()).isEqualTo(NOW.toString()); assertThat(history(UUID.fromString(line.path("id").asText()))).hasSize(1); }
         assertThat(added.body.path("items").get(1).path("id")).isNotEqualTo(added.body.path("items").get(2).path("id"));
         assertThat(added.body.path("totalAmount").decimalValue()).isEqualByComparingTo("220000");
         var root=orders.findById(order.id()).orElseThrow(); assertThat(root.getIdempotencyKey()).isEqualTo(oldRoot.getIdempotencyKey()); assertThat(root.getRequestHash()).isEqualTo(oldRoot.getRequestHash());
@@ -512,7 +514,9 @@ class OrderIntegrationTest {
     @Test void openSubmittedAdditionConfirmsAndPreservesOldPrice() throws Exception {
         var order=create(false); jdbc.update("update items set sale_price=60000 where id=?",f.item.getId());
         var added=append(order,addition(order),key()); added.expect(200);
-        assertThat(added.body.path("status").asText()).isEqualTo("CONFIRMED"); assertThat(added.body.path("items").get(0)).isEqualTo(order.body.path("items").get(0));
+        assertThat(added.body.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(added.body.path("items").get(0).path("unitPrice")).isEqualTo(order.body.path("items").get(0).path("unitPrice"));
+        assertThat(added.body.path("items").get(0).path("sentToKitchenAt").asText()).isEqualTo(NOW.toString());
         assertThat(events("ORDER_ITEMS_ADDED")).isEqualTo(1); assertThat(events("ORDER_CONFIRMED")).isEqualTo(1); assertThat(ledgerCount()).isEqualTo(1);
     }
     @Test void openSubmitRechecksOldMenuAndRollsBackNewLinesAuditHistoryAndLedger() throws Exception {
@@ -552,7 +556,7 @@ class OrderIntegrationTest {
             jdbc.update("update orders set payment_status=? where id=?",payment,order.id()); append(order,request,key()).error(409,"ORDER_HAS_FINANCIAL_OBLIGATIONS"); }
         jdbc.update("update orders set payment_status='UNPAID',paid_amount=1 where id=?",order.id()); append(order,request,key()).error(409,"ORDER_HAS_FINANCIAL_OBLIGATIONS");
         jdbc.update("update orders set paid_amount=0 where id=?",order.id());
-        for(String status:List.of("PREPARING","READY","SERVED","COMPLETED","CANCELLED")) {
+        for(String status:List.of("COMPLETED","CANCELLED")) {
             jdbc.update("update orders set status=?,cancelled_at=created_at,cancel_reason='fixture' where id=?",status,order.id()); append(order,request,key()).error(409,"INVALID_ORDER_TRANSITION"); }
         assertThat(ledgerCount()).isZero(); assertThat(events("ORDER_ITEMS_ADDED")).isZero();
     }
@@ -774,7 +778,7 @@ class OrderIntegrationTest {
         assertThat(session.getSessionCode()).matches("TS-[0-9a-f]{32}"); assertThat(sessionCount(table.getId())).isEqualTo(1);
         assertThat(order.body.path("status").asText()).isEqualTo("CONFIRMED"); assertThat(Instant.parse(order.body.path("confirmedAt").asText())).isEqualTo(NOW);
         assertThat(order.body.path("paymentStatus").asText()).isEqualTo("UNPAID"); assertThat(order.body.path("paidAmount").decimalValue()).isZero();
-        assertThat(order.body.path("items").get(0).path("status").asText()).isEqualTo("PENDING"); assertThat(order.body.path("items").get(0).path("sentToKitchenAt").isNull()).isTrue();
+        assertThat(order.body.path("items").get(0).path("status").asText()).isEqualTo("PENDING"); assertThat(order.body.path("items").get(0).path("sentToKitchenAt").asText()).isEqualTo(NOW.toString());
         assertThat(order.body.toString()).doesNotContain("requestHash","idempotencyKey","costPrice","qrToken");
         assertThat(tables.findById(table.getId()).orElseThrow().getQrToken()).isEqualTo(qr);
         assertThat(tables.findById(table.getId()).orElseThrow().getVersion()).isZero();
@@ -1046,6 +1050,344 @@ class OrderIntegrationTest {
         submit(false).expect(201); verifyNoInteractions(seatingQuery); assertThat(sessionCount(f.table.getId())).isEqualTo(1);
     }
 
+    @Test void cashAndManualTransferSettleConfirmedTakeawayAndDineInWithoutClosingSession() throws Exception {
+        var dine=submit(true); dine.expect(201);
+        var originalLine=dine.body.path("items").get(0).deepCopy();
+        var cash=pay(dine,"CASH",dine.body.path("totalAmount").decimalValue(),null,key());
+        cash.expect(201);
+        assertThat(cash.body.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(cash.body.path("confirmationSource").asText()).isEqualTo("STAFF_MANUAL");
+        assertThat(cash.body.path("provider").isNull()).isTrue();
+        var paid=detail(dine); paid.expect(200);
+        assertThat(paid.body.path("paymentStatus").asText()).isEqualTo("PAID");
+        assertThat(paid.body.path("paidAmount").decimalValue()).isEqualByComparingTo(dine.body.path("totalAmount").decimalValue());
+        assertThat(paid.version()).isGreaterThan(dine.version());
+        assertThat(paid.body.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(paid.body.path("items").get(0)).isEqualTo(originalLine);
+        assertThat(sessions.findById(f.session.getId()).orElseThrow().getStatus()).isEqualTo(TableSessionStatus.OPEN);
+        assertThat(call(get(paymentPath(dine))).body.path("content").size()).isEqualTo(1);
+        assertThat(call(get(paymentPath(dine)+"/"+cash.id())).body).isEqualTo(cash.body);
+        assertThat(events("PAYMENT_RECORDED")).isEqualTo(1);
+
+        f=fixture(false);
+        var takeaway=submit(false); takeaway.expect(201);
+        var transfer=pay(takeaway,"TRANSFER",takeaway.body.path("totalAmount").decimalValue(),"BANK-123",key());
+        transfer.expect(201);
+        assertThat(transfer.body.path("referenceNo").asText()).isEqualTo("BANK-123");
+        assertThat(detail(takeaway).body.path("paymentStatus").asText()).isEqualTo("PAID");
+    }
+
+    @Test void paymentValidatesAmountStateAndManualTransferReference() throws Exception {
+        var open=create(false); open.expect(201);
+        pay(open,"CASH",new BigDecimal("100000"),null,key()).error(409,"ORDER_NOT_PAYABLE");
+        var order=submit(false); order.expect(201);
+        pay(order,"TRANSFER",new BigDecimal("100000"),null,key()).error(400,"TRANSFER_REFERENCE_REQUIRED");
+        pay(order,"CASH",new BigDecimal("1"),null,key()).error(409,"PAYMENT_AMOUNT_MISMATCH");
+        pay(order,"CASH",new BigDecimal("-1"),null,key()).error(400,"INVALID_PAYMENT_AMOUNT");
+        pay(order,"CASH",new BigDecimal("1.001"),null,key()).error(400,"INVALID_PAYMENT_AMOUNT");
+        pay(order,"CARD",new BigDecimal("100000"),null,key()).error(400,"UNSUPPORTED_PAYMENT_METHOD");
+        var stale=new LinkedHashMap<>(paymentBody(order,"CASH",new BigDecimal("100000"),null));
+        stale.put("expectedOrderVersion",order.version()+1);
+        call(post(paymentPath(order)).header("Idempotency-Key",key()),stale).error(409,"CONCURRENT_PAYMENT_UPDATE");
+        for(String state:List.of("CANCELLED","COMPLETED")) {
+            var candidate=submit(false);
+            if (state.equals("CANCELLED"))
+                jdbc.update("update orders set status=?,cancelled_at=created_at,cancel_reason='fixture' where id=?",state,candidate.id());
+            else jdbc.update("update orders set status=?,completed_at=created_at where id=?",state,candidate.id());
+            pay(candidate,"CASH",new BigDecimal("100000"),null,key()).error(409,"ORDER_NOT_PAYABLE");
+        }
+        var zero=submit(false);
+        jdbc.update("update orders set total_amount=0,subtotal_amount=0 where id=?",zero.id());
+        pay(zero,"CASH",new BigDecimal("1"),null,key()).error(409,"ORDER_NOT_PAYABLE");
+        assertThat(events("PAYMENT_RECORDED")).isZero();
+    }
+
+    @Test void paymentReplayAndSecondKeyCannotChargeAgainOrCreateAudit() throws Exception {
+        var order=submit(false); String paymentKey=key(); var amount=order.body.path("totalAmount").decimalValue();
+        var first=pay(order,"CASH",amount,null,paymentKey); first.expect(201);
+        var replay=pay(order,"CASH",amount,null,paymentKey); replay.expect(200);
+        assertThat(replay.replay).isEqualTo("true"); assertThat(replay.body).isEqualTo(first.body);
+        pay(order,"CASH",amount,null,key()).error(409,"ORDER_ALREADY_PAID");
+        pay(order,"TRANSFER",amount,"DIFFERENT",paymentKey).error(409,"PAYMENT_IDEMPOTENCY_KEY_REUSED");
+        assertThat(payments.findAll()).filteredOn(p->p.getRestaurantId().equals(f.restaurant.getId())).hasSize(1);
+        assertThat(events("PAYMENT_RECORDED")).isEqualTo(1);
+    }
+
+    @Test void concurrentPaymentsHaveOnlyOneWinnerAndPaidOrderRejectsMutations() throws Exception {
+        var order=submit(true); var amount=order.body.path("totalAmount").decimalValue();
+        var results=race(()->pay(order,"CASH",amount,null,key()),()->pay(order,"CASH",amount,null,key()));
+        assertThat(results).extracting(Result::status).containsExactlyInAnyOrder(201,409);
+        assertThat(events("PAYMENT_RECORDED")).isEqualTo(1);
+        append(order,addition(order),key()).error(409,"ORDER_HAS_FINANCIAL_OBLIGATIONS");
+        call(post(path(order)+"/cancel"),Map.of("expectedVersion",detail(order).version(),"reason","cancel"))
+            .error(409,"ORDER_HAS_FINANCIAL_OBLIGATIONS");
+    }
+
+    @Test void paymentPermissionsFeatureAndTenantAreEnforced() throws Exception {
+        var order=submit(false); var amount=order.body.path("totalAmount").decimalValue();
+        for(Set<String> missing:List.of(Set.of("PAYMENT_CREATE"),Set.of("PAYMENT_CONFIRM")))
+            callAs(post(paymentPath(order)).header("Idempotency-Key",key()),paymentBody(order,"CASH",amount,null),actor(missing)).error(403,"FORBIDDEN");
+        callAs(get(paymentPath(order)),null,actor(Set.of("PAYMENT_CREATE","PAYMENT_CONFIRM"))).error(403,"FORBIDDEN");
+        setFeatures(List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT"));
+        pay(order,"CASH",amount,null,key()).error(403,"FEATURE_NOT_ENTITLED");
+        setFeatures(List.of("PAYMENT_MANAGEMENT"));
+        var payment=pay(order,"CASH",amount,null,key()); payment.expect(201);
+        var original=f; f=fixture(false);
+        call(get(paymentPath(order))).error(404,"ORDER_NOT_FOUND");
+        call(get(paymentPath(order)+"/"+payment.id())).error(404,"ORDER_NOT_FOUND");
+        f=original;
+    }
+
+    @Test void failedPaymentAuditRollsBackOrderPaymentAndKey() throws Exception {
+        var order=submit(false); String paymentKey=key();
+        doThrow(new IllegalStateException("audit unavailable")).when(audit).record(eq(f.restaurant.getId()),any(),eq("PAYMENT_RECORDED"),any(),any(),any(),any(),any());
+        pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,paymentKey).expect(500);
+        assertThat(detail(order).body.path("paymentStatus").asText()).isEqualTo("UNPAID");
+        assertThat(events("PAYMENT_RECORDED")).isZero();
+        reset(audit);
+        pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,paymentKey).expect(201);
+    }
+
+    @Test void postgresEnforcesPaymentAmountCodeIdempotencyAndTenantConstraints() throws Exception {
+        var order=submit(false); var payment=pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,key()); payment.expect(201);
+        UUID id=payment.id();
+        assertThatThrownBy(()->jdbc.update("update payments set amount=0 where id=?",id))
+            .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(()->jdbc.update("""
+            insert into payments(restaurant_id,order_id,payment_code,amount,currency_code,payment_method,status,
+                confirmation_source,idempotency_key,request_fingerprint,requested_at,paid_at,created_by,created_at,updated_at)
+            select restaurant_id,order_id,payment_code,amount,currency_code,payment_method,status,
+                confirmation_source,?,request_fingerprint,requested_at,paid_at,created_by,created_at,updated_at
+            from payments where id=?
+            """,key(),id)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(()->jdbc.update("""
+            insert into payments(restaurant_id,order_id,payment_code,amount,currency_code,payment_method,status,
+                confirmation_source,idempotency_key,request_fingerprint,requested_at,paid_at,created_by,created_at,updated_at)
+            select restaurant_id,order_id,?,amount,currency_code,payment_method,status,
+                confirmation_source,idempotency_key,request_fingerprint,requested_at,paid_at,created_by,created_at,updated_at
+            from payments where id=?
+            ""","PAY-"+UUID.randomUUID().toString().replace("-",""),id))
+            .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        var own=f; f=fixture(false); var foreign=submit(false); f=own;
+        assertThatThrownBy(()->jdbc.update("update payments set order_id=? where id=?",foreign.id(),id))
+            .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payments where id=?",Long.class,id)).isEqualTo(1);
+        var secondOrder=submit(false);
+        var secondPayment=pay(secondOrder,"CASH",secondOrder.body.path("totalAmount").decimalValue(),null,key());
+        secondPayment.expect(201);
+        jdbc.update("update payments set provider='SEPAY',provider_transaction_id='db-unique-test' where id=?",id);
+        assertThatThrownBy(()->jdbc.update("update payments set provider='SEPAY',provider_transaction_id='db-unique-test' where id=?",secondPayment.id()))
+            .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test void paymentHonorsCashierRoleAndExplicitDenyUsingRealJwtPermissions() throws Exception {
+        var order=submit(false);
+        jdbc.update("update users set role_id=(select id from roles where code='CASHIER' and restaurant_id is null) where id=?",f.user.getId());
+        var granted=permissions.getEffectivePermissionCodes(f.user.getId());
+        assertThat(granted).contains("PAYMENT_CREATE","PAYMENT_CONFIRM","PAYMENT_VIEW");
+        var cashier=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),"CASHIER",granted);
+        bearer(get(paymentPath(order)),null,cashier).expect(200);
+        jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'DENY',? from permissions where code='PAYMENT_CONFIRM'",f.user.getId(),f.user.getId());
+        var denied=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),"CASHIER",
+            permissions.getEffectivePermissionCodes(f.user.getId()));
+        bearer(post(paymentPath(order)).header("Idempotency-Key",key()),
+            paymentBody(order,"CASH",order.body.path("totalAmount").decimalValue(),null),denied).error(403,"FORBIDDEN");
+        assertThat(events("PAYMENT_RECORDED")).isZero();
+    }
+
+    @Test void kitchenQueueTracksSubmittedPaidOrdersAndCurrentTableAfterTransfer() throws Exception {
+        var draft=create(false);
+        call(get("/api/v1/kitchen/items")).expect(200);
+        assertThat(call(get("/api/v1/kitchen/items")).body.path("totalElements").asLong()).isZero();
+        var dine=submit(true); var takeaway=submit(false);
+        pay(takeaway,"CASH",takeaway.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        var queue=call(get("/api/v1/kitchen/items?status=PENDING&page=0&size=1")); queue.expect(200);
+        assertThat(queue.body.path("totalElements").asLong()).isEqualTo(2);
+        assertThat(queue.body.path("content").size()).isEqualTo(1);
+        var target=freeTable();
+        var moved=call(post("/api/v1/table-sessions/"+f.session.getId()+"/transfer").header("Idempotency-Key",key()),
+            Map.of("targetTableId",target.getId(),"expectedVersion",f.session.getVersion())); moved.expect(200);
+        var all=call(get("/api/v1/kitchen/items?status=PENDING&size=10")); all.expect(200);
+        var rows=all.body.path("content");
+        var dineRow=java.util.stream.StreamSupport.stream(rows.spliterator(),false)
+            .filter(row->row.path("orderId").asText().equals(dine.id().toString())).findFirst().orElseThrow();
+        assertThat(dineRow.path("tableId").asText()).isEqualTo(target.getId().toString());
+        assertThat(dineRow.path("tableCode").asText()).isEqualTo(target.getCode());
+        assertThat(all.body.toString()).doesNotContain("costPrice","customerPhone");
+        var statistics=emf.unwrap(SessionFactory.class).getStatistics(); statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear(); call(get("/api/v1/kitchen/items?status=PENDING&size=1")); long small=statistics.getPrepareStatementCount();
+            statistics.clear(); call(get("/api/v1/kitchen/items?status=PENDING&size=10"));
+            // Spring Data may skip the count query when the requested page holds all rows.
+            assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(small);
+            assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(4);
+        } finally { statistics.setStatisticsEnabled(false); }
+        assertThat(call(get("/api/v1/kitchen/items?status=SERVED")).status).isEqualTo(400);
+    }
+
+    @Test void itemTransitionsAggregateStatusKeepPaidKitchenActiveAndAreIdempotent() throws Exception {
+        var order=submit(false);
+        pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        var paid=detail(order);
+        var cooked=kitchen(paid,"start-cooking"); cooked.expect(200);
+        assertThat(cooked.body.path("status").asText()).isEqualTo("PREPARING");
+        assertThat(cooked.version()).isGreaterThan(paid.version());
+        assertThat(history(order.lineId())).hasSize(2);
+        var replay=kitchen(paid,"start-cooking"); replay.expect(200);
+        assertThat(replay.version()).isEqualTo(cooked.version());
+        assertThat(history(order.lineId())).hasSize(2);
+        kitchen(cooked,"mark-served").error(409,"INVALID_ORDER_ITEM_TRANSITION");
+        var ready=kitchen(cooked,"mark-ready"); ready.expect(200);
+        assertThat(ready.body.path("status").asText()).isEqualTo("READY");
+        var served=kitchen(ready,"mark-served"); served.expect(200);
+        assertThat(served.body.path("status").asText()).isEqualTo("SERVED");
+        kitchen(cooked,"start-cooking").error(409,"INVALID_ORDER_ITEM_TRANSITION");
+        assertThat(history(order.lineId())).extracting(OrderItemStatusHistory::getToStatus)
+            .containsExactly(OrderItemStatus.PENDING,OrderItemStatus.COOKING,OrderItemStatus.READY,OrderItemStatus.SERVED);
+        assertThat(events("ORDER_ITEM_COOKING")).isEqualTo(1);
+        assertThat(events("ORDER_ITEM_READY")).isEqualTo(1);
+        assertThat(events("ORDER_ITEM_SERVED")).isEqualTo(1);
+    }
+
+    @Test void unpaidServingOrderAcceptsSubmittedAdditionsAndRecalculatesAfterKds() throws Exception {
+        var first=submit(true); var cooking=kitchen(first,"start-cooking");
+        var ready=kitchen(cooking,"mark-ready"); var served=kitchen(ready,"mark-served");
+        var old=served.body.path("items").get(0).deepCopy();
+        var added=append(served,addition(served),key()); added.expect(200);
+        assertThat(added.body.path("status").asText()).isEqualTo("PREPARING");
+        assertThat(added.body.path("items").get(0)).isEqualTo(old);
+        assertThat(added.body.path("items").get(1).path("status").asText()).isEqualTo("PENDING");
+        assertThat(added.body.path("items").get(1).path("sentToKitchenAt").asText()).isEqualTo(NOW.toString());
+        var second=UUID.fromString(added.body.path("items").get(1).path("id").asText());
+        var cancelled=call(post(path(added)+"/items/"+second+"/cancel"),
+            Map.of("expectedVersion",added.version(),"reason","not needed")); cancelled.expect(200);
+        assertThat(cancelled.body.path("status").asText()).isEqualTo("SERVED");
+        assertThat(cancelled.body.path("items").get(0)).isEqualTo(old);
+        call(post(path(cancelled)+"/items"),Map.of("expectedVersion",cancelled.version(),"submissionMode","DRAFT",
+            "items",List.of(lineRequest(f.item.getId(),"1",null)))).error(409,"ORDER_NOT_EDITABLE");
+    }
+
+    @Test void completionAndCloseRequirePaidServedOrderAndRemainSeparate() throws Exception {
+        var order=submit(true);
+        call(post(path(order)+"/complete"),Map.of("expectedVersion",order.version())).error(409,"ORDER_NOT_PAID");
+        pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        var paid=detail(order);
+        call(post(path(order)+"/complete"),Map.of("expectedVersion",paid.version())).error(409,"ORDER_NOT_READY_FOR_COMPLETION");
+        call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0))
+            .error(409,"TABLE_SESSION_NOT_READY_TO_CLOSE");
+        var cooked=kitchen(paid,"start-cooking"); var ready=kitchen(cooked,"mark-ready"); var served=kitchen(ready,"mark-served");
+        var completed=call(post(path(order)+"/complete"),Map.of("expectedVersion",served.version())); completed.expect(200);
+        assertThat(completed.body.path("status").asText()).isEqualTo("COMPLETED");
+        assertThat(completed.body.path("completedAt").asText()).isEqualTo(NOW.toString());
+        assertThat(sessions.findById(f.session.getId()).orElseThrow().getStatus()).isEqualTo(TableSessionStatus.OPEN);
+        var completeReplay=call(post(path(order)+"/complete"),Map.of("expectedVersion",served.version())); completeReplay.expect(200);
+        assertThat(completeReplay.version()).isEqualTo(completed.version());
+        var closed=call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0)); closed.expect(200);
+        assertThat(closed.body.path("status").asText()).isEqualTo("CLOSED");
+        assertThat(closed.body.path("closedAt").asText()).isEqualTo(NOW.toString());
+        assertThat(closed.body.path("closedBy").asText()).isEqualTo(f.user.getId().toString());
+        var closeReplay=call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0)); closeReplay.expect(200);
+        assertThat(events("ORDER_COMPLETED")).isEqualTo(1);
+        assertThat(events("TABLE_SESSION_CLOSED")).isEqualTo(1);
+        assertThat(closeReplay.body).isEqualTo(closed.body);
+        var reopened=call(post("/api/v1/tables/"+f.table.getId()+"/sessions"),Map.of("expectedVersion",0));
+        reopened.expect(201);
+    }
+
+    @Test void servingPermissionsFeaturesAndAuditRollbackAreEnforced() throws Exception {
+        var order=submit(false);
+        var request=Map.of("expectedOrderVersion",order.version());
+        callAs(post(path(order)+"/items/"+order.lineId()+"/start-cooking"),request,actor(Set.of("ORDER_VIEW")))
+            .error(403,"FORBIDDEN");
+        setFeatures(List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER"));
+        call(post(path(order)+"/items/"+order.lineId()+"/start-cooking"),request).error(403,"FEATURE_NOT_ENTITLED");
+        setFeatures(List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER","KITCHEN_DISPLAY"));
+        doThrow(new IllegalStateException("audit unavailable")).when(audit).record(eq(f.restaurant.getId()),any(),eq("ORDER_ITEM_COOKING"),any(),any(),any(),any(),any());
+        call(post(path(order)+"/items/"+order.lineId()+"/start-cooking"),request).expect(500);
+        assertThat(detail(order).body).isEqualTo(order.body);
+        assertThat(history(order.lineId())).hasSize(1);
+        reset(audit);
+        var cooked=kitchen(order,"start-cooking"); cooked.expect(200);
+    }
+
+    @Test void kitchenDoesNotRequireOrderFeatureAndEffectiveDenyStillBlocksMutation() throws Exception {
+        var order=submit(false);
+        setFeatures(List.of("KITCHEN_DISPLAY","POS_QUICK_ORDER"));
+        call(get("/api/v1/kitchen/items")).expect(200);
+        var cooked=kitchen(order,"start-cooking"); cooked.expect(200);
+        jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'DENY',? from permissions where code='KITCHEN_MARK_READY'",
+            f.user.getId(),f.user.getId());
+        var denied=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),"OWNER",
+            permissions.getEffectivePermissionCodes(f.user.getId()));
+        bearer(post(path(order)+"/items/"+order.lineId()+"/mark-ready"),
+            Map.of("expectedOrderVersion",cooked.version()),denied).error(403,"FORBIDDEN");
+        assertThat(history(order.lineId())).hasSize(2);
+    }
+
+    @Test void closeRejectsEmptyOrCancelledOnlySessionAndCanCloseInactiveTable() throws Exception {
+        call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0))
+            .error(409,"TABLE_SESSION_NOT_READY_TO_CLOSE");
+        var order=submit(true);
+        var cancelled=call(post(path(order)+"/cancel"),Map.of("expectedVersion",order.version(),"reason","no guests"));
+        cancelled.expect(200);
+        call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0))
+            .error(409,"TABLE_SESSION_NOT_READY_TO_CLOSE");
+        var replacement=submit(true); pay(replacement,"CASH",replacement.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        var paid=detail(replacement); var cooked=kitchen(paid,"start-cooking"); var ready=kitchen(cooked,"mark-ready");
+        var served=kitchen(ready,"mark-served");
+        call(post(path(replacement)+"/complete"),Map.of("expectedVersion",served.version())).expect(200);
+        jdbc.update("update restaurant_tables set status='INACTIVE' where id=?",f.table.getId());
+        call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0)).expect(200);
+    }
+
+    @Test void kitchenAndPaymentAtSameVersionHaveOneWinnerAndCanResume() throws Exception {
+        var order=submit(false);
+        var raced=race(()->kitchen(order,"start-cooking"),
+            ()->pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,key()));
+        assertThat(raced).extracting(Result::status).contains(409);
+        assertThat(raced.stream().filter(result->result.status()==200 || result.status()==201).count()).isEqualTo(1);
+        var current=detail(order);
+        if(current.body.path("paymentStatus").asText().equals("UNPAID"))
+            pay(current,"CASH",current.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        else if(current.body.path("status").asText().equals("CONFIRMED"))
+            kitchen(current,"start-cooking").expect(200);
+        var finalOrder=detail(order);
+        assertThat(finalOrder.body.path("paymentStatus").asText()).isEqualTo("PAID");
+        assertThat(finalOrder.body.path("status").asText()).isEqualTo("PREPARING");
+        assertThat(history(order.lineId())).hasSize(2);
+        assertThat(events("PAYMENT_RECORDED")).isEqualTo(1);
+    }
+
+    @Test void foreignLineAndOrderAreHiddenAndCashierCannotCloseByDefault() throws Exception {
+        var order=submit(true);
+        var other=fixture(true);
+        call(post(path(order)+"/items/"+other.item.getId()+"/start-cooking"),
+            Map.of("expectedOrderVersion",order.version())).error(404,"ORDER_ITEM_NOT_FOUND");
+        call(post(ORDERS+"/"+UUID.randomUUID()+"/complete"),Map.of("expectedVersion",0))
+            .error(404,"ORDER_NOT_FOUND");
+        jdbc.update("update users set role_id=(select id from roles where code='CASHIER' and restaurant_id is null) where id=?",f.user.getId());
+        var cashier=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),"CASHIER",
+            permissions.getEffectivePermissionCodes(f.user.getId()));
+        assertThat(cashier.hasPermission("TABLE_CLOSE")).isFalse();
+        bearer(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0),cashier)
+            .error(403,"FORBIDDEN");
+    }
+
+    private Result kitchen(Result order,String action) throws Exception {
+        return call(post(path(order)+"/items/"+order.lineId()+"/"+action),Map.of("expectedOrderVersion",order.version()));
+    }
+
+    private String paymentPath(Result order) { return path(order)+"/payments"; }
+    private Map<String,Object> paymentBody(Result order,String method,BigDecimal amount,String reference) {
+        var body=new LinkedHashMap<String,Object>(); body.put("expectedOrderVersion",order.version());
+        body.put("paymentMethod",method); body.put("amount",amount);
+        if(reference!=null) body.put("referenceNo",reference);
+        return body;
+    }
+    private Result pay(Result order,String method,BigDecimal amount,String reference,String paymentKey) throws Exception {
+        return call(post(paymentPath(order)).header("Idempotency-Key",paymentKey),paymentBody(order,method,amount,reference));
+    }
+
     private RestaurantTable freeTable() {
         var table=new RestaurantTable(); table.initialize(f.restaurant.getId(),NOW); table.setCode("FREE-"+UUID.randomUUID().toString().substring(0,8));
         table.setName("Free table"); table.setQrToken("t"+UUID.randomUUID().toString().replace("-","")+"a".repeat(10));
@@ -1061,7 +1403,7 @@ class OrderIntegrationTest {
         var r=new Restaurant(); r.setCode("ORD"+UUID.randomUUID().toString().replace("-","")); r.setName("Order fixture"); r=restaurants.saveAndFlush(r);
         var u=new User(); u.setRestaurantId(r.getId()); u.setRoleId(roles.findByCodeAndRestaurantIdIsNull("OWNER").orElseThrow().getId()); u.setName("Owner"); u.setEmail(UUID.randomUUID()+"@example.test"); u.setPasswordHash("fixture-only"); u=users.saveAndFlush(u);
         var s=new RestaurantSubscription(); s.setRestaurantId(r.getId()); s.setPackageId(packages.findByCode("PRO").orElseThrow().getId()); s.setStatus(SubscriptionStatus.ACTIVE);
-        s.setStartAt(NOW.minusSeconds(60)); s.setEndAt(NOW.plusSeconds(3600)); s.setPriceAmount(BigDecimal.ZERO); s.setCurrencyCode("VND"); s.setFeatureSnapshot(snapshot(List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT"))); s=subscriptions.saveAndFlush(s);
+        s.setStartAt(NOW.minusSeconds(60)); s.setEndAt(NOW.plusSeconds(3600)); s.setPriceAmount(BigDecimal.ZERO); s.setCurrencyCode("VND"); s.setFeatureSnapshot(snapshot(List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT","PAYMENT_MANAGEMENT","KITCHEN_DISPLAY"))); s=subscriptions.saveAndFlush(s);
         var g=new ItemGroup(); g.initialize(r.getId(),NOW); g.setName("Main"); g=groups.saveAndFlush(g); var item=menuItem(r.getId(),g.getId(),"Pho",new BigDecimal("50000.00"));
         RestaurantTable table=null; TableSession session=null;
         if(seated) { table=new RestaurantTable(); table.initialize(r.getId(),NOW); table.setCode("B01"); table.setName("Table 1"); table.setQrToken("t"+UUID.randomUUID().toString().replace("-","")+"a".repeat(10)); table=tables.saveAndFlush(table);

@@ -1,8 +1,8 @@
 "openapi": "3.0.3"
 "info":
   "title": "POS SaaS Staff Order MVP"
-  "version": "1.3.0"
-  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. No /orders/from-table route, QR ordering, KDS/payment/recipe/inventory deduction; occupancy stays in TABLE."
+  "version": "1.4.0"
+  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/complete/close operations are documented in kitchen-lifecycle-api.yaml. No /orders/from-table route, QR ordering, recipe/inventory deduction; occupancy stays in TABLE."
 "security":
   -
     "BearerAuth": []
@@ -99,7 +99,7 @@
           "$ref": "#/components/responses/Internal"
     "post":
       "operationId": "createOrder"
-      "description": "DRAFT default (absent/null) creates OPEN with ORDER_CREATE. SUBMIT requires ORDER_CREATE plus ORDER_UPDATE and creates CONFIRMED atomically; PENDING lines, no kitchen side effect. DINE_IN takes exactly one of tableSessionId (must already be OPEN; DRAFT/SUBMIT supported) or tableId (explicit SUBMIT only). tableId reuses OPEN seating or opens a new session only at persistence; opening also requires runtime TABLE_OPEN. Existing seating and replay do not require TABLE_OPEN. TABLE_MANAGEMENT required for DINE_IN; TAKEAWAY requires neither seating reference and POS_QUICK_ORDER. ORDER_MANAGEMENT always required. Auth/features/tenant lock and static shape checks before replay; live seating/menu checks after replay. Legacy DRAFT and create-submit-v1 hashes preserved when tableId absent/null; create-table-submit-v1 hashes original client tableId, never resolved session or live values. Same key/hash/actor returns original order's current resource; changed actor/payload/table/mode conflicts. Serving order blocks new create with 409, never auto-append. Any later write/confirmation/audit failure rolls back new session and order together."
+      "description": "DRAFT default (absent/null) creates OPEN with ORDER_CREATE. SUBMIT requires ORDER_CREATE plus ORDER_UPDATE and creates CONFIRMED atomically; PENDING lines receive sentToKitchenAt without automatically changing kitchen status. DINE_IN takes exactly one of tableSessionId (must already be OPEN; DRAFT/SUBMIT supported) or tableId (explicit SUBMIT only). tableId reuses OPEN seating or opens a new session only at persistence; opening also requires runtime TABLE_OPEN. Existing seating and replay do not require TABLE_OPEN. TABLE_MANAGEMENT required for DINE_IN; TAKEAWAY requires neither seating reference and POS_QUICK_ORDER. ORDER_MANAGEMENT always required. Auth/features/tenant lock and static shape checks before replay; live seating/menu checks after replay. Legacy DRAFT and create-submit-v1 hashes preserved when tableId absent/null; create-table-submit-v1 hashes original client tableId, never resolved session or live values. Same key/hash/actor returns original order's current resource; changed actor/payload/table/mode conflicts. Serving order blocks new create with 409, never auto-append. Any later write/confirmation/audit failure rolls back new session and order together."
       "security":
         -
           "BearerAuth": []
@@ -447,7 +447,7 @@
   "/api/v1/orders/{orderId}/confirm":
     "post":
       "operationId": "confirmOrder"
-      "description": "Legacy OPEN -> CONFIRMED; recheck all live sellability without repricing. Already CONFIRMED is idempotent before stale-version check. No KDS side effect; sentToKitchenAt remains null. Calling more uses append SUBMIT with an explicit existing orderId; old metadata/line edits remain OPEN only. Requires JWT tenant context, ORDER_UPDATE and ORDER_MANAGEMENT snapshot grant."
+      "description": "Legacy OPEN -> CONFIRMED; recheck all live sellability without repricing. Already CONFIRMED is idempotent before stale-version check. sentToKitchenAt is set once when submitted, with legacy NULL rows still visible in KDS. Calling more uses append SUBMIT with an explicit existing orderId; old metadata/line edits remain OPEN only. Requires JWT tenant context, ORDER_UPDATE and ORDER_MANAGEMENT snapshot grant."
       "security":
         -
           "BearerAuth": []

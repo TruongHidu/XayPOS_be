@@ -24,6 +24,7 @@ public class OrderCommandService {
     private final OrderConfirmationOperation confirmation;
     private final OrderLifecyclePolicy lifecycle;
     private final OrderMoneyCalculator money;
+    private final OrderServingStatusPolicy servingStatus;
     private final OrderHistory history;
     private final OrderAudit audit;
     private final OrderResponseMapper mapper;
@@ -61,10 +62,11 @@ public class OrderCommandService {
         var locked=access.lock(); var actor=locked.actor(); var order=access.order(actor.restaurantId(),id);
         var lines=lines(order); var line=line(lines,lineId); lifecycle.requireLineCancellationPermission(order,actor);
         if(line.getStatus()==OrderItemStatus.CANCELLED) return mapper.detail(order,lines);
-        lifecycle.requireCancellationState(order); lifecycle.requireVersion(order,request.expectedVersion()); lifecycle.requirePending(line);
+        lifecycle.requireLineCancellationState(order); lifecycle.requireVersion(order,request.expectedVersion()); lifecycle.requirePending(line);
         var before=audit.snapshot(order,lines); var now=now(); String reason=request.reason().trim();
         cancelLine(line,reason,now); boolean cancelledOrder=lines.stream().allMatch(l->l.getStatus()==OrderItemStatus.CANCELLED);
         if(cancelledOrder) cancelRoot(order,reason,now);
+        else order.setStatus(servingStatus.aggregate(order,lines));
         finish(actor,order,lines,before,"ORDER_ITEM_CANCELLED",now,ip); history.cancelled(order,List.of(line),actor.userId(),reason,now);
         if(cancelledOrder) audit.record(actor,"ORDER_CANCELLED",order,before,lines,ip);
         orders.flush(); return mapper.detail(order,lines);

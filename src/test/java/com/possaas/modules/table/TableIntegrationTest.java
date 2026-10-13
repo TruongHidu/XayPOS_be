@@ -251,15 +251,13 @@ class TableIntegrationTest {
     }
 
     @Test
-    void closedSessionIsReservedAndCannotBeMutatedOrClosedThroughApi() throws Exception {
+    void closedSessionCannotBeMutatedAndCloseRetryDoesNotAudit() throws Exception {
         var t = table(null, "CLOSED");
         var s = open(t);
         jdbc.update("update table_sessions set status='CLOSED',closed_at=opened_at,closed_by=opened_by where id=?", s.id());
         call(post(sp(s) + "/cancel"), Map.of("reason", "No", "expectedVersion", 0)).error(409, "INVALID_TABLE_SESSION_TRANSITION");
         call(patch(sp(s)), Map.of("note", "No", "expectedVersion", 0)).error(409, "INVALID_TABLE_SESSION_TRANSITION");
-        assertThat(handlerMappings.getHandlerMethods().keySet().stream()
-                .flatMap(mapping -> mapping.getPatternValues().stream()))
-                .doesNotContain("/api/v1/table-sessions/{sessionId}/close");
+        call(post(sp(s) + "/close"), Map.of("expectedVersion", 0)).expect(200);
         assertThat(events("TABLE_SESSION_CLOSED")).isZero();
     }
 

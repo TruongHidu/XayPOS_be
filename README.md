@@ -1,5 +1,11 @@
 # POS SaaS Backend
 
+V22: KDS item queue/transition, gọi thêm khi order đang PREPARING/READY/SERVED nhưng chưa PAID,
+ORDER_COMPLETE và đóng phiên bàn qua TABLE_CLOSE. PAID, SERVED, COMPLETED và CLOSED tách biệt.
+[API/Postman](docs/kitchen-completion-api.md) · [OpenAPI](docs/openapi/kitchen-lifecycle-api.yaml).
+
+V21: PAYMENT MVP ghi nhận đủ tiền CASH hoặc TRANSFER do nhân viên tự xác nhận; không tự hoàn tất order/đóng bàn, chưa tích hợp SePay. [API/Postman](docs/payment-api.md) · [OpenAPI](docs/openapi/payment-api.yaml).
+
 V20: chuyển phiên OPEN sang bàn trống, giữ nguyên order/món, history append-only và
 idempotent resource replay. Permission TABLE_TRANSFER + TABLE_MANAGEMENT;
 default OWNER/MANAGER/WAITER. Refresh/login lại để JWT nhận quyền mới.
@@ -11,7 +17,7 @@ GET /api/v1/table-sessions/{sessionId}/active-order hỗ trợ FE mở đúng đ
 Migration fail nếu legacy duplicates, không tự sửa lịch sử:
 [SQL chẩn đoán](docs/order-serving-migration.md).
 
-ORDER cho nhân viên: [API/Postman](docs/order-api.md) · [OpenAPI](docs/openapi/order-api.yaml) · [Đồng bộ app/web](docs/order-submit-fe-sync.md). DRAFT legacy hoặc SUBMIT tạo+xác nhận một bước; gọi thêm vào đơn OPEN/CONFIRMED được chọn, snapshot giá, aggregate version, idempotency và usage guard phiên; chưa có KDS/payment/QR ordering.
+ORDER cho nhân viên: [API/Postman](docs/order-api.md) · [OpenAPI](docs/openapi/order-api.yaml) · [Đồng bộ app/web](docs/order-submit-fe-sync.md). DRAFT legacy hoặc SUBMIT tạo+xác nhận một bước; gọi thêm vào đơn đang phục vụ chưa PAID, snapshot giá, aggregate version, idempotency và usage guard phiên; chưa có QR ordering.
 
 Menu chung nhà hàng/khách mang đi: [Public restaurant menu API](docs/public-restaurant-menu-api.md) · [OpenAPI](docs/openapi/public-restaurant-menu-api.yaml). Chỉ xem thực đơn, không cần bàn/phiên; quản lý link qua `/api/v1/restaurants/me/menu-link`.
 
@@ -57,16 +63,16 @@ V15 triển khai 21 API khu vực/bàn, QR quản trị và phiên xếp khách 
 Yêu cầu TABLE_MANAGEMENT và TABLE_* tương ứng; occupancy suy ra từ phiên OPEN,
 được bảo vệ bằng tenant lock, @Version và partial unique index. QR token không xuất
 hiện trong response bàn thông thường hoặc audit. Xem mục Tables trong docs/tenant-api.md.
-Public menu QR và menu chung nhà hàng đã có API đọc riêng; chưa có /close.
+Public menu QR và menu chung nhà hàng đã có API đọc riêng; đóng phiên dùng `/api/v1/table-sessions/{sessionId}/close`.
 V16/V17 triển khai ORDER MVP và usage guard thực tế dùng chung restaurant lock
-với hủy phiên. Payment/kitchen/inventory/report/AI vẫn chưa có API nghiệp vụ.
+với hủy phiên. Từ V21 đã có ghi nhận payment thủ công; V22 có KDS tối thiểu, inventory/report/AI vẫn chưa có API nghiệp vụ.
 V18 thêm ledger `order_item_submissions`: tenant-scoped key cho append SUBMIT, replay không thêm dòng lần hai.
 Không gửi submissionMode vẫn DRAFT như cũ. SUBMIT tạo cần ORDER_CREATE + ORDER_UPDATE;
 append cần ORDER_UPDATE và key/version cố định cho một intent. Không tự gộp order theo bàn.
 V19 giới hạn tối đa một serving order/phiên. POST /api/v1/orders nay nhận optional
 tableId + SUBMIT: backend dùng phiên OPEN hiện có hoặc mở phiên mới cùng transaction
 với order CONFIRMED. Chỉ mở mới cần TABLE_OPEN; legacy tableSessionId và hash giữ nguyên.
-Không thêm /orders/from-table, payment/KDS/close; xem docs/order-api.md và
+Không thêm /orders/from-table; V21 bổ sung PAYMENT và V22 bổ sung KDS/close riêng. Xem docs/order-api.md và
 docs/order-table-submit-implementation.md. Frontend handoff ở docs/order-submit-fe-sync.md.
 
 V13 đưa phân quyền nhân viên, màn hình bếp, báo cáo chi tiết và in/in lại phiếu bếp xuống BASIC;

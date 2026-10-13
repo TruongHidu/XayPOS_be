@@ -15,6 +15,8 @@ public class OrderCommandController {
     private final OrderCreationService creation;
     private final OrderCommandService command;
     private final OrderAppendService append;
+    private final OrderItemTransitionService transitions;
+    private final OrderCompletionService completion;
     @PostMapping @PreAuthorize("hasAuthority('ORDER_CREATE')")
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderRequests.Create request,
             @RequestHeader(name="Idempotency-Key",required=false) String key,HttpServletRequest http) {
@@ -50,6 +52,31 @@ public class OrderCommandController {
     @PostMapping("/{orderId}/cancel") @PreAuthorize("hasAuthority('ORDER_CANCEL')")
     public ResponseEntity<OrderResponse> cancel(@PathVariable UUID orderId,@Valid @RequestBody OrderRequests.Cancel request,HttpServletRequest http) {
         return ok(command.cancel(orderId,request,http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/items/{orderItemId}/start-cooking") @PreAuthorize("hasAuthority('KITCHEN_START_COOKING')")
+    public ResponseEntity<OrderResponse> startCooking(@PathVariable UUID orderId,@PathVariable UUID orderItemId,
+            @Valid @RequestBody OrderItemTransitionRequest request,HttpServletRequest http) {
+        return ok(transitions.transition(orderId,orderItemId,request.expectedOrderVersion(),
+                com.possaas.modules.order.entity.OrderItemStatus.PENDING,com.possaas.modules.order.entity.OrderItemStatus.COOKING,
+                "KITCHEN_START_COOKING","KITCHEN_DISPLAY",http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/items/{orderItemId}/mark-ready") @PreAuthorize("hasAuthority('KITCHEN_MARK_READY')")
+    public ResponseEntity<OrderResponse> markReady(@PathVariable UUID orderId,@PathVariable UUID orderItemId,
+            @Valid @RequestBody OrderItemTransitionRequest request,HttpServletRequest http) {
+        return ok(transitions.transition(orderId,orderItemId,request.expectedOrderVersion(),
+                com.possaas.modules.order.entity.OrderItemStatus.COOKING,com.possaas.modules.order.entity.OrderItemStatus.READY,
+                "KITCHEN_MARK_READY","KITCHEN_DISPLAY",http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/items/{orderItemId}/mark-served") @PreAuthorize("hasAuthority('ORDER_MARK_SERVED')")
+    public ResponseEntity<OrderResponse> markServed(@PathVariable UUID orderId,@PathVariable UUID orderItemId,
+            @Valid @RequestBody OrderItemTransitionRequest request,HttpServletRequest http) {
+        return ok(transitions.transition(orderId,orderItemId,request.expectedOrderVersion(),
+                com.possaas.modules.order.entity.OrderItemStatus.READY,com.possaas.modules.order.entity.OrderItemStatus.SERVED,
+                "ORDER_MARK_SERVED","ORDER_MANAGEMENT",http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/complete") @PreAuthorize("hasAuthority('ORDER_COMPLETE')")
+    public ResponseEntity<OrderResponse> complete(@PathVariable UUID orderId,@Valid @RequestBody OrderRequests.Version request,HttpServletRequest http) {
+        return ok(completion.complete(orderId,request.expectedVersion(),http.getRemoteAddr()));
     }
     private ResponseEntity<OrderResponse> ok(OrderResponse body) { return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body); }
 }

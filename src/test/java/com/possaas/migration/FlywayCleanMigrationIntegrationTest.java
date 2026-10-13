@@ -40,8 +40,9 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("20");
-            assertThat(countTables(schema)).isEqualTo(22);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
+            assertThat(countTables(schema)).isEqualTo(23);
+            assertThat(tableExists(schema, "payments")).isTrue();
             assertThat(tableExists(schema, "table_session_transfers")).isTrue();
             assertThat(tableExists(schema, "order_item_submissions")).isTrue();
             assertThat(tableExists(schema, "orders")).isTrue();
@@ -55,6 +56,13 @@ class FlywayCleanMigrationIntegrationTest {
             assertThat(tableExists(schema, "restaurants")).isTrue();
             assertThat(tableExists(schema, "restaurant_subscriptions")).isTrue();
             assertThat(tableExists(schema, "audit_logs")).isTrue();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT string_agg(r.code,',' ORDER BY r.code) FROM \"" + schema
+                     + "\".roles r JOIN \"" + schema + "\".role_permissions rp ON rp.role_id=r.id JOIN \""
+                     + schema + "\".permissions p ON p.id=rp.permission_id WHERE p.code='ORDER_COMPLETE'")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("CASHIER,MANAGER,OWNER,WAITER");
+            }
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery("SELECT p.code, p.max_staff FROM \"" + schema
                      + "\".packages p JOIN \"" + schema + "\".package_features pf ON pf.package_id=p.id JOIN \""

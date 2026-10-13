@@ -30,6 +30,11 @@ public class OrderLifecyclePolicy {
             throw new ConflictException("INVALID_ORDER_TRANSITION","Only OPEN or CONFIRMED orders can be cancelled");
         requireUnpaid(order);
     }
+    public void requireLineCancellationState(Order order) {
+        if(order.getStatus()==OrderStatus.COMPLETED || order.getStatus()==OrderStatus.CANCELLED)
+            throw new ConflictException("INVALID_ORDER_TRANSITION","Terminal orders cannot change lines");
+        requireUnpaid(order);
+    }
     public void requirePending(OrderItem line) {
         if(line.getStatus()!=OrderItemStatus.PENDING) throw new ConflictException("ORDER_ITEM_NOT_EDITABLE","Only PENDING lines can be changed");
     }

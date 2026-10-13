@@ -1,6 +1,6 @@
 # Tenant profile and staff API
 
-Đơn hàng nhân viên: [ORDER MVP API](order-api.md), namespace `/api/v1/orders`, permission ORDER_* và feature ORDER_MANAGEMENT.
+Đơn hàng nhân viên: [ORDER MVP API](order-api.md), namespace `/api/v1/orders`, permission ORDER_* và feature ORDER_MANAGEMENT. Ghi nhận thanh toán thủ công: [PAYMENT MVP API](payment-api.md), permission PAYMENT_* và feature PAYMENT_MANAGEMENT.
 
 Lấy/khởi tạo/đổi link menu chung nhà hàng: [Public restaurant menu API](public-restaurant-menu-api.md), nhóm `/api/v1/restaurants/me/menu-link` yêu cầu `RESTAURANT_PROFILE_UPDATE`.
 
@@ -506,7 +506,7 @@ Session:
 }
 ```
 
-closedAt/closedBy represent termination for CANCELLED and the reserved CLOSED
+closedAt/closedBy represent termination for CANCELLED and CLOSED
 status. In OPEN they, together with cancelReason, are null. User IDs are returned,
 not full User entities. Table code/name are current table metadata, not historical
 snapshots. Session history remains accessible after table/area soft deletion.
@@ -597,9 +597,11 @@ raw SQL/details. Authentication/feature checks may precede resource lookup.
 
 ### Phase boundary and verification
 
-Only OPEN -> CANCELLED is exposed. Cancel undoes a seating session; it does not
-cancel orders, refund money or confirm settlement. CLOSED is reserved. There is
-no /close API, payment implementation, merge/split, reservation or realtime integration.
+OPEN -> CANCELLED undoes unused seating; OPEN -> CLOSED completes a served, paid
+session through POST /api/v1/table-sessions/{sessionId}/close. Neither operation
+creates payment or refunds. See [kitchen-completion-api.md](kitchen-completion-api.md).
+There is no merge/split, reservation or realtime integration. V21 adds manual PAYMENT
+recording separately; see [payment-api.md](payment-api.md).
 V20 adds moving an OPEN session to an empty table without changing its orders:
 [transfer API](table-session-transfer-api.md) and [FE synchronization](table-session-transfer-fe-sync.md).
 ORDER MVP is now available separately in [order-api.md](order-api.md); public menus are documented separately.
@@ -610,7 +612,7 @@ Opening new seating requires TABLE_OPEN at runtime in addition to ORDER permissi
 and TABLE_MANAGEMENT/ORDER_MANAGEMENT. Existing seating needs no TABLE_OPEN.
 The TABLE-owned mandatory-transaction writer is shared with manual-open; manual-open
 retains table expectedVersion and existing HTTP contract. New seating and its audit
-roll back if the order fails. No /orders/from-table or /close route was added.
+roll back if the order fails. No /orders/from-table route was added.
 
 V16/V17 install a mandatory TableSessionUsagePolicy backed by the ORDER repository.
 Order creation and session cancellation share the restaurant transaction/write lock.

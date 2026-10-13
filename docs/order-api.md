@@ -6,7 +6,7 @@ session.tableId là bàn hiện tại/cuối cùng, không phải snapshot nơi 
 Active-order và gọi thêm vẫn dùng cùng session/order sau chuyển. Original create/append
 retry giữ nguyên payload/key (kể cả tableId nguồn cũ); không đổi fingerprint hoặc CoR/Strategy.
 
-Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; chưa có QR ordering, KDS, payment, đóng bill, recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml).
+Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; ghi nhận thanh toán thủ công xem [payment-api.md](payment-api.md). KDS, hoàn tất order và đóng phiên xem [kitchen-completion-api.md](kitchen-completion-api.md). Chưa có QR ordering, recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml).
 
 Files và kết quả test thực tế: [order-implementation.md](order-implementation.md).
 
@@ -42,7 +42,7 @@ V17 bổ sung CASHIER: ORDER_CREATE, ORDER_UPDATE, TABLE_VIEW; MANAGER: ORDER_VI
 `submissionMode` optional nhận `DRAFT` hoặc `SUBMIT`. Absent/null tương đương DRAFT; mode không hợp lệ trả 400 INVALID_REQUEST_BODY. Đây là ý định command, không phải quyền đặt status tùy ý.
 
 - DRAFT: giữ legacy OPEN, confirmedAt=null, chỉ cần ORDER_CREATE.
-- SUBMIT: cần ORDER_CREATE **và** ORDER_UPDATE. Tạo + xác nhận đồng bộ trong cùng transaction, trả CONFIRMED và confirmedAt từ Clock. Lines vẫn PENDING, sentToKitchenAt=null; chưa có gửi bếp thật.
+- SUBMIT: cần ORDER_CREATE **và** ORDER_UPDATE. Tạo + xác nhận đồng bộ trong cùng transaction, trả CONFIRMED và confirmedAt từ Clock. Lines vẫn PENDING; sentToKitchenAt được chốt bằng Clock khi gửi bếp.
 - Không đủ quyền gửi thì 403, không tự downgrade về DRAFT. Audit/history/confirmation lỗi rollback toàn bộ.
 
 Các body legacy không có mode nên là DRAFT; thêm `"submissionMode":"SUBMIT"` để gửi ngay. Riêng `tableId` bắt buộc SUBMIT tường minh. Không cần gọi /confirm lần nữa sau create SUBMIT thành công.
@@ -266,7 +266,7 @@ DRAFT (absent/null mode): chỉ OPEN, UNPAID/paidAmount=0, không tự confirm. 
 
 DRAFT không cần Idempotency-Key và không sử dụng ledger (header nếu gửi không có tác dụng idempotency). Retry cùng expectedVersion sau một lần thành công trả conflict; không tự tăng version rồi retry mù.
 
-SUBMIT: cho OPEN hoặc CONFIRMED, UNPAID/paidAmount=0; bắt buộc Idempotency-Key và expectedVersion. DINE_IN cần session OPEN, bàn/area hợp lệ; currency root phải khớp restaurant. Các trạng thái PREPARING/READY/SERVED/COMPLETED/CANCELLED bị từ chối.
+SUBMIT: cho OPEN/CONFIRMED/PREPARING/READY/SERVED khi UNPAID/paidAmount=0; bắt buộc Idempotency-Key và expectedVersion. DINE_IN cần session OPEN, bàn/area hợp lệ; currency root phải khớp restaurant. Dòng mới PENDING và sentToKitchenAt được chốt; tổng hợp lại trạng thái root nên READY/SERVED có thể trở về PREPARING. COMPLETED/CANCELLED hoặc đã PAID bị từ chối. DRAFT chỉ cho OPEN.
 
 ```http
 POST /api/v1/orders/{orderId}/items
@@ -287,7 +287,7 @@ Idempotency-Key: <key ổn định riêng của lần gọi thêm>
 
 - Giữ orderId/orderCode/source/actor/context; mỗi dòng mới ID mới, lineNumber tiếp theo, giá/tên/đơn vị hiện tại. Không merge, không reprice/reset dòng cũ.
 - OPEN + SUBMIT: append và confirm cùng transaction, recheck mọi dòng hiệu lực; món cũ không sellable thì rollback cả phần gọi thêm. confirmedAt từ Clock.
-- CONFIRMED + SUBMIT: root vẫn CONFIRMED, confirmedAt giữ nguyên, không ghi ORDER_CONFIRMED lần nữa. Dòng mới PENDING, kitchen timestamp null.
+- CONFIRMED/PREPARING/READY/SERVED + SUBMIT: giữ confirmedAt, không ghi ORDER_CONFIRMED lần nữa. Dòng mới PENDING, sentToKitchenAt từ Clock; root được tổng hợp lại theo mọi dòng còn hiệu lực.
 - Metadata và sửa quantity/note của dòng cũ vẫn chỉ OPEN. Sau tự confirm, hủy cả dòng mới cũng cần ORDER_CANCEL theo confirmedAt.
 - New/replay đều 200 OrderResponse hiện tại, `Idempotency-Replayed:false/true`, `Cache-Control:no-store`. Dùng version backend trả, không giả định chỉ tăng một lần trong operation gộp.
 
@@ -321,7 +321,7 @@ OPEN -> CONFIRMED, phải có dòng hiệu lực và recheck sellability. Không
 { "expectedVersion": 4, "reason": "Khách đổi món" }
 ```
 
-Reason không blank, <=1000 ký tự. Draft chưa confirm cần ORDER_UPDATE; đã confirm cần ORDER_CANCEL, kể cả retry sau order cancelled (confirmedAt giữ boundary gốc). Chỉ PENDING; COOKING/READY/SERVED bị từ chối. Dòng cuối bị hủy tự chuyển order CANCELLED. Dòng đã CANCELLED trả current response, bỏ stale version, không audit/history mới.
+Reason không blank, <=1000 ký tự. Draft chưa confirm cần ORDER_UPDATE; đã confirm cần ORDER_CANCEL, kể cả retry sau order cancelled (confirmedAt giữ boundary gốc). Chỉ dòng PENDING của order chưa PAID mới được hủy, kể cả khi root đã PREPARING/READY/SERVED; COOKING/READY/SERVED bị từ chối. Dòng cuối bị hủy tự chuyển order CANCELLED, còn dòng hiệu lực thì root được tổng hợp lại. Dòng đã CANCELLED trả current response, bỏ stale version, không audit/history mới.
 
 ### POST /api/v1/orders/{orderId}/cancel
 
@@ -333,13 +333,13 @@ ORDER_CANCEL. OPEN/CONFIRMED và không có cooking/fulfilled items hoặc nghĩ
 
 ## Session guard và transaction
 
-Order mutation, menu mutation và table/session mutation dùng chung pessimistic restaurant lock tới commit. Khi cancel session, TABLE gọi port TableSessionUsagePolicy, ORDER cung cấp query DB thật. Chặn nếu còn order chưa CANCELLED, paidAmount>0 hoặc paymentStatus!=UNPAID. Cho cancel khi không có order hoặc mọi order CANCELLED/UNPAID/paid=0. Query lỗi fail closed, thiếu adapter fail startup.
+Order mutation, menu mutation và table/session mutation dùng chung pessimistic restaurant lock tới commit. Khi cancel session, TABLE gọi port TableSessionUsagePolicy, ORDER cung cấp query DB thật. Chặn nếu còn order chưa CANCELLED, paidAmount>0 hoặc paymentStatus!=UNPAID. Cho cancel khi không có order hoặc mọi order CANCELLED/UNPAID/paid=0. Query lỗi fail closed, thiếu adapter fail startup. Đóng phiên phục vụ dùng API /close riêng với port readiness của ORDER.
 
-Create thắng race thì cancel session bị TABLE_SESSION_IN_USE; cancel session thắng thì create bị TABLE_SESSION_NOT_OPEN. Không có order mới vào session đã CANCELLED/CLOSED. Cancel seating không hủy bill/refund; chưa có /close API.
+Create thắng race thì cancel session bị TABLE_SESSION_IN_USE; cancel session thắng thì create bị TABLE_SESSION_NOT_OPEN. Không có order mới vào session đã CANCELLED/CLOSED. Cancel seating không hủy bill/refund; /close chỉ mở khi mọi order của phiên đã terminal và có order COMPLETED/PAID.
 
-Audit/history/mutation cùng transaction. Lịch sử dòng chỉ null->PENDING và PENDING->CANCELLED trong MVP, append-only trigger; changeSequence từ mutationSequence nội bộ tạo thứ tự dù Clock bằng nhau. Sửa quantity/note hoặc confirm không tạo PENDING->PENDING giả. mutationSequence làm parent dirty để @Version tăng, không tự gán version.
+Audit/history/mutation cùng transaction. Lịch sử dòng ghi null->PENDING, các bước KDS PENDING->COOKING->READY->SERVED và PENDING->CANCELLED, append-only trigger; changeSequence từ mutationSequence nội bộ tạo thứ tự dù Clock bằng nhau. Sửa quantity/note hoặc confirm không tạo PENDING->PENDING giả. mutationSequence làm parent dirty để @Version tăng, không tự gán version.
 
-Audit: ORDER_CREATED, ORDER_UPDATED, ORDER_ITEMS_ADDED, ORDER_ITEM_UPDATED, ORDER_ITEM_CANCELLED, ORDER_CONFIRMED, ORDER_CANCELLED; tự mở phiên thêm TABLE_SESSION_OPENED đúng một lần trong cùng transaction. Tái sử dụng phiên không thêm event mở phiên. Không dump customer PII/note/body/key/hash/token. Request bị từ chối/no-op/replay không có audit thành công giả. Audit/history failure rollback toàn bộ.
+Audit: ORDER_CREATED, ORDER_UPDATED, ORDER_ITEMS_ADDED, ORDER_ITEM_UPDATED, ORDER_ITEM_CANCELLED, ORDER_CONFIRMED, ORDER_CANCELLED, ORDER_ITEM_COOKING, ORDER_ITEM_READY, ORDER_ITEM_SERVED, ORDER_COMPLETED; tự mở phiên thêm TABLE_SESSION_OPENED đúng một lần trong cùng transaction. Đóng phiên ghi TABLE_SESSION_CLOSED. Tái sử dụng phiên không thêm event mở phiên. Không dump customer PII/note/body/key/hash/token. Request bị từ chối/no-op/replay không có audit thành công giả. Audit/history failure rollback toàn bộ.
 
 ## Errors
 

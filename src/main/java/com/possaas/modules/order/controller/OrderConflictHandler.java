@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-@RestControllerAdvice(assignableTypes={OrderQueryController.class,OrderCommandController.class,OrderSessionQueryController.class})
+@RestControllerAdvice(assignableTypes={OrderQueryController.class,OrderCommandController.class,OrderSessionQueryController.class,KitchenQueueController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE) @RequiredArgsConstructor
 public class OrderConflictHandler {
     private final Clock clock;

@@ -25,6 +25,7 @@ public class TableSessionController {
     private final TableSessionQueryService query;
     private final TableSessionTransferService transfer;
     private final TableSessionTransferQueryService transfers;
+    private final TableSessionClosureService closure;
 
     @GetMapping @PreAuthorize("hasAuthority('TABLE_VIEW')")
     public PageResponse<TableSessionResponse> search(@Valid @ModelAttribute TableSearch.Sessions search) {
@@ -44,6 +45,12 @@ public class TableSessionController {
     @PostMapping("/{sessionId}/cancel") @PreAuthorize("hasAuthority('TABLE_CLOSE')")
     public TableSessionResponse cancel(@PathVariable UUID sessionId, @Valid @RequestBody TableRequests.CancelSession request, HttpServletRequest http) {
         return command.cancel(sessionId, request, http.getRemoteAddr());
+    }
+    @PostMapping("/{sessionId}/close") @PreAuthorize("hasAuthority('TABLE_CLOSE')")
+    public ResponseEntity<TableSessionResponse> close(@PathVariable UUID sessionId,
+            @Valid @RequestBody TableRequests.Version request,HttpServletRequest http) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(closure.close(sessionId,request.expectedVersion(),http.getRemoteAddr()));
     }
 
     @PostMapping("/{sessionId}/transfer") @PreAuthorize("hasAuthority('TABLE_TRANSFER')")
