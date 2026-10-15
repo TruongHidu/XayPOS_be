@@ -1,11 +1,20 @@
 # POS SaaS Backend
 
+## Operational reports
+
+Tenant operational reporting is available under `/api/v1/reports`. It separates successful payment collections from completed-order sales, applies restaurant timezone/currency filters, and exposes only read-only report DTOs. See [Report API](docs/report-api.md), [OpenAPI](docs/openapi/report-api.yaml), and [frontend synchronization notes](docs/report-fe-sync.md).
+
+V26: bổ sung QR_TABLE_ORDER và QR_STATIC_ORDER cho catalog BASIC/PRO/PREMIUM.
+Chỉ thêm mapping còn thiếu; giữ nguyên package tùy chỉnh, giá, maxStaff, limits và snapshot
+subscription đã có. Quyền QR vẫn lấy từ snapshot effective; subscription ACTIVE cũ không tự
+nhận feature mới. Không sửa V1–V25 hoặc thay đổi contract API.
+
 V25: QR gọi món tại bàn và mang đi dùng chung request PENDING → staff review/approve/reject.
 Không cần phiên/PIN trước gửi; PENDING chưa tạo order/món/phiên, chưa gửi bếp hoặc tính bill.
 TABLE được duyệt mới lazy-open/append vào serving order; RESTAURANT tạo TAKEAWAY/QR_STATIC
 độc lập, không cần TABLE hoặc POS_QUICK_ORDER. Guest opaque token/digest, TTL/rate limits,
 idempotency, review context hash và lifecycle/checkout scope được tách khỏi staff ORDER contract.
-Feature phải có trong immutable effective snapshot; không tự grant QR ordering vào package chuẩn.
+Feature phải có trong immutable effective snapshot; V26 bổ sung catalog gói chuẩn, không ghi lại snapshot cũ.
 [API/Postman](docs/public-qr-order-api.md) · [OpenAPI](docs/openapi/public-qr-order-api.yaml)
 · [Đồng bộ FE](docs/qr-order-fe-sync.md).
 · [Triển khai và kết quả kiểm thử](docs/qr-order-implementation.md).
@@ -82,8 +91,9 @@ cả ba gói có QR_MENU_VIEW. Limits STAFF_MANAGEMENT rỗng của BASIC/PRO/PR
 limits tùy chỉnh không rỗng và snapshot ACTIVE cũ được giữ nguyên. V12 chuyển maxStaff từ feature
 sang cột package và field top-level POST/PUT/GET. `maxStaff:null` hoặc bỏ qua là unlimited (kể cả PUT).
 Snapshot mới phiên bản 2 lưu maxStaff cấp package; snapshot cũ vẫn giữ nguyên và đọc tương thích.
-QR ordering không còn trong mapping ba gói chuẩn, feature rows/lịch sử
-vẫn giữ. Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
+V11 từng bỏ QR ordering khỏi ba gói chuẩn; V26 bổ sung lại QR_TABLE_ORDER/QR_STATIC_ORDER
+cho các lần capture snapshot sau migration, giữ nguyên feature rows/lịch sử.
+Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
 V14 triển khai API nhóm món và món bán với Strategy tạo item, soft delete, version và audit.
 Xem mục Menu trong docs/tenant-api.md và docs/openapi/tenant-api.yaml.
 V15 triển khai 21 API khu vực/bàn, QR quản trị và phiên xếp khách OPEN -> CANCELLED.

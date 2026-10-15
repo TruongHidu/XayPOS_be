@@ -24,7 +24,7 @@ class QrOrderMigrationIntegrationTest {
                 s.execute("INSERT INTO "+prefix+"restaurant_tables(id,restaurant_id,code,name,status,qr_token,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','B1','Existing','AVAILABLE','preserved-table-qr',now(),now())");
                 for(String name:List.of("restaurants","restaurant_tables","table_sessions","orders","order_items","payments","packages","package_features","restaurant_subscriptions","roles","role_permissions","permissions")) before.put(name,snapshot(s,prefix,name));
             }
-            var flyway=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();
+            var flyway=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("25").load();
             assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1); flyway.validate();
             try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
                 for(var entry:before.entrySet()) assertThat(snapshot(s,prefix,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());

@@ -760,14 +760,14 @@ Snapshot schemaVersion=2 chốt maxStaff top-level khi activate/change-package (
 Snapshot schemaVersion=1 vẫn đọc giới hạn lồng trong STAFF_MANAGEMENT; thiếu key là unlimited.
 Không ghi lại snapshot cũ. Snapshot có giới hạn lỗi trả 409 INVALID_STAFF_LIMIT_CONFIG.
 
-### Catalog V13 và subscription cũ
+### Catalog V13/V26 và subscription cũ
 
 Web là nơi cashier gọi món/ghi nhận thanh toán và khách xem menu QR; app là nơi quản lý/vận hành.
 Feature là năng lực nghiệp vụ; permission quyết định người nào được thao tác.
 
 | Gói | Quyền lợi catalog mặc định | maxStaff |
 |---|---|---|
-| BASIC | Menu, bàn, nhân viên và phân quyền, POS/order/payment, doanh thu ngày, báo cáo chi tiết, màn hình bếp, in/in lại hóa đơn và phiếu bếp, QR_MENU_VIEW | 3 |
+| BASIC | Menu, bàn, nhân viên và phân quyền, POS/order/payment, doanh thu ngày, báo cáo chi tiết, màn hình bếp, in/in lại hóa đơn và phiếu bếp, QR_MENU_VIEW, QR_TABLE_ORDER, QR_STATIC_ORDER | 3 |
 | PRO | Toàn bộ BASIC + RECIPE_MANAGEMENT (công thức) | 10 |
 | PREMIUM | Toàn bộ PRO + kho, cảnh báo tồn, kiểm kê, phân tích và AI đã seed (không thay đổi) | 30 |
 
@@ -786,11 +786,15 @@ Không thể phân biệt `{}` do seed với `{}` do admin cố ý đặt unlimi
 catalog. Mọi limits **không rỗng** được giữ nguyên, kể cả object không có maxStaff. Gói tùy chỉnh
 không bị đổi. Từ V12, admin dùng PUT package với `maxStaff:null` để đặt unlimited cho lần kích hoạt sau.
 
-V11 bỏ mapping QR_STATIC_ORDER/QR_TABLE_ORDER khỏi ba gói chuẩn, giữ feature rows và snapshot lịch sử.
-QR_MENU_VIEW chỉ là quyền xem menu; hai mã ordering dành cho luồng khách tự đặt món sau này.
-Migration không tạo public QR/menu API. Backend có catalog/subscription, profile, staff và permission
-APIs; menu, bàn, order, thanh toán, bếp, kho, báo cáo và AI chưa được coi là đã triển khai chỉ vì có
-feature trong catalog.
+V11 từng bỏ mapping QR_STATIC_ORDER/QR_TABLE_ORDER khỏi ba gói chuẩn, giữ feature rows và snapshot lịch sử.
+V26 bổ sung lại cả hai mapping cho BASIC/PRO/PREMIUM sau khi luồng QR gọi món chờ nhân viên duyệt đã có.
+Chỉ thêm mapping còn thiếu; không sửa feature đang bị vô hiệu hóa, mapping/limits đã tùy chỉnh,
+package tùy chỉnh (ví dụ HAPPY), giá, maxStaff, permission hoặc bất kỳ subscription/snapshot nào.
+QR_MENU_VIEW chỉ cấp xem menu; gọi món tại bàn còn cần QR_TABLE_ORDER, ORDER_MANAGEMENT,
+TABLE_MANAGEMENT; mang đi cần QR_STATIC_ORDER và ORDER_MANAGEMENT trong snapshot effective.
+Subscription ACTIVE cũ không tự nhận hai feature. Snapshot mới được chốt khi activate/change-package
+theo các business rule hiện có; V26 không thêm API refresh snapshot hoặc đổi cùng package.
+Không sửa migration đã chạy. Contract API package/subscription giữ nguyên; FE đọc features từ API.
 
 Snapshot ACTIVE cũ giữ nguyên feature/limits. Catalog mới áp dụng khi activate/change-package sau
 cập nhật (PENDING chưa chốt snapshot cũng nhận catalog lúc activate). Hạ giới hạn không khóa/xóa

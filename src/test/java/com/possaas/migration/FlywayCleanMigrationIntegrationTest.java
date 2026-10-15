@@ -40,7 +40,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("25");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("27");
             assertThat(countTables(schema)).isEqualTo(27);
             assertThat(tableExists(schema, "qr_table_access")).isTrue();
             assertThat(tableExists(schema, "qr_guest_authorizations")).isTrue();
@@ -60,6 +60,18 @@ class FlywayCleanMigrationIntegrationTest {
             assertThat(tableExists(schema, "restaurants")).isTrue();
             assertThat(tableExists(schema, "restaurant_subscriptions")).isTrue();
             assertThat(tableExists(schema, "audit_logs")).isTrue();
+            assertThat(indexExists(schema, "ix_report_payment_success_paid")).isTrue();
+            assertThat(indexExists(schema, "ix_report_order_completed")).isTrue();
+            assertThat(indexExists(schema, "ix_report_order_cancelled")).isTrue();
+            assertThat(indexExists(schema, "ix_report_order_created")).isTrue();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
+                     + "\".packages p JOIN \"" + schema + "\".package_features pf ON pf.package_id=p.id JOIN \""
+                     + schema + "\".features f ON f.id=pf.feature_id WHERE p.code IN ('BASIC','PRO','PREMIUM')"
+                     + " AND f.code IN ('QR_TABLE_ORDER','QR_STATIC_ORDER')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(6);
+            }
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery("SELECT string_agg(r.code,',' ORDER BY r.code) FROM \"" + schema
                      + "\".roles r JOIN \"" + schema + "\".role_permissions rp ON rp.role_id=r.id JOIN \""
@@ -281,7 +293,7 @@ class FlywayCleanMigrationIntegrationTest {
                     before.put(table,tableSnapshot(statement,prefix,table));
             }
             var flyway=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load();
+                .locations("classpath:db/migration").target("20").load();
             flyway.migrate(); flyway.validate();
             try(Connection connection=dataSource.getConnection(); Statement statement=connection.createStatement()) {
                 for(var entry:before.entrySet()) assertThat(tableSnapshot(statement,prefix,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
@@ -407,7 +419,7 @@ class FlywayCleanMigrationIntegrationTest {
                 unrelatedGrants = unrelatedCompletionGrants(statement, prefix);
             }
             var flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load();
+                .locations("classpath:db/migration").target("24").load();
             flyway.migrate();
             flyway.validate();
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
@@ -479,6 +491,19 @@ class FlywayCleanMigrationIntegrationTest {
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, schema);
             statement.setString(2, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getBoolean(1);
+            }
+        }
+    }
+
+    private boolean indexExists(String schema, String index) throws Exception {
+        String sql = "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = ? AND indexname = ?)";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, index);
             try (ResultSet resultSet = statement.executeQuery()) {
                 resultSet.next();
                 return resultSet.getBoolean(1);

@@ -259,8 +259,9 @@ class PackageSelectionIntegrationTest {
         assertThat(active.maxStaff()).isEqualTo(3L);
         assertThat(active.features()).extracting(FeatureEntitlementResponse::code)
             .contains("STAFF_MANAGEMENT","TABLE_MANAGEMENT","QR_MENU_VIEW",
-                "STAFF_PERMISSION","KITCHEN_DISPLAY","DETAIL_REPORT","KITCHEN_TICKET_PRINT","KITCHEN_TICKET_REPRINT")
-            .doesNotContain("QR_STATIC_ORDER","QR_TABLE_ORDER","RECIPE_MANAGEMENT");
+                "STAFF_PERMISSION","KITCHEN_DISPLAY","DETAIL_REPORT","KITCHEN_TICKET_PRINT","KITCHEN_TICKET_REPRINT",
+                "QR_STATIC_ORDER","QR_TABLE_ORDER")
+            .doesNotContain("RECIPE_MANAGEMENT");
         for(int i=0;i<3;i++) createStaff(owner,201);
         createStaff(owner,409);
     }

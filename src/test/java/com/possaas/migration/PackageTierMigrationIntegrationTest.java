@@ -49,7 +49,7 @@ class PackageTierMigrationIntegrationTest {
                 int countBefore = Integer.parseInt(value(sql, "SELECT count(*) FROM " + prefix + "package_features"));
 
                 Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                    .locations("classpath:db/migration").load();
+                    .locations("classpath:db/migration").target("13").load();
                 upgrade.migrate();
 
                 Set<String> basic = codes(sql, prefix, "BASIC");

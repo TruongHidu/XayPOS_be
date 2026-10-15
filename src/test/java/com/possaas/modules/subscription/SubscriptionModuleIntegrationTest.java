@@ -143,10 +143,12 @@ class SubscriptionModuleIntegrationTest {
         PackageResponse premium = packageQueryService.findActivePackage("premium");
 
         assertThat(featureCodes(basic)).contains("MENU_MANAGEMENT", "TABLE_MANAGEMENT", "STAFF_MANAGEMENT", "QR_MENU_VIEW",
-            "KITCHEN_DISPLAY", "STAFF_PERMISSION", "DETAIL_REPORT", "KITCHEN_TICKET_PRINT", "KITCHEN_TICKET_REPRINT")
-            .doesNotContain("RECIPE_MANAGEMENT", "QR_STATIC_ORDER", "QR_TABLE_ORDER");
-        assertThat(featureCodes(pro)).contains("KITCHEN_DISPLAY", "RECIPE_MANAGEMENT").doesNotContain("INVENTORY_MANAGEMENT");
-        assertThat(featureCodes(premium)).contains("INVENTORY_MANAGEMENT", "AI_DEMAND_FORECAST");
+            "KITCHEN_DISPLAY", "STAFF_PERMISSION", "DETAIL_REPORT", "KITCHEN_TICKET_PRINT", "KITCHEN_TICKET_REPRINT",
+            "QR_STATIC_ORDER", "QR_TABLE_ORDER")
+            .doesNotContain("RECIPE_MANAGEMENT");
+        assertThat(featureCodes(pro)).contains("KITCHEN_DISPLAY", "RECIPE_MANAGEMENT", "QR_STATIC_ORDER", "QR_TABLE_ORDER")
+            .doesNotContain("INVENTORY_MANAGEMENT");
+        assertThat(featureCodes(premium)).contains("INVENTORY_MANAGEMENT", "AI_DEMAND_FORECAST", "QR_STATIC_ORDER", "QR_TABLE_ORDER");
         assertThat(packageQueryService.findActivePackages()).extracting(PackageResponse::code)
             .contains("BASIC", "PRO", "PREMIUM");
     }

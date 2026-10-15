@@ -1,0 +1,298 @@
+openapi: 3.1.0
+info:
+  title: POS SaaS Operational Report API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/reports/daily:
+    get:
+      summary: Daily operational report
+      description: Requires REPORT_DAILY_VIEW and DAILY_REVENUE.
+      parameters:
+        - $ref: '#/components/parameters/Date'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+      responses:
+        '200': { $ref: '#/components/responses/Overview' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/summary:
+    get:
+      summary: Date-range operational summary
+      description: Requires REPORT_DETAIL_VIEW and DETAIL_REPORT.
+      parameters: &rangeParameters
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+      responses:
+        '200': { $ref: '#/components/responses/Overview' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/revenue-series:
+    get:
+      summary: Collected amount and completed sales time series
+      description: Requires REPORT_DETAIL_VIEW and DETAIL_REPORT. Empty buckets are zero-filled.
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - name: granularity
+          in: query
+          schema: { type: string, enum: [DAY, MONTH], default: DAY }
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+      responses:
+        '200':
+          description: Series envelope
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SeriesPoint' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/payment-methods:
+    get:
+      summary: Successful collection breakdown by payment method
+      description: Requires REPORT_DETAIL_VIEW and DETAIL_REPORT. Always returns CASH and TRANSFER.
+      parameters: *rangeParameters
+      responses:
+        '200':
+          description: Payment method envelope
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PaymentMethodRow' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/top-items:
+    get:
+      summary: Top items from completed orders
+      description: Requires REPORT_DETAIL_VIEW and DETAIL_REPORT.
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [quantity, itemSalesAmount], default: quantity }
+        - $ref: '#/components/parameters/Direction'
+      responses:
+        '200': { $ref: '#/components/responses/TopItems' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/orders:
+    get:
+      summary: Paginated reconciliation order list
+      description: Requires REPORT_DETAIL_VIEW and DETAIL_REPORT. PAID returns one row per order.
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - name: dateBasis
+          in: query
+          schema: { type: string, enum: [CREATED, COMPLETED, CANCELLED, PAID], default: CREATED }
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+        - name: status
+          in: query
+          schema: { type: string, enum: [OPEN, CONFIRMED, PREPARING, READY, SERVED, COMPLETED, CANCELLED] }
+        - name: paymentStatus
+          in: query
+          schema: { type: string, enum: [UNPAID, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [reportEventAt, totalAmount], default: reportEventAt }
+        - $ref: '#/components/parameters/Direction'
+      responses:
+        '200': { $ref: '#/components/responses/Orders' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Date: { name: date, in: query, schema: { type: string, format: date } }
+    FromDate: { name: fromDate, in: query, required: true, schema: { type: string, format: date } }
+    ToDate: { name: toDate, in: query, required: true, schema: { type: string, format: date } }
+    Currency: { name: currencyCode, in: query, schema: { type: string, minLength: 3, maxLength: 3, example: VND } }
+    ServiceType: { name: serviceType, in: query, schema: { type: string, enum: [DINE_IN, TAKEAWAY] } }
+    SourceChannel: { name: sourceChannel, in: query, schema: { type: string, enum: [CASHIER, WAITER, QR_STATIC, QR_TABLE] } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    Size: { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Direction: { name: direction, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+  schemas:
+    Meta:
+      type: object
+      required: [fromDate, toDate, timezone, currencyCode, generatedAt]
+      properties:
+        fromDate: { type: string, format: date }
+        toDate: { type: string, format: date }
+        timezone: { type: string, example: Asia/Ho_Chi_Minh }
+        currencyCode: { type: string, example: VND }
+        generatedAt: { type: string, format: date-time }
+        serviceType: { type: [string, 'null'], enum: [DINE_IN, TAKEAWAY, null] }
+        sourceChannel: { type: [string, 'null'], enum: [CASHIER, WAITER, QR_STATIC, QR_TABLE, null] }
+        granularity: { type: [string, 'null'], enum: [DAY, MONTH, null] }
+        dateBasis: { type: [string, 'null'], enum: [CREATED, COMPLETED, CANCELLED, PAID, null] }
+    Envelope:
+      type: object
+      required: [meta, data]
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data: {}
+    OverviewData:
+      type: object
+      properties:
+        collections:
+          type: object
+          properties:
+            collectedAmount: { type: number }
+            successfulPaymentCount: { type: integer, format: int64 }
+            paidOrderCount: { type: integer, format: int64 }
+        orders:
+          type: object
+          properties:
+            createdOrderCount: { type: integer, format: int64 }
+            completedOrderCount: { type: integer, format: int64 }
+            cancelledOrderCount: { type: integer, format: int64 }
+            completedSubtotalAmount: { type: number }
+            completedDiscountAmount: { type: number }
+            completedTaxAmount: { type: number }
+            completedServiceChargeAmount: { type: number }
+            completedOrderSalesAmount: { type: number }
+            averageCompletedOrderValue: { type: number }
+    SeriesPoint:
+      type: object
+      properties:
+        bucketStartDate: { type: string, format: date }
+        collectedAmount: { type: number }
+        completedOrderSalesAmount: { type: number }
+        successfulPaymentCount: { type: integer, format: int64 }
+        completedOrderCount: { type: integer, format: int64 }
+    PaymentMethodRow:
+      type: object
+      properties:
+        paymentMethod: { type: string, enum: [CASH, TRANSFER] }
+        collectedAmount: { type: number }
+        successfulPaymentCount: { type: integer, format: int64 }
+        percentage: { type: number }
+    TopItem:
+      type: object
+      properties:
+        itemId: { type: [string, 'null'], format: uuid }
+        itemName: { type: string }
+        unit: { type: string }
+        quantity: { type: number }
+        itemSalesAmount: { type: number }
+        completedOrderCount: { type: integer, format: int64 }
+    ReportOrder:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderCode: { type: string }
+        serviceType: { type: string }
+        sourceChannel: { type: string }
+        status: { type: string }
+        paymentStatus: { type: string }
+        currencyCode: { type: string }
+        totalAmount: { type: number }
+        collectedAmountInRange: { type: number }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        reportEventAt: { type: string, format: date-time }
+    Page:
+      type: object
+      properties:
+        content: { type: array, items: {} }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, const: false }
+        code: { type: string }
+        message: { type: string }
+        fieldErrors: { type: object, additionalProperties: { type: string } }
+        timestamp: { type: string, format: date-time }
+  responses:
+    Overview:
+      description: Overview envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties: { data: { $ref: '#/components/schemas/OverviewData' } }
+    TopItems:
+      description: Top-item page envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Page'
+                      - type: object
+                        properties: { content: { type: array, items: { $ref: '#/components/schemas/TopItem' } } }
+    Orders:
+      description: Reconciliation order page envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Page'
+                      - type: object
+                        properties: { content: { type: array, items: { $ref: '#/components/schemas/ReportOrder' } } }
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

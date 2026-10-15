@@ -13,7 +13,7 @@ Backend-only MVP. [OpenAPI](openapi/public-qr-order-api.yaml) · [Hướng dẫn
 
 Không cần nhân viên mở phiên hoặc cấp PIN trước khi khách gửi. Tên nhận hàng bắt buộc cho TAKEAWAY; phone tùy chọn. QR mang đi không cần `TABLE_MANAGEMENT`, `TABLE_OPEN` hoặc `POS_QUICK_ORDER`. API staff tạo TAKEAWAY hiện có vẫn giữ gate `POS_QUICK_ORDER` và chỉ cho source CASHIER/WAITER; guest không được dùng API đó hoặc giả source QR.
 
-Feature lấy từ subscription ACTIVE và effective (`startAt <= Clock.instant() < endAt`), không từ packageCode/catalog hiện tại. Không tự thêm QR ordering vào package chuẩn hoặc sửa snapshot đã activate. Menu read hiện có vẫn chỉ cần `QR_MENU_VIEW`, không cần guest token/session/PIN:
+Feature lấy từ subscription ACTIVE và effective (`startAt <= Clock.instant() < endAt`), không từ packageCode/catalog hiện tại. V26 bổ sung `QR_TABLE_ORDER` và `QR_STATIC_ORDER` vào catalog BASIC/PRO/PREMIUM, chỉ thêm mapping còn thiếu và không sửa snapshot đã activate hoặc package tùy chỉnh. Subscription ACTIVE cũ không tự có quyền QR mới. Menu read hiện có vẫn chỉ cần `QR_MENU_VIEW`, không cần guest token/session/PIN:
 
 ```text
 GET /api/v1/public/menu/tables/{qrToken}
@@ -386,6 +386,8 @@ Environment `baseUrl`, staffAccessToken, qrToken, menuToken, itemId. Tokens/UUID
 ## Vận hành và giới hạn
 
 Migration mới `V25__create_qr_order_requests.sql` tạo `qr_table_access` (epoch), `qr_guest_authorizations` (digest/scope/expiry), `qr_order_requests` và `qr_order_request_items`. Unique guest intent key ở cấp restaurant; composite tenant FKs/entry shape/linkage bảo vệ ownership. Không unique toàn bộ approvedOrderId vì nhiều TABLE requests được append vào cùng order. Partial unique serving order/session V19 giữ nguyên. Không sửa migration trước V25, package mapping hoặc ACTIVE subscription snapshot.
+
+Migration kế tiếp `V26__enable_qr_ordering_for_standard_packages.sql` chỉ bổ sung hai QR ordering mapping của gói chuẩn. Không thay đổi V25, API, quyền staff, giá/maxStaff, mapping đã có hoặc subscription snapshot. Package tùy chỉnh giữ nguyên cấu hình.
 
 Domain reuse: giữ Strategy DINE_IN/TAKEAWAY hiện có và private staff source normalizer/hash. QR submission CoR xử lý scope → normalization → replay → entry guard → quote → pending persistence; approval CoR xử lý staff authorization/lock → replay/version → review/context/branch → shared order preparation/persistence → request linkage/audit. Trusted QR approval port dùng real staff actor, không fake principal hoặc copy toàn bộ staff creation/append. Lifecycle callbacks dùng application ports và cùng tenant lock.
 
