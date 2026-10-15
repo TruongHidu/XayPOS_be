@@ -23,6 +23,10 @@ public class OrderPaymentCommandAdapter implements OrderPaymentCommand {
         owned(restaurantId, orderId);
     }
 
+    @Override public UUID tableSessionId(UUID restaurantId, UUID orderId) {
+        return owned(restaurantId, orderId).getTableSessionId();
+    }
+
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public Settlement settleFull(UUID restaurantId, UUID orderId, long expectedVersion,

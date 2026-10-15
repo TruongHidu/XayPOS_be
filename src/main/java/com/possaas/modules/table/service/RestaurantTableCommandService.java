@@ -4,6 +4,7 @@ import com.possaas.common.security.CurrentUser;
 import com.possaas.modules.table.dto.*;
 import com.possaas.modules.table.entity.*;
 import com.possaas.modules.table.repository.RestaurantTableRepository;
+import com.possaas.modules.table.application.port.TableGuestAccessLifecycle;
 import java.time.Clock;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class RestaurantTableCommandService {
     private final TableQrTokenGenerator tokens;
     private final TableAudit audit;
     private final Clock clock;
+    private final TableGuestAccessLifecycle qrRequests;
 
     public RestaurantTableResponse create(TableRequests.CreateTable r, String ip) {
         var actor = access.require(true);
@@ -67,6 +69,8 @@ public class RestaurantTableCommandService {
         var before = audit.snapshot(table);
         table.setStatus(r.status());
         persist(actor, table, r.status() == TableStatus.AVAILABLE ? "TABLE_ENABLED" : "TABLE_DISABLED", before, ip);
+        if (r.status() == TableStatus.INACTIVE)
+            qrRequests.invalidateTable(actor.restaurantId(), id, "TABLE_DISABLED", actor.userId(), clock.instant(), ip);
         return mapper.table(table);
     }
 
@@ -94,6 +98,7 @@ public class RestaurantTableCommandService {
         table.setDeletedAt(table.getUpdatedAt());
         tables.saveAndFlush(table);
         audit.record(actor, "TABLE_DELETED", table, before, audit.snapshot(table), ip);
+        qrRequests.invalidateTable(actor.restaurantId(), id, "TABLE_DELETED", actor.userId(), table.getUpdatedAt(), ip);
     }
 
     public TableQrResponse rotateQr(UUID id, TableRequests.Version r, String ip) {
@@ -103,6 +108,7 @@ public class RestaurantTableCommandService {
         var before = audit.snapshot(table);
         table.setQrToken(tokens.rotate(table.getQrToken()));
         persist(actor, table, "TABLE_QR_ROTATED", before, ip);
+        qrRequests.invalidateTable(actor.restaurantId(), id, "TABLE_QR_ROTATED", actor.userId(), table.getUpdatedAt(), ip);
         return TableQrResponse.from(table);
     }
 

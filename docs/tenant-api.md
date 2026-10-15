@@ -6,6 +6,8 @@ Lấy/khởi tạo/đổi link menu chung nhà hàng: [Public restaurant menu AP
 
 Customer-facing anonymous QR menu endpoints are documented separately in [Public QR menu API](public-qr-menu-api.md). Their anonymous access does not apply to any authenticated tenant endpoint below.
 
+QR ordering uses [pending requests and staff approval](public-qr-order-api.md), not anonymous access to ORDER/TABLE/PAYMENT. Guest submission requires no session/PIN; actual TABLE session opening happens only during authorized staff approval. QR takeaway does not require TABLE features/permissions.
+
 All endpoints require `Authorization: Bearer <accessToken>`. The tenant comes exclusively from the authenticated principal. Request bodies must not contain `restaurantId`. Unknown properties are rejected. System accounts without a tenant cannot use these APIs. Responses never contain passwords, token material, `deletedAt`, raw restaurant settings, or `publicOrderToken`.
 
 ## Authorization
@@ -312,6 +314,12 @@ an effective subscription, and `TABLE_MANAGEMENT` in its immutable snapshot.
 Package names do not authorize access. System SUPER_ADMIN without tenant context
 cannot call these APIs. There are no role defaults or feature snapshot changes in V15.
 CASHIER/MANAGER need the relevant effective permission grants.
+V24 adds TABLE_CLOSE to global system CASHIER/MANAGER for atomic DINE_IN order
+completion and session closure. This permission also applies to the manual close
+and cancel endpoints, which retain their existing business guards. User DENY and
+snapshot TABLE_MANAGEMENT still apply; login/refresh is required for new grants.
+
+V25 table close/cancel/transfer/QR rotation additionally invalidates affected table guest access epochs/grants and cancels PENDING TABLE ordering requests in the same transaction. Opening the first session does not invalidate newly issued pre-seating grants. RESTAURANT takeaway grants/requests and APPROVED order/payment history are unaffected. Existing TABLE bodies/responses and closure/completion conditions are unchanged; [scope details](public-qr-order-api.md#scope-checkoutlifecycle).
 
 ### Headers and endpoint contracts
 
@@ -526,8 +534,8 @@ Tokens use 32 SecureRandom bytes encoded base64url without padding. Rotation
 changes the token and table version even during an OPEN session; the previous
 token no longer matches the table in DB. Ordinary responses/audit never include
 tokens, token hashes or token-bearing paths. GET QR is read-only and emits no
-mutation audit. The path prepares a future web menu contract: this phase does
-not implement a public resolver, menu endpoint or QR image generation.
+mutation audit. Public menu reads and QR ordering are now separate APIs documented above;
+these TABLE management endpoints do not render QR images or let guests mutate sessions/orders.
 
 The datasource sets pgJDBC logServerErrorDetail=false so constraint exceptions
 do not echo QR values into application logs. Keep this setting in deployment
@@ -597,9 +605,14 @@ raw SQL/details. Authentication/feature checks may precede resource lookup.
 
 ### Phase boundary and verification
 
-OPEN -> CANCELLED undoes unused seating; OPEN -> CLOSED completes a served, paid
-session through POST /api/v1/table-sessions/{sessionId}/close. Neither operation
-creates payment or refunds. See [kitchen-completion-api.md](kitchen-completion-api.md).
+OPEN -> CANCELLED undoes unused seating; OPEN -> CLOSED ends a served, paid
+session. V24 POST /api/v1/orders/{orderId}/complete atomically completes DINE_IN
+and closes exactly order.tableSessionId when payment, served-item and session-wide
+readiness checks pass. TAKEAWAY completion has no TABLE permission/feature dependency.
+POST /api/v1/table-sessions/{sessionId}/close remains available and is idempotent
+after automatic closure. Neither closure path creates payment or refunds.
+See [kitchen-completion-api.md](kitchen-completion-api.md) and
+[FE synchronization](order-completion-session-fe-sync.md).
 There is no merge/split, reservation or realtime integration. V21 adds manual PAYMENT
 recording separately; see [payment-api.md](payment-api.md).
 V20 adds moving an OPEN session to an empty table without changing its orders:

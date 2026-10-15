@@ -27,7 +27,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return PublicMenuRequests.matches(request);
+        return PublicMenuRequests.matches(request) || PublicQrOrderRequests.matches(request);
     }
 
     @Override

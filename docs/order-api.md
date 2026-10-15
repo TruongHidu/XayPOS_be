@@ -6,7 +6,7 @@ session.tableId là bàn hiện tại/cuối cùng, không phải snapshot nơi 
 Active-order và gọi thêm vẫn dùng cùng session/order sau chuyển. Original create/append
 retry giữ nguyên payload/key (kể cả tableId nguồn cũ); không đổi fingerprint hoặc CoR/Strategy.
 
-Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; ghi nhận thanh toán thủ công xem [payment-api.md](payment-api.md). KDS, hoàn tất order và đóng phiên xem [kitchen-completion-api.md](kitchen-completion-api.md). Chưa có QR ordering, recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml).
+Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; ghi nhận thanh toán thủ công xem [payment-api.md](payment-api.md). KDS, hoàn tất order và đóng phiên xem [kitchen-completion-api.md](kitchen-completion-api.md). QR gọi món dùng [request/approval APIs riêng](public-qr-order-api.md), không mở private ORDER cho guest. Chưa có recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml).
 
 Files và kết quả test thực tế: [order-implementation.md](order-implementation.md).
 
@@ -20,7 +20,7 @@ Content-Type: application/json
 
 Content-Type dùng cho request JSON. Tenant và createdBy lấy từ principal; không nhận restaurantId/createdBy hoặc các amount/status từ body. System account không có tenant bị từ chối. Resource tenant khác được ẩn bằng 404. Account/restaurant status guards hiện có vẫn áp dụng. Response dùng Cache-Control no-store.
 
-Mọi endpoint yêu cầu feature ORDER_MANAGEMENT trong effective subscription snapshot. Tạo DINE_IN và append SUBMIT vào DINE_IN thêm TABLE_MANAGEMENT; tạo TAKEAWAY và append SUBMIT vào TAKEAWAY thêm POS_QUICK_ORDER. Append DRAFT giữ feature gate legacy. Không cần recipe/menu-management/kitchen feature để tạo order. Feature gate không suy từ tên package và không sửa snapshot cũ.
+Các endpoint đọc/tạo/sửa/hủy ORDER trong bảng dưới yêu cầu feature ORDER_MANAGEMENT trong effective subscription snapshot. Tạo DINE_IN và append SUBMIT vào DINE_IN thêm TABLE_MANAGEMENT; tạo TAKEAWAY và append SUBMIT vào TAKEAWAY thêm POS_QUICK_ORDER. Append DRAFT giữ feature gate legacy. Không cần recipe/menu-management/kitchen feature để tạo order. Feature gate không suy từ tên package và không sửa snapshot cũ. Các thao tác KDS/fulfillment có gate riêng trong bảng kế tiếp.
 
 | Method | Endpoint | Permission |
 | --- | --- | --- |
@@ -36,6 +36,21 @@ Mọi endpoint yêu cầu feature ORDER_MANAGEMENT trong effective subscription 
 | POST | /api/v1/orders/{orderId}/cancel | ORDER_CANCEL |
 
 V17 bổ sung CASHIER: ORDER_CREATE, ORDER_UPDATE, TABLE_VIEW; MANAGER: ORDER_VIEW, ORDER_CREATE, ORDER_UPDATE, ORDER_CANCEL, TABLE_VIEW. Không thêm ORDER_CANCEL cho WAITER/CASHIER mặc định. User GRANT/DENY không bị thay đổi; DENY vẫn thắng. JWT cần refresh/login lại để có các role grants mới. Frontend gọi API menu chọn món riêng vẫn cần permission/feature của API menu đó.
+
+Hai thao tác hàng loạt theo order được tài liệu hóa đầy đủ cùng API từng món tại [kitchen-completion-api.md](kitchen-completion-api.md#cập-nhật-tất-cả-món-theo-đơn) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml):
+
+| Method | Endpoint | Permission | Feature | Body |
+| --- | --- | --- | --- | --- |
+| POST | /api/v1/orders/{orderId}/mark-ready | KITCHEN_MARK_READY | KITCHEN_DISPLAY | `{"expectedOrderVersion":7}` |
+| POST | /api/v1/orders/{orderId}/mark-served | ORDER_MARK_SERVED | ORDER_MANAGEMENT | `{"expectedOrderVersion":7}` |
+
+mark-ready chỉ đổi COOKING → READY, giữ READY/SERVED và bỏ qua CANCELLED; có PENDING thì từ chối toàn bộ. mark-served theo đơn cho phép PENDING/COOKING/READY → SERVED, giữ SERVED và bỏ qua CANCELLED để xác nhận món đã thực sự phục vụ khi không dùng màn bếp. Không cần KITCHEN_DISPLAY hoặc gọi start-cooking/mark-ready trước bulk mark-served; vẫn cần ORDER_MARK_SERVED + ORDER_MANAGEMENT. Rule áp dụng cho mọi actor có quyền hiệu lực, không chỉ CASHIER. Root phải CONFIRMED/PREPARING/READY/SERVED và có ít nhất một dòng hiệu lực. PAID vẫn được phép, không sửa tiền, không tự complete hoặc đóng phiên. Cả hai trả 200 OrderResponse, Cache-Control:no-store; toàn bộ thao tác atomic. API mark-served từng món vẫn chỉ cho READY → SERVED.
+
+No-op sau kiểm auth/tenant/permission/feature/root/items được trả 200 kể cả version cũ; không tăng version, ghi history hoặc audit. Khi còn món cần đổi, expectedOrderVersion phải khớp Order.version. Đây là version aggregate, không phải version session/món. Không cần Idempotency-Key. Một mutation ghi một audit ORDER_ITEMS_MARKED_READY/SERVED và history cho từng dòng đổi, dùng đúng trạng thái nguồn thực tế (PENDING/COOKING/READY → SERVED), không tạo bước nấu giả; root tổng hợp trạng thái một lần. Luồng KDS PENDING → COOKING vẫn dùng start-cooking từng món. Khi append tạo PENDING mới, retry bulk mark-served bằng version cũ bị chặn CONCURRENT_ORDER_UPDATE, không tự phục vụ dòng mới.
+
+V23 grant KITCHEN_MARK_READY và ORDER_MARK_SERVED cho role hệ thống CASHIER/KITCHEN, không cấp thêm KITCHEN_START_COOKING/ORDER_COMPLETE/TABLE_CLOSE hoặc thay đổi GRANT/DENY của user. Feature snapshot vẫn bắt buộc; refresh/login lại để JWT nhận grants mới. FE dùng nút “Xong tất cả” khi không còn PENDING và có COOKING; nút “Đã phục vụ tất cả” khi root đang phục vụ và có ít nhất một dòng PENDING/COOKING/READY. Loại CANCELLED khỏi kiểm tra; toàn bộ SERVED thì không cần thao tác. Kiểm permission/feature riêng của từng action, gửi version mới nhất, thay state bằng response, reload khi 409. Xác nhận bulk phục vụ không đồng nghĩa với complete/thanh toán. Không thêm chế độ vận hành, permission hoặc migration cho thay đổi này. [Postman và hướng dẫn FE](kitchen-completion-api.md#postman-và-đồng-bộ-fe-cho-bulk-actions).
+
+V24 bổ sung TABLE_CLOSE cho global system CASHIER/MANAGER để complete DINE_IN kèm đóng phiên. TABLE_CLOSE cũng cho phép manual close/cancel theo business rule hiện có; không cấp ORDER_COMPLETE cho KITCHEN. Custom tenant roles, user GRANT/DENY và subscription snapshot không đổi. Login/refresh sau migration để JWT có grants mới. [Đồng bộ FE hoàn tất đơn](order-completion-session-fe-sync.md).
 
 ## Tạo order
 
@@ -119,7 +134,7 @@ TAKEAWAY:
 
 TAKEAWAY không nhận tableId/session và không query/create bàn; guestCount mặc định 1. guestCount nếu gửi phải 1–32767. customerName <=100, customerPhone <=30, note <=2000 ký tự. items 1–100 dòng/request. quantity >0, tối đa 9 chữ số phần nguyên và 3 thập phân. Dòng cùng itemId không tự gộp.
 
-SourceChannel client chỉ khai báo luồng tác nghiệp CASHIER/WAITER; không chứng nhận thiết bị hoặc tạo quyền. QR_STATIC/QR_TABLE bị từ chối tại endpoint nhân viên. Public QR/menu token chỉ cho xem menu.
+SourceChannel client chỉ khai báo luồng tác nghiệp CASHIER/WAITER; không chứng nhận thiết bị hoặc tạo quyền. QR_STATIC/QR_TABLE vẫn bị từ chối tại endpoint nhân viên. Public QR/menu token không trực tiếp cấp quyền ORDER: [QR ordering](public-qr-order-api.md) đổi link lấy guest grant, chỉ tạo PENDING request rồi chờ staff duyệt. Không thay staff DTO, hash legacy hoặc POS_QUICK_ORDER gate để chạy QR_STATIC.
 
 ### Idempotency contract
 
@@ -333,13 +348,50 @@ ORDER_CANCEL. OPEN/CONFIRMED và không có cooking/fulfilled items hoặc nghĩ
 
 ## Session guard và transaction
 
-Order mutation, menu mutation và table/session mutation dùng chung pessimistic restaurant lock tới commit. Khi cancel session, TABLE gọi port TableSessionUsagePolicy, ORDER cung cấp query DB thật. Chặn nếu còn order chưa CANCELLED, paidAmount>0 hoặc paymentStatus!=UNPAID. Cho cancel khi không có order hoặc mọi order CANCELLED/UNPAID/paid=0. Query lỗi fail closed, thiếu adapter fail startup. Đóng phiên phục vụ dùng API /close riêng với port readiness của ORDER.
+Order mutation, menu mutation và table/session mutation dùng chung pessimistic restaurant lock tới commit. Khi cancel session, TABLE gọi port TableSessionUsagePolicy, ORDER cung cấp query DB thật. Chặn nếu còn order chưa CANCELLED, paidAmount>0 hoặc paymentStatus!=UNPAID. Cho cancel khi không có order hoặc mọi order CANCELLED/UNPAID/paid=0. Query lỗi fail closed, thiếu adapter fail startup. Complete DINE_IN gọi TABLE-owned command port để đóng đúng phiên của order; API /close riêng tái sử dụng cùng closure operation/readiness, không cần gọi thêm sau complete thành công.
+
+Từ V25, close/cancel/transfer/rotate QR bàn invalid table access epoch/grants và cancel PENDING QR requests bị ảnh hưởng cùng transaction, không chuyển request cũ sang lượt khách mới hoặc tác động QR mang đi. Complete DINE_IN giữ nguyên body/response và chỉ thêm scope invalidation qua closure chung. TAKEAWAY complete không chạm TABLE hoặc request mang đi khác. PENDING QR request chưa là order hoặc financial obligation; checkout chỉ cancel requests đã observed đúng session, không khóa payment toàn nhà hàng. [Chi tiết scope/FE](qr-order-fe-sync.md).
 
 Create thắng race thì cancel session bị TABLE_SESSION_IN_USE; cancel session thắng thì create bị TABLE_SESSION_NOT_OPEN. Không có order mới vào session đã CANCELLED/CLOSED. Cancel seating không hủy bill/refund; /close chỉ mở khi mọi order của phiên đã terminal và có order COMPLETED/PAID.
 
-Audit/history/mutation cùng transaction. Lịch sử dòng ghi null->PENDING, các bước KDS PENDING->COOKING->READY->SERVED và PENDING->CANCELLED, append-only trigger; changeSequence từ mutationSequence nội bộ tạo thứ tự dù Clock bằng nhau. Sửa quantity/note hoặc confirm không tạo PENDING->PENDING giả. mutationSequence làm parent dirty để @Version tăng, không tự gán version.
+Audit/history/mutation cùng transaction. Lịch sử dòng ghi null->PENDING, các bước KDS PENDING->COOKING->READY->SERVED, bulk phục vụ trực tiếp PENDING/COOKING->SERVED và PENDING->CANCELLED, append-only trigger; changeSequence từ mutationSequence nội bộ tạo thứ tự dù Clock bằng nhau. Bulk mark-served ghi đúng trạng thái nguồn của từng dòng, không thêm COOKING/READY giả. Sửa quantity/note hoặc confirm không tạo PENDING->PENDING giả. mutationSequence làm parent dirty để @Version tăng, không tự gán version.
 
-Audit: ORDER_CREATED, ORDER_UPDATED, ORDER_ITEMS_ADDED, ORDER_ITEM_UPDATED, ORDER_ITEM_CANCELLED, ORDER_CONFIRMED, ORDER_CANCELLED, ORDER_ITEM_COOKING, ORDER_ITEM_READY, ORDER_ITEM_SERVED, ORDER_COMPLETED; tự mở phiên thêm TABLE_SESSION_OPENED đúng một lần trong cùng transaction. Đóng phiên ghi TABLE_SESSION_CLOSED. Tái sử dụng phiên không thêm event mở phiên. Không dump customer PII/note/body/key/hash/token. Request bị từ chối/no-op/replay không có audit thành công giả. Audit/history failure rollback toàn bộ.
+Audit: ORDER_CREATED, ORDER_UPDATED, ORDER_ITEMS_ADDED, ORDER_ITEM_UPDATED, ORDER_ITEM_CANCELLED, ORDER_CONFIRMED, ORDER_CANCELLED, ORDER_ITEM_COOKING, ORDER_ITEM_READY, ORDER_ITEM_SERVED, ORDER_ITEMS_MARKED_READY, ORDER_ITEMS_MARKED_SERVED, ORDER_COMPLETED; tự mở phiên thêm TABLE_SESSION_OPENED đúng một lần trong cùng transaction. Đóng phiên ghi TABLE_SESSION_CLOSED. Tái sử dụng phiên không thêm event mở phiên. Không dump customer PII/note/body/key/hash/token. Request bị từ chối/no-op/replay không có audit thành công giả. Audit/history failure rollback toàn bộ.
+
+### POST /api/v1/orders/{orderId}/complete
+
+Headers dùng Bearer JWT, Content-Type và Accept application/json như trên; không có tenant override hoặc Idempotency-Key.
+
+```json
+{ "expectedVersion": 9 }
+```
+
+expectedVersion bắt buộc, không âm và là **Order.version** mới nhất, không phải version item/session. Không gửi tableId, sessionId, expectedSessionVersion, paymentStatus, paidAmount hoặc item status. Response vẫn `200 OrderResponse`, `Cache-Control: no-store`, có status COMPLETED và completedAt; không thêm session representation vào response.
+
+| Service type | Permission hiệu lực | Feature trong snapshot | Side effect thành công |
+| --- | --- | --- | --- |
+| DINE_IN | ORDER_COMPLETE + TABLE_CLOSE | ORDER_MANAGEMENT + TABLE_MANAGEMENT | Order COMPLETED và đúng order.tableSessionId CLOSED cùng transaction |
+| TAKEAWAY | ORDER_COMPLETE | ORDER_MANAGEMENT | Chỉ order COMPLETED; không yêu cầu quyền/feature TABLE và không gọi TABLE port |
+
+Controller vẫn kiểm ORDER_COMPLETE; application service kiểm thêm TABLE_CLOSE/TABLE_MANAGEMENT theo DINE_IN, bao gồm trước mọi nhánh retry/no-op. User DENY vẫn thắng role grant. Không suy quyền từ CASHIER/WAITER hoặc tên package.
+
+Lần complete đầu chỉ cho submitted order còn phục vụ, không OPEN/CANCELLED: paymentStatus phải PAID, paidAmount bằng totalAmount > 0, có ít nhất một dòng khác CANCELLED và mọi dòng hiệu lực đều SERVED. Không tự sửa món thành SERVED, ghi payment, reprice menu hoặc đổi tiền/snapshot. Version cũ khi cần hoàn tất order trả 409.
+
+Với DINE_IN, đúng session của order phải cùng tenant và OPEN. Sau khi order được flush COMPLETED, TABLE kiểm toàn bộ order của session: ít nhất một COMPLETED/PAID/đủ tiền và các order khác đều COMPLETED/PAID/đủ tiền hoặc CANCELLED/UNPAID/paidAmount=0. Còn serving order/nghĩa vụ tài chính thì 409 và rollback cả completion. Session thiếu/khác tenant trả 404 TABLE_SESSION_NOT_FOUND; DINE_IN thiếu tableSessionId trả 409 INVALID_ORDER_SEATING; session CLOSED đối với order chưa COMPLETED hoặc session CANCELLED trả 409 TABLE_SESSION_NOT_OPEN.
+
+Restaurant lock được giữ tới commit; closure tham gia transaction đang có qua TABLE-owned mandatory port. Mỗi mutation đầu tăng order version/mutationSequence và session version một lần, ghi một ORDER_COMPLETED và một TABLE_SESSION_CLOSED. Lỗi closure, persistence hoặc audit rollback cả hai entity và audit. Không ghi item history vì complete không đổi món.
+
+| Retry/state hiện tại | Kết quả sau kiểm tenant/permission/feature |
+| --- | --- |
+| TAKEAWAY đã COMPLETED | 200 no-op, chấp nhận expectedVersion cũ; order/version/timestamp/audit giữ nguyên |
+| DINE_IN COMPLETED + đúng session CLOSED | 200 no-op, chấp nhận version cũ; không tăng version hoặc audit |
+| Legacy DINE_IN COMPLETED + đúng session OPEN | Kiểm lại paid/full amount, món SERVED và toàn bộ session readiness; chỉ đóng session nếu hợp lệ, giữ completedAt/order version/mutationSequence, chỉ thêm TABLE_SESSION_CLOSED |
+| Legacy COMPLETED + OPEN còn order khác đang phục vụ/tài chính chưa giải quyết | 409 TABLE_SESSION_NOT_READY_TO_CLOSE; không đóng hoặc sửa order khác |
+| Order chưa COMPLETED + session CLOSED, hoặc session CANCELLED | 409 TABLE_SESSION_NOT_OPEN; không mở lại session |
+
+Closure luôn dùng order.tableSessionId, không tìm phiên OPEN mới nhất của table. Transfer không đổi sessionId, nên đóng đúng phiên tại bàn hiện tại sau transfer; retry order cũ không tác động session mới cùng bàn. Không thay restaurant_tables.status/QR/area hoặc lịch sử transfer. Bàn/area inactive sau khi mở phiên không thêm điều kiện chặn kết thúc phiên; occupancy tiếp tục suy ra từ OPEN session.
+
+FE sau 200 cập nhật OrderResponse và reload bàn/session; DINE_IN không gọi thêm `/table-sessions/{sessionId}/close`. API close riêng vẫn hợp lệ/idempotent nếu cần. Xem [Postman và completion](kitchen-completion-api.md#hoàn-tất-đơn-và-đóng-phiên-tự-động) và [FE handoff](order-completion-session-fe-sync.md).
 
 ## Errors
 
@@ -349,7 +401,7 @@ Audit: ORDER_CREATED, ORDER_UPDATED, ORDER_ITEMS_ADDED, ORDER_ITEM_UPDATED, ORDE
 | 401 | UNAUTHORIZED, ACCOUNT_INACTIVE |
 | 403 | FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE, FEATURE_NOT_ENTITLED |
 | 404 | ORDER_NOT_FOUND, ORDER_ITEM_NOT_FOUND, TABLE_SESSION_NOT_FOUND, TABLE_NOT_FOUND, TABLE_AREA_NOT_FOUND, MENU_ITEM_NOT_FOUND |
-| 409 | TABLE_SESSION_HAS_SERVING_ORDER, TABLE_ALREADY_OCCUPIED, INCONSISTENT_TABLE_SESSION_STATE, INCONSISTENT_SERVING_ORDER_STATE, CONCURRENT_ORDER_UPDATE, IDEMPOTENCY_KEY_REUSED, ORDER_CODE_CONFLICT, ORDER_NOT_EDITABLE, ORDER_ITEM_NOT_EDITABLE, INVALID_ORDER_TRANSITION, EMPTY_ORDER (confirm), TABLE_SESSION_NOT_OPEN, TABLE_SESSION_IN_USE, TABLE_INACTIVE, TABLE_AREA_INACTIVE, ITEM_NOT_SELLABLE, ITEM_OUT_OF_STOCK, ORDER_CURRENCY_MISMATCH, ORDER_HAS_FINANCIAL_OBLIGATIONS |
+| 409 | TABLE_SESSION_HAS_SERVING_ORDER, TABLE_ALREADY_OCCUPIED, INCONSISTENT_TABLE_SESSION_STATE, INCONSISTENT_SERVING_ORDER_STATE, CONCURRENT_ORDER_UPDATE, CONCURRENT_TABLE_UPDATE, IDEMPOTENCY_KEY_REUSED, ORDER_CODE_CONFLICT, ORDER_NOT_EDITABLE, ORDER_ITEM_NOT_EDITABLE, INVALID_ORDER_TRANSITION, INVALID_ORDER_ITEM_TRANSITION, EMPTY_ORDER (confirm/bulk không có dòng hiệu lực), ORDER_NOT_PAID, ORDER_NOT_READY_FOR_COMPLETION, INVALID_ORDER_SEATING, TABLE_SESSION_NOT_READY_TO_CLOSE, TABLE_SESSION_NOT_OPEN, TABLE_SESSION_IN_USE, TABLE_INACTIVE, TABLE_AREA_INACTIVE, ITEM_NOT_SELLABLE, ITEM_OUT_OF_STOCK, ORDER_CURRENCY_MISMATCH, ORDER_HAS_FINANCIAL_OBLIGATIONS |
 | 500 | INTERNAL_ERROR |
 
 ```json

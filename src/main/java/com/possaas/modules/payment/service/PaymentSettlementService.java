@@ -7,6 +7,7 @@ import com.possaas.modules.payment.entity.PaymentConfirmationSource;
 import com.possaas.modules.payment.entity.PaymentMethod;
 import com.possaas.modules.payment.entity.PaymentStatus;
 import com.possaas.modules.payment.repository.PaymentRepository;
+import com.possaas.modules.payment.application.port.PaymentGuestRequestLifecycle;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -22,6 +23,7 @@ public class PaymentSettlementService {
     private final PaymentRepository payments;
     private final PaymentCodeGenerator codes;
     private final PaymentAudit audit;
+    private final PaymentGuestRequestLifecycle qrRequests;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public Payment recordManual(CurrentUser actor, UUID orderId, long expectedOrderVersion,
@@ -57,6 +59,9 @@ public class PaymentSettlementService {
         payment.setCreatedAt(instruction.now());
         payment.setUpdatedAt(instruction.now());
         payments.saveAndFlush(payment);
+        var sessionId = orderPayments.tableSessionId(instruction.restaurantId(), instruction.orderId());
+        if (sessionId != null)
+            qrRequests.checkoutStarted(instruction.restaurantId(), sessionId, instruction.actorId(), instruction.now(), instruction.ip());
         audit.recorded(payment, instruction.ip());
         payments.flush();
         return payment;

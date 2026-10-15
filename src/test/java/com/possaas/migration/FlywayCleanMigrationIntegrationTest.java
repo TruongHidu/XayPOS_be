@@ -40,8 +40,12 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
-            assertThat(countTables(schema)).isEqualTo(23);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("25");
+            assertThat(countTables(schema)).isEqualTo(27);
+            assertThat(tableExists(schema, "qr_table_access")).isTrue();
+            assertThat(tableExists(schema, "qr_guest_authorizations")).isTrue();
+            assertThat(tableExists(schema, "qr_order_requests")).isTrue();
+            assertThat(tableExists(schema, "qr_order_request_items")).isTrue();
             assertThat(tableExists(schema, "payments")).isTrue();
             assertThat(tableExists(schema, "table_session_transfers")).isTrue();
             assertThat(tableExists(schema, "order_item_submissions")).isTrue();
@@ -287,6 +291,165 @@ class FlywayCleanMigrationIntegrationTest {
                 }
             }
         } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v23AddsOnlySystemBulkServingGrantsAndPreservesOverrides() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("22").load().migrate();
+            var before = new java.util.LinkedHashMap<String, String>();
+            String unrelatedGrants;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES "
+                    + "('00000000-0000-0000-0000-000000000001','UP23','Fixture','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "roles(restaurant_id,code,name,is_system) "
+                    + "SELECT '00000000-0000-0000-0000-000000000001'::uuid,code,'Custom '||code,false "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code IN ('CASHIER','KITCHEN')");
+                statement.execute("INSERT INTO " + prefix + "role_permissions(role_id,permission_id) "
+                    + "SELECT r.id,p.id FROM " + prefix + "roles r CROSS JOIN " + prefix + "permissions p "
+                    + "WHERE r.restaurant_id IS NOT NULL AND p.code='MENU_VIEW'");
+                statement.execute("INSERT INTO " + prefix + "users(id,restaurant_id,role_id,email,password_hash,name) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,"
+                    + "'00000000-0000-0000-0000-000000000001'::uuid,id,'v23@example.test','fixture','Fixture' "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code='CASHIER'");
+                statement.execute("INSERT INTO " + prefix + "user_permissions(user_id,permission_id,effect) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,id,"
+                    + "CASE WHEN code='KITCHEN_MARK_READY' THEN 'DENY' ELSE 'GRANT' END "
+                    + "FROM " + prefix + "permissions WHERE code IN ('KITCHEN_MARK_READY','MENU_UPDATE')");
+                for (String table : java.util.List.of("roles", "permissions", "users", "user_permissions",
+                        "restaurants", "packages", "package_features", "restaurant_subscriptions"))
+                    before.put(table, tableSnapshot(statement, prefix, table));
+                unrelatedGrants = unrelatedServingGrants(statement, prefix);
+            }
+            var flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("23").load();
+            flyway.migrate();
+            flyway.validate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                for (var entry : before.entrySet())
+                    assertThat(tableSnapshot(statement, prefix, entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                assertThat(unrelatedServingGrants(statement, prefix)).isEqualTo(unrelatedGrants);
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "role_permissions rp "
+                        + "JOIN " + prefix + "roles r ON r.id=rp.role_id JOIN " + prefix + "permissions p ON p.id=rp.permission_id "
+                        + "WHERE r.restaurant_id IS NULL AND r.is_system AND r.code IN ('CASHIER','KITCHEN') "
+                        + "AND p.code IN ('KITCHEN_MARK_READY','ORDER_MARK_SERVED')")) {
+                    rows.next(); assertThat(rows.getInt(1)).isEqualTo(4);
+                }
+                String allGrants = tableSnapshot(statement, prefix, "role_permissions");
+                String originalSchema = connection.getSchema();
+                connection.setSchema(schema);
+                try (var input = getClass().getResourceAsStream("/db/migration/V23__grant_bulk_order_serving_permissions.sql")) {
+                    String sql = new String(java.util.Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    statement.execute(sql);
+                    statement.execute(sql);
+                } finally { connection.setSchema(originalSchema); }
+                assertThat(tableSnapshot(statement, prefix, "role_permissions")).isEqualTo(allGrants);
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v24GrantsOnlySystemCashierManagerClosureAndPreservesLegacyData() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("23").load().migrate();
+            var before = new java.util.LinkedHashMap<String, String>();
+            String unrelatedGrants;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES "
+                    + "('00000000-0000-0000-0000-000000000001','UP24','Fixture','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "roles(restaurant_id,code,name,is_system) "
+                    + "SELECT '00000000-0000-0000-0000-000000000001'::uuid,code,'Custom '||code,false "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code IN ('CASHIER','MANAGER')");
+                statement.execute("INSERT INTO " + prefix + "role_permissions(role_id,permission_id) "
+                    + "SELECT r.id,p.id FROM " + prefix + "roles r CROSS JOIN " + prefix + "permissions p "
+                    + "WHERE r.restaurant_id IS NOT NULL AND p.code='MENU_VIEW'");
+                statement.execute("INSERT INTO " + prefix + "users(id,restaurant_id,role_id,email,password_hash,name) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,"
+                    + "'00000000-0000-0000-0000-000000000001'::uuid,id,'v24@example.test','fixture','Fixture' "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code='CASHIER'");
+                statement.execute("INSERT INTO " + prefix + "user_permissions(user_id,permission_id,effect) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,id,"
+                    + "CASE WHEN code='TABLE_CLOSE' THEN 'DENY' ELSE 'GRANT' END "
+                    + "FROM " + prefix + "permissions WHERE code IN ('TABLE_CLOSE','ORDER_MARK_SERVED')");
+                statement.execute("INSERT INTO " + prefix + "restaurant_tables(id,restaurant_id,code,name,status,qr_token,created_at,updated_at) "
+                    + "VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001',"
+                    + "'B1','Fixture','AVAILABLE','v24-preserved-token',now(),now())");
+                statement.execute("INSERT INTO " + prefix + "table_sessions(id,restaurant_id,table_id,session_code,status,opened_by,opened_at,created_at,updated_at) "
+                    + "VALUES('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001',"
+                    + "'00000000-0000-0000-0000-000000000002','S1','OPEN','00000000-0000-0000-0000-000000000004',now(),now(),now())");
+                statement.execute("INSERT INTO " + prefix + "orders(id,restaurant_id,table_session_id,order_code,service_type,source_channel,status,"
+                    + "payment_status,currency_code,subtotal_amount,total_amount,paid_amount,completed_at,created_at,updated_at,idempotency_key,request_hash) "
+                    + "VALUES('00000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-000000000001',"
+                    + "'00000000-0000-0000-0000-000000000003','O1','DINE_IN','CASHIER','COMPLETED','PAID','VND',"
+                    + "100,100,100,now(),now(),now(),'v24-old-key',repeat('a',64))");
+                statement.execute("INSERT INTO " + prefix + "order_items(id,restaurant_id,order_id,item_name,unit,quantity,unit_price,line_total,status,"
+                    + "line_number,sent_to_kitchen_at,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000006',"
+                    + "'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000005','Snapshot','bowl',"
+                    + "1,100,100,'SERVED',1,now(),now(),now())");
+                statement.execute("INSERT INTO " + prefix + "order_item_status_history(restaurant_id,order_item_id,from_status,to_status,changed_by,changed_at,change_sequence) "
+                    + "VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000006','READY','SERVED',"
+                    + "'00000000-0000-0000-0000-000000000004',now(),1)");
+                statement.execute("INSERT INTO " + prefix + "audit_logs(restaurant_id,actor_user_id,action_code,entity_type,entity_id) "
+                    + "VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000004','ORDER_COMPLETED',"
+                    + "'orders','00000000-0000-0000-0000-000000000005')");
+                for (String table : java.util.List.of("roles", "permissions", "users", "user_permissions", "restaurants",
+                        "restaurant_tables", "table_sessions", "orders", "order_items", "order_item_status_history",
+                        "audit_logs", "packages", "package_features", "restaurant_subscriptions"))
+                    before.put(table, tableSnapshot(statement, prefix, table));
+                unrelatedGrants = unrelatedCompletionGrants(statement, prefix);
+            }
+            var flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();
+            flyway.migrate();
+            flyway.validate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                for (var entry : before.entrySet())
+                    assertThat(tableSnapshot(statement, prefix, entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                assertThat(unrelatedCompletionGrants(statement, prefix)).isEqualTo(unrelatedGrants);
+                try (ResultSet rows = statement.executeQuery("SELECT string_agg(r.code,',' ORDER BY r.code) FROM " + prefix
+                        + "role_permissions rp JOIN " + prefix + "roles r ON r.id=rp.role_id JOIN " + prefix
+                        + "permissions p ON p.id=rp.permission_id WHERE r.restaurant_id IS NULL AND r.is_system "
+                        + "AND r.code IN ('CASHIER','MANAGER') AND p.code='TABLE_CLOSE'")) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo("CASHIER,MANAGER");
+                }
+                String allGrants = tableSnapshot(statement, prefix, "role_permissions");
+                String originalSchema = connection.getSchema();
+                connection.setSchema(schema);
+                try (var input = getClass().getResourceAsStream("/db/migration/V24__grant_order_completion_table_close.sql")) {
+                    String sql = new String(java.util.Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    statement.execute(sql);
+                    statement.execute(sql);
+                } finally { connection.setSchema(originalSchema); }
+                assertThat(tableSnapshot(statement, prefix, "role_permissions")).isEqualTo(allGrants);
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    private String unrelatedCompletionGrants(Statement statement, String prefix) throws Exception {
+        try (ResultSet rows = statement.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(rp) ORDER BY to_jsonb(rp)::text),'[]'::jsonb)::text "
+                + "FROM " + prefix + "role_permissions rp JOIN " + prefix + "roles r ON r.id=rp.role_id "
+                + "JOIN " + prefix + "permissions p ON p.id=rp.permission_id WHERE NOT "
+                + "(r.restaurant_id IS NULL AND r.is_system AND r.code IN ('CASHIER','MANAGER') AND p.code='TABLE_CLOSE')")) {
+            rows.next(); return rows.getString(1);
+        }
+    }
+
+    private String unrelatedServingGrants(Statement statement, String prefix) throws Exception {
+        try (ResultSet rows = statement.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(rp) ORDER BY to_jsonb(rp)::text),'[]'::jsonb)::text "
+                + "FROM " + prefix + "role_permissions rp JOIN " + prefix + "roles r ON r.id=rp.role_id "
+                + "JOIN " + prefix + "permissions p ON p.id=rp.permission_id WHERE NOT "
+                + "(r.restaurant_id IS NULL AND r.is_system AND r.code IN ('CASHIER','KITCHEN') "
+                + "AND p.code IN ('KITCHEN_MARK_READY','ORDER_MARK_SERVED'))")) {
+            rows.next(); return rows.getString(1);
+        }
     }
 
     private String tableSnapshot(Statement statement,String prefix,String table) throws Exception {

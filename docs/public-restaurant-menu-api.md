@@ -1,6 +1,6 @@
 # Public restaurant menu / takeaway browsing
 
-Menu cấp nhà hàng dùng chung `items`/`item_groups` và giá bán với [menu QR bàn](public-qr-menu-api.md). Khách có thể mở link hoặc quét QR chung để xem thực đơn mà không cần tài khoản, bàn, khu vực hoặc phiên bàn. Giai đoạn này chưa tạo đơn mang đi, giỏ hàng hoặc thanh toán.
+Menu cấp nhà hàng dùng chung `items`/`item_groups` và giá bán với [menu QR bàn](public-qr-menu-api.md). Khách có thể mở link hoặc quét QR chung để xem thực đơn mà không cần tài khoản, bàn, khu vực hoặc phiên bàn. Các GET dưới đây vẫn chỉ đọc. Gọi món mang đi dùng [QR request/approval API riêng](public-qr-order-api.md), không biến GET menu thành tạo order hoặc thanh toán.
 
 OpenAPI: [public-restaurant-menu-api.yaml](openapi/public-restaurant-menu-api.yaml).
 
@@ -18,7 +18,7 @@ Files changed and actual verification results: [implementation report](public-re
 4. Khách gọi hai GET public, không gửi Authorization.
 5. Backend resolve nhà hàng và kiểm tra subscription snapshot rồi đọc menu chung.
 
-Đường dẫn web này là contract dự kiến; thay đổi backend không tự triển khai route frontend. Token chỉ xác định ngữ cảnh nhà hàng để xem menu, không cấp quyền tạo order/phiên/thanh toán. Token bàn được tra ở `restaurant_tables.qr_token`; token nhà hàng được tra ở `restaurants.public_order_token`. Hai API không đổi hoặc tìm token trong namespace của nhau.
+Đường dẫn web này là contract dự kiến; thay đổi backend không tự triển khai route frontend. Token xác định ngữ cảnh menu, không trực tiếp cấp quyền ORDER/phiên/thanh toán. V25 cho phép đổi menuToken này lấy opaque guest access RESTAURANT để gửi request TAKEAWAY chờ duyệt, với QR_STATIC_ORDER + QR_MENU_VIEW + ORDER_MANAGEMENT trong snapshot; không cần TABLE/POS_QUICK_ORDER. Token bàn được tra ở `restaurant_tables.qr_token`; token nhà hàng được tra ở `restaurants.public_order_token`. Hai API không đổi hoặc tìm token trong namespace của nhau.
 
 ## Public access
 
@@ -130,6 +130,8 @@ Headers thêm `Content-Type: application/json`.
 expectedToken bắt buộc, không blank, tối đa 128 ký tự để so sánh token lưu hiện tại; field không hỗ trợ bị từ chối. Không dùng expectedVersion vì Restaurant không có @Version. Dưới cùng pessimistic lock, expectedToken cũ trả 409 `CONCURRENT_MENU_LINK_UPDATE`; token chưa khởi tạo trả 404 `PUBLIC_MENU_LINK_NOT_INITIALIZED`. Token mới phải khác token cũ; unique collision trả 409 `PUBLIC_MENU_TOKEN_CONFLICT`.
 
 Lưu token và audit `RESTAURANT_MENU_LINK_ROTATED` trong cùng transaction. Audit failure rollback token. Hai rotate cùng expectedToken chỉ một thành công. Không đổi QR bàn/snapshot. Token cũ bị từ chối từ request public tiếp theo, không xóa được nội dung đã tải trong browser.
+
+V25 bổ sung cùng transaction: revoke guest grants và cancel PENDING RESTAURANT QR requests của credential cũ với reason RESTAURANT_MENU_TOKEN_ROTATED. Không tác động QR_TABLE requests, APPROVED orders hoặc payments. Body/response/permission menu-link không đổi; initialize/read vẫn không tạo request hoặc order.
 
 ## Errors
 

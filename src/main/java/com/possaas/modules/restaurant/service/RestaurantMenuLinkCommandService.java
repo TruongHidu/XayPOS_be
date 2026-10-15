@@ -9,6 +9,8 @@ import com.possaas.modules.restaurant.entity.Restaurant;
 import com.possaas.modules.restaurant.repository.RestaurantRepository;
 import java.util.Map;
 import java.util.Objects;
+import java.time.Clock;
+import com.possaas.modules.restaurant.application.port.RestaurantMenuGuestAccessLifecycle;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,8 @@ public class RestaurantMenuLinkCommandService {
     private final RestaurantRepository restaurants;
     private final PublicLinkTokenGenerator tokens;
     private final AuditService audit;
+    private final RestaurantMenuGuestAccessLifecycle qrRequests;
+    private final Clock clock;
 
     public RestaurantMenuLinkResponse initialize(String ip) {
         var restaurant = lockedRestaurant();
@@ -42,6 +46,7 @@ public class RestaurantMenuLinkCommandService {
         restaurants.saveAndFlush(restaurant);
         record(restaurant, "RESTAURANT_MENU_LINK_ROTATED", Map.of("initialized", true),
                 Map.of("initialized", true, "rotated", true), ip);
+        qrRequests.invalidateRestaurantCredential(restaurant.getId(), previous, users.getRequired().userId(), clock.instant(), ip);
         return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken());
     }
 

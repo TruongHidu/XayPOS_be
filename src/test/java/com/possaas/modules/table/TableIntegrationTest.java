@@ -100,6 +100,11 @@ class TableIntegrationTest {
             jdbc.execute("ALTER TABLE audit_logs DISABLE TRIGGER audit_logs_no_update");
             try {
                 for (UUID tenant : tenants) {
+                    // V25 owns operational QR rows with tenant FKs; clean children in this test schema first.
+                    jdbc.update("delete from qr_order_request_items where restaurant_id=?", tenant);
+                    jdbc.update("delete from qr_order_requests where restaurant_id=?", tenant);
+                    jdbc.update("delete from qr_guest_authorizations where restaurant_id=?", tenant);
+                    jdbc.update("delete from qr_table_access where restaurant_id=?", tenant);
                     jdbc.update("delete from table_sessions where restaurant_id=?", tenant);
                     jdbc.update("delete from restaurant_tables where restaurant_id=?", tenant);
                     jdbc.update("delete from table_areas where restaurant_id=?", tenant);

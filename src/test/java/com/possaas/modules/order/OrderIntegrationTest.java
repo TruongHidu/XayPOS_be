@@ -1267,7 +1267,7 @@ class OrderIntegrationTest {
             "items",List.of(lineRequest(f.item.getId(),"1",null)))).error(409,"ORDER_NOT_EDITABLE");
     }
 
-    @Test void completionAndCloseRequirePaidServedOrderAndRemainSeparate() throws Exception {
+    @Test void completionRequiresPaidServedOrderAndClosesSessionAtomically() throws Exception {
         var order=submit(true);
         call(post(path(order)+"/complete"),Map.of("expectedVersion",order.version())).error(409,"ORDER_NOT_PAID");
         pay(order,"CASH",order.body.path("totalAmount").decimalValue(),null,key()).expect(201);
@@ -1279,7 +1279,7 @@ class OrderIntegrationTest {
         var completed=call(post(path(order)+"/complete"),Map.of("expectedVersion",served.version())); completed.expect(200);
         assertThat(completed.body.path("status").asText()).isEqualTo("COMPLETED");
         assertThat(completed.body.path("completedAt").asText()).isEqualTo(NOW.toString());
-        assertThat(sessions.findById(f.session.getId()).orElseThrow().getStatus()).isEqualTo(TableSessionStatus.OPEN);
+        assertThat(sessions.findById(f.session.getId()).orElseThrow().getStatus()).isEqualTo(TableSessionStatus.CLOSED);
         var completeReplay=call(post(path(order)+"/complete"),Map.of("expectedVersion",served.version())); completeReplay.expect(200);
         assertThat(completeReplay.version()).isEqualTo(completed.version());
         var closed=call(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0)); closed.expect(200);
@@ -1358,7 +1358,7 @@ class OrderIntegrationTest {
         assertThat(events("PAYMENT_RECORDED")).isEqualTo(1);
     }
 
-    @Test void foreignLineAndOrderAreHiddenAndCashierCannotCloseByDefault() throws Exception {
+    @Test void foreignLineAndOrderAreHiddenAndCashierCloseStillChecksReadiness() throws Exception {
         var order=submit(true);
         var other=fixture(true);
         call(post(path(order)+"/items/"+other.item.getId()+"/start-cooking"),
@@ -1368,9 +1368,9 @@ class OrderIntegrationTest {
         jdbc.update("update users set role_id=(select id from roles where code='CASHIER' and restaurant_id is null) where id=?",f.user.getId());
         var cashier=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),"CASHIER",
             permissions.getEffectivePermissionCodes(f.user.getId()));
-        assertThat(cashier.hasPermission("TABLE_CLOSE")).isFalse();
+        assertThat(cashier.hasPermission("TABLE_CLOSE")).isTrue();
         bearer(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0),cashier)
-            .error(403,"FORBIDDEN");
+            .error(409,"TABLE_SESSION_NOT_READY_TO_CLOSE");
     }
 
     private Result kitchen(Result order,String action) throws Exception {

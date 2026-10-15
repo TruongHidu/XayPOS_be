@@ -2,6 +2,8 @@
 
 Backend-only, read-only API for the customer menu website. OpenAPI: [public-qr-menu-api.yaml](openapi/public-qr-menu-api.yaml).
 
+Ordering is separate: [QR requests with staff approval](public-qr-order-api.md) use a scoped guest token and require additional ordering snapshot features. These GET menu contracts still require only QR_MENU_VIEW, no guest token/PIN/OPEN session, and perform no writes.
+
 Public API paths use `/api/v1/public/menu/tables/{qrToken}` and its `/items` suffix. The former `/api/v1/public/qr-menu/*` paths are no longer exposed; the browser QR route `/qr/{qrToken}` is unchanged.
 
 Menu chung nhà hàng/khách mang đi (không gắn bàn): [Public restaurant menu API](public-restaurant-menu-api.md). Hai luồng dùng chung món, visibility và pagination; token và context được resolve riêng.
@@ -130,6 +132,7 @@ Test with a QR_MENU_VIEW-only snapshot, an empty menu, out-of-stock items, disab
 
 - QR links are shareable bearer-like public links, not proof that a customer is physically at a table. No ordering/payment capability is implied.
 - Rotation invalidates the old token for subsequent requests. Backend cannot retract content already downloaded or displayed in a browser.
+- V25 table QR rotation additionally invalidates the affected guest/table epoch and cancels PENDING TABLE ordering requests in the same transaction. It does not alter APPROVED orders/payments or RESTAURANT takeaway requests. Menu GET responses/security remain unchanged.
 - Application defaults keep Spring Web/Security request debugging off and Hibernate JDBC bind/extract tracing off to avoid recording tokens. Preserve these settings in environment overrides. Do not enable request/response tracing on these routes.
 - Reverse proxy, load balancer, CDN, WAF, access logs and APM must mask the token segment in `/api/v1/public/menu/tables/{redacted}` (and `/items`) or disable URL logging for these routes. Redact Referer values too; use `Referrer-Policy: no-referrer` on the customer website. Never use tokens as metric labels.
 - Apply edge rate limits to public endpoints and bound timeouts. This change adds paging limits but does not introduce a distributed rate-limiting platform.

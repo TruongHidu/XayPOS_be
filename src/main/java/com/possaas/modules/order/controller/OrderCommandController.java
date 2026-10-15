@@ -16,6 +16,7 @@ public class OrderCommandController {
     private final OrderCommandService command;
     private final OrderAppendService append;
     private final OrderItemTransitionService transitions;
+    private final OrderBulkItemTransitionService bulkTransitions;
     private final OrderCompletionService completion;
     @PostMapping @PreAuthorize("hasAuthority('ORDER_CREATE')")
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderRequests.Create request,
@@ -73,6 +74,16 @@ public class OrderCommandController {
         return ok(transitions.transition(orderId,orderItemId,request.expectedOrderVersion(),
                 com.possaas.modules.order.entity.OrderItemStatus.READY,com.possaas.modules.order.entity.OrderItemStatus.SERVED,
                 "ORDER_MARK_SERVED","ORDER_MANAGEMENT",http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/mark-ready") @PreAuthorize("hasAuthority('KITCHEN_MARK_READY')")
+    public ResponseEntity<OrderResponse> markAllReady(@PathVariable UUID orderId,
+            @Valid @RequestBody OrderItemTransitionRequest request,HttpServletRequest http) {
+        return ok(bulkTransitions.markReady(orderId,request.expectedOrderVersion(),http.getRemoteAddr()));
+    }
+    @PostMapping("/{orderId}/mark-served") @PreAuthorize("hasAuthority('ORDER_MARK_SERVED')")
+    public ResponseEntity<OrderResponse> markAllServed(@PathVariable UUID orderId,
+            @Valid @RequestBody OrderItemTransitionRequest request,HttpServletRequest http) {
+        return ok(bulkTransitions.markServed(orderId,request.expectedOrderVersion(),http.getRemoteAddr()));
     }
     @PostMapping("/{orderId}/complete") @PreAuthorize("hasAuthority('ORDER_COMPLETE')")
     public ResponseEntity<OrderResponse> complete(@PathVariable UUID orderId,@Valid @RequestBody OrderRequests.Version request,HttpServletRequest http) {

@@ -10,6 +10,14 @@ API này chỉ dành cho nhân viên đã đăng nhập. `CASH` nghĩa là nhân
 - Ghi payment `SUCCESS`, `order.paidAmount=totalAmount`, `order.paymentStatus=PAID` và audit `PAYMENT_RECORDED` trong cùng transaction. Không thay đổi `order.status`, trạng thái món, phiên bàn, kho hoặc bếp. Bàn chỉ rảnh sau nghiệp vụ kết thúc phục vụ/đóng phiên riêng.
 - Không hỗ trợ split payment, refund, bill 0 đồng, trả tiền thừa, online payment, SePay hoặc subscription billing.
 
+## QR requests và checkout
+
+V25 không đổi payment header/body/response/permission và vẫn cho payment trước hoặc sau phục vụ. [QR PENDING requests](public-qr-order-api.md) chưa là order/financial obligation, không khóa thanh toán toàn nhà hàng.
+
+Khi ghi nhận payment TABLE thành công, cùng transaction cancel PENDING QR requests đã quan sát đúng order.tableSessionId và current table credential/epoch, reason `CHECKOUT_STARTED`. Request observedSessionId null không tự bị ghép vào phiên chỉ vì cùng bàn. Failure/rollback payment giữ cancellation rollback tương ứng; retry payment không audit cancellation trùng. FE nên cảnh báo các requests chưa duyệt thuộc scope này trước checkout. Khi có active payment attempt/nghĩa vụ thanh toán, QR không submit/append vào session đó; payment fail/cancel không hồi sinh requests đã CANCELLED.
+
+Payment TAKEAWAY chỉ tác động order được chọn, không cancel request khác cùng guest/name/phone/restaurant và không block một intent QR mang đi mới. Approval replay vẫn trả original linkage sau order PAID/COMPLETED. MVP vẫn ghi payment SUCCESS thủ công; phần này không thêm gateway, webhook hoặc endpoint PENDING payment intent mới.
+
 ## POST /api/v1/orders/{orderId}/payments
 
 Yêu cầu cả `PAYMENT_CREATE` và `PAYMENT_CONFIRM`. Headers:

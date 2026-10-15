@@ -31,7 +31,18 @@ public class AuditDataRedactor {
         "menutoken",
         "restaurantmenutoken",
         "expectedtoken",
-        "menupath"
+        "menupath",
+        "guesttoken",
+        "guesttokenhash",
+        "xqrguesttoken",
+        "qrtoken",
+        "credentialhash",
+        "idempotencykey",
+        "requesthash",
+        "reviewcontexthash",
+        "expectedreviewcontexthash",
+        "payloadhash",
+        "requestfingerprint"
     );
 
     public Map<String, Object> redact(Map<String, Object> source) {

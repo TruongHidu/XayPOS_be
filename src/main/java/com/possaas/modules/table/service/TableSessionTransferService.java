@@ -3,6 +3,7 @@ package com.possaas.modules.table.service;
 import com.possaas.modules.table.dto.*;
 import com.possaas.modules.table.entity.*;
 import com.possaas.modules.table.repository.*;
+import com.possaas.modules.table.application.port.TableGuestAccessLifecycle;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -23,6 +24,7 @@ public class TableSessionTransferService {
     private final TableResponseMapper mapper;
     private final TableAudit audit;
     private final Clock clock;
+    private final TableGuestAccessLifecycle qrRequests;
 
     @Transactional
     public Result transfer(UUID sessionId, TableRequests.TransferSession input, String rawKey, String ip) {
@@ -50,6 +52,8 @@ public class TableSessionTransferService {
         sessions.saveAndFlush(session);
         transfers.saveAndFlush(new TableSessionTransfer(session, source, target, actor.userId(), request.reason(),
                 beforeVersion, key, hash, now));
+        qrRequests.invalidateTable(actor.restaurantId(), source.getId(), "SESSION_TRANSFERRED", actor.userId(), now, ip);
+        qrRequests.invalidateTable(actor.restaurantId(), target.getId(), "SESSION_TRANSFERRED", actor.userId(), now, ip);
         Map<String, Object> before = Map.of("tableId", source.getId(), "version", beforeVersion);
         var after = new LinkedHashMap<String, Object>();
         after.put("tableId", target.getId()); after.put("version", session.getVersion());

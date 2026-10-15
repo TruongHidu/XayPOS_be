@@ -37,6 +37,14 @@ logging:
     org.hibernate.orm.jdbc.extract: OFF
 
 app:
+  qr-order:
+    guest-access-ttl-minutes: ${QR_GUEST_ACCESS_TTL_MINUTES:60}
+    request-ttl-minutes: ${QR_REQUEST_TTL_MINUTES:15}
+    rate-limit:
+      mint: ${QR_MINT_RATE_LIMIT:30}
+      submit: ${QR_SUBMIT_RATE_LIMIT:30}
+      window-seconds: ${QR_RATE_WINDOW_SECONDS:60}
+      max-entries: ${QR_RATE_MAX_ENTRIES:10000}
   jobs:
     subscription-expiration:
       enabled: ${SUBSCRIPTION_EXPIRATION_ENABLED:true}

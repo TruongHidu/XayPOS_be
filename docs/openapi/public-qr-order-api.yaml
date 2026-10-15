@@ -1,0 +1,548 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS QR Order Requests
+  version: 1.0.0
+  description: >-
+    QR TABLE (DINE_IN/QR_TABLE) and RESTAURANT (TAKEAWAY/QR_STATIC) use guest pending requests followed by staff approval.
+    No OPEN session or PIN is required before submission. Pending requests create no order, items, kitchen history, bill or occupancy.
+    Guest tokens are opaque capabilities, not staff JWTs or proof of physical presence.
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/public/qr-order/tables/{qrToken}/guest-access:
+    post:
+      operationId: createTableQrGuestAccess
+      security: []
+      description: >-
+        Mint TABLE guest access. Uses the existing table QR resolver; no session/PIN prerequisite and no session/order/request creation.
+        Active immutable snapshot must grant QR_MENU_VIEW, QR_TABLE_ORDER, ORDER_MANAGEMENT and TABLE_MANAGEMENT.
+      x-features: [QR_MENU_VIEW, QR_TABLE_ORDER, ORDER_MANAGEMENT, TABLE_MANAGEMENT]
+      parameters:
+        - $ref: '#/components/parameters/QrToken'
+      requestBody: {$ref: '#/components/requestBodies/EmptyBody'}
+      responses:
+        '201': {$ref: '#/components/responses/GuestAccessCreated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/public/qr-order/restaurants/{menuToken}/guest-access:
+    post:
+      operationId: createRestaurantQrGuestAccess
+      security: []
+      description: >-
+        Mint RESTAURANT access from existing restaurants.public_order_token for TAKEAWAY/QR_STATIC.
+        Requires QR_MENU_VIEW, QR_STATIC_ORDER and ORDER_MANAGEMENT, not TABLE_MANAGEMENT, TABLE_OPEN or POS_QUICK_ORDER.
+        Never resolves or opens a table session. No order/request creation.
+      x-features: [QR_MENU_VIEW, QR_STATIC_ORDER, ORDER_MANAGEMENT]
+      parameters:
+        - $ref: '#/components/parameters/MenuToken'
+      requestBody: {$ref: '#/components/requestBodies/EmptyBody'}
+      responses:
+        '201': {$ref: '#/components/responses/GuestAccessCreated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/public/qr-order/requests:
+    post:
+      operationId: submitQrOrderRequest
+      security:
+        - QrGuestToken: []
+      description: >-
+        Normalize one guest intent, verify immutable grant scope and current entitlement, capture observed TABLE session under tenant lock,
+        quote sellable menu items and persist PENDING only. RESTAURANT never resolves table/session or merges other takeaway orders.
+        Same key/guest/scope/payload replays, even after terminal processing; mutable current session/quote is not part of the intent fingerprint.
+        Staff Bearer JWT never bypasses guest validation. Guest cannot override source, service, tenant, table, prices or status.
+      x-features-by-entry:
+        TABLE: [QR_MENU_VIEW, QR_TABLE_ORDER, ORDER_MANAGEMENT, TABLE_MANAGEMENT]
+        RESTAURANT: [QR_MENU_VIEW, QR_STATIC_ORDER, ORDER_MANAGEMENT]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubmitQrRequest'}
+      responses:
+        '201': {$ref: '#/components/responses/GuestRequestCreated'}
+        '200': {$ref: '#/components/responses/GuestRequestReplayed'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/public/qr-order/requests/{requestId}:
+    get:
+      operationId: getOwnQrOrderRequest
+      security:
+        - QrGuestToken: []
+      description: >-
+        Own guest identity and tenant only, with active grant/credential/entry entitlement revalidation.
+        Includes request-specific quote, approved amount/order code and exact linked item states, never the whole table bill or private OrderResponse.
+        No guest edit/cancel/approve/reject/payment/session mutation.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': {$ref: '#/components/responses/GuestReceipt'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/qr-order-requests:
+    get:
+      operationId: listStaffQrOrderRequests
+      security:
+        - BearerAuth: []
+      x-permissions: [ORDER_VIEW]
+      description: >-
+        Requires ORDER_VIEW and current tenant operational access. No active QR ordering grant required just to review backlog.
+        Default queue is effective PENDING, not expired, valid scope. Filters before pagination/count and batch mapping, not N+1.
+        Stable sort createdAt ASC, id ASC. Explicit status supports history; includeExpired defaults false.
+      parameters:
+        - {name: entryType, in: query, schema: {$ref: '#/components/schemas/EntryType'}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/RequestStatus'}}
+        - {name: tableId, in: query, schema: {type: string, format: uuid}}
+        - {name: observedSessionId, in: query, schema: {type: string, format: uuid}}
+        - {name: includeExpired, in: query, schema: {type: boolean, default: false}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {$ref: '#/components/responses/StaffPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/qr-order-requests/{requestId}:
+    get:
+      operationId: reviewStaffQrOrderRequest
+      security:
+        - BearerAuth: []
+      x-permissions: [ORDER_VIEW]
+      description: >-
+        Requires ORDER_VIEW. Pure review, no writes. Returns submitted quote, current authoritative quote, canApprove/reasonCode and versioned canonical reviewContextHash.
+        TABLE includes observed/current session, table epoch and current serving-order state; RESTAURANT has no table review context and ignores unrelated orders.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200': {$ref: '#/components/responses/StaffDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/qr-order-requests/{requestId}/approve:
+    post:
+      operationId: approveQrOrderRequest
+      security:
+        - BearerAuth: []
+      x-permissions: [ORDER_CREATE, ORDER_UPDATE]
+      x-conditional-permission: TABLE_OPEN only when actually opening a new TABLE session
+      x-features-by-entry:
+        TABLE: [QR_MENU_VIEW, QR_TABLE_ORDER, ORDER_MANAGEMENT, TABLE_MANAGEMENT]
+        RESTAURANT: [QR_MENU_VIEW, QR_STATIC_ORDER, ORDER_MANAGEMENT]
+      description: >-
+        ORDER_CREATE AND ORDER_UPDATE required. Tenant lock, terminal replay, request version/expiry/scope, current quote/context hash, branch target validation,
+        preparation and persistence execute atomically. Missing targetSessionId is 400, not null.
+        TABLE explicit null opens only if no current OPEN session and requires TABLE_OPEN; UUID chooses the reviewed current session.
+        Observed session must still match. OPEN staff draft is QR_ORDER_DRAFT_NOT_SUBMITTED. Checkout/financial obligations deny append.
+        RESTAURANT requires explicit null, creates independent TAKEAWAY/QR_STATIC order and needs no TABLE/POS_QUICK_ORDER gate.
+        New orders are CONFIRMED and new items PENDING; actual staff is createdBy/openedBy/history actor.
+        APPROVED replay never creates again or reroutes, ignores stale context/version after stored result, and succeeds after order paid/completed/session closed.
+        Target different from approved result conflicts. No successful audit for failures/replays.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApproveQrRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/Approval'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/qr-order-requests/{requestId}/reject:
+    post:
+      operationId: rejectQrOrderRequest
+      security:
+        - BearerAuth: []
+      x-permissions: [ORDER_UPDATE]
+      description: >-
+        Requires ORDER_UPDATE and tenant operational access, not current QR grant. PENDING becomes REJECTED without order/session mutation.
+        REJECTED replay is no-op preserving original reason/reviewer/timestamp and no duplicate audit. APPROVED cannot be rejected.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RejectQrRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/StaffSummary'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+components:
+  securitySchemes:
+    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    QrGuestToken: {type: apiKey, in: header, name: X-QR-Guest-Token, description: 'Opaque scoped guest capability; not staff JWT. Never place in URL/query/logs.'}
+  parameters:
+    QrToken:
+      name: qrToken
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$', minLength: 43, maxLength: 43}
+    MenuToken:
+      name: menuToken
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{43}$', minLength: 43, maxLength: 43}
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stable key for one normalized guest intent. Retry unchanged payload/key. Scope is restaurant; different guest or intent yields IDEMPOTENCY_KEY_REUSED.
+      schema: {type: string, minLength: 1, maxLength: 100, pattern: '^[A-Za-z0-9._:-]{1,100}$'}
+  headers:
+    NoStore: {schema: {type: string, example: no-store}}
+    Replayed: {schema: {type: boolean}, description: 'True only when submission returns the existing request.'}
+  requestBodies:
+    EmptyBody:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: false, maxProperties: 0}
+          example: {}
+  responses:
+    GuestAccessCreated:
+      description: Guest grant created; no request/session/order mutation. Token TTL defaults 60 minutes.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/GuestAccess'}}}
+    GuestRequestCreated:
+      description: New PENDING request; no order/items/occupancy. Request TTL defaults 15 minutes.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}, Idempotency-Replayed: {$ref: '#/components/headers/Replayed'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/GuestReceipt'}}}
+    GuestRequestReplayed:
+      description: Existing request for the same guest/scope/normalized intent; no new audit, session, order or items.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}, Idempotency-Replayed: {$ref: '#/components/headers/Replayed'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/GuestReceipt'}}}
+    GuestReceipt:
+      description: Own request only, not the root order bill or customer/staff PII from other requests.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/GuestReceipt'}}}
+    StaffPage:
+      description: Tenant-scoped page with batch-mapped submitted lines.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/StaffPage'}}}
+    StaffDetail:
+      description: Review detail; nullable current quote/hash when not approvable.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/StaffDetail'}}}
+    StaffSummary:
+      description: Rejected request or idempotent replay, with original reviewer/reason preserved.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/StaffSummary'}}}
+    Approval:
+      description: Atomic approval result or stored terminal replay. Full OrderResponse is private staff data only.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Approval'}}}
+    BadRequest:
+      description: VALIDATION_ERROR, INVALID_REQUEST_BODY or TAKEAWAY_SESSION_NOT_ALLOWED; no rejected-value/secret echo.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Unauthorized:
+      description: Invalid guest access or existing JWT/account security errors. Staff JWT cannot replace guest access and vice versa.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Forbidden:
+      description: QR_ORDER_UNAVAILABLE, FORBIDDEN, FEATURE_NOT_ENTITLED, SUBSCRIPTION_NOT_ACTIVE or existing tenant/status security errors.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    NotFound:
+      description: QR_GUEST_ACCESS_INVALID, QR_ORDER_REQUEST_NOT_FOUND or unavailable public link. Generic public failures prevent enumeration.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    Conflict:
+      description: >-
+        QR_ORDER_REQUEST_EXPIRED, CONCURRENT_QR_REQUEST_UPDATE, QR_REVIEW_CONTEXT_CHANGED, INVALID_QR_REQUEST_TRANSITION,
+        QR_REQUEST_SESSION_CHANGED, QR_ORDER_DRAFT_NOT_SUBMITTED, QR_ORDER_CHECKOUT_IN_PROGRESS, IDEMPOTENCY_KEY_REUSED
+        or existing order financial/concurrency/sellability errors. No successful audit and no partial writes.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    RateLimited:
+      description: QR_RATE_LIMIT_EXCEEDED. Bounded configurable in-memory limiter is single-instance; shared limiter required for multi-instance deployment.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        Retry-After: {schema: {type: integer, minimum: 1}, description: 'Seconds before retry. Counters do not roll back with business transactions.'}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    PayloadTooLarge:
+      description: QR_REQUEST_BODY_TOO_LARGE. QR POST body byte budget is 32768 bytes, including chunked requests, enforced before deserialization.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    InternalError:
+      description: INTERNAL_ERROR; no token/hash/SQL/stack trace/URL leaked.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  schemas:
+    EntryType: {type: string, enum: [TABLE, RESTAURANT]}
+    RequestStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED]}
+    SubmitQrRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        customerName: {type: string, nullable: true, maxLength: 100, description: 'Trimmed; mandatory/nonblank for RESTAURANT takeaway, optional for TABLE.'}
+        customerPhone: {type: string, nullable: true, maxLength: 30, description: 'Optional, never an identity or order-merge key.'}
+        note: {type: string, nullable: true, maxLength: 500}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: {$ref: '#/components/schemas/SubmitLine'}
+    SubmitLine:
+      type: object
+      additionalProperties: false
+      required: [itemId, quantity]
+      properties:
+        itemId: {type: string, format: uuid}
+        quantity: {type: number, exclusiveMinimum: true, minimum: 0, maximum: 20, multipleOf: 0.001}
+        note: {type: string, nullable: true, maxLength: 500}
+    ApproveQrRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRequestVersion, expectedReviewContextHash, targetSessionId]
+      properties:
+        expectedRequestVersion: {type: integer, format: int64, minimum: 0, description: 'QR request version, not Order.version.'}
+        expectedReviewContextHash: {type: string, pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64}
+        targetSessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Explicit property required. RESTAURANT must be null. TABLE null means open only if no current session; UUID chooses reviewed current session.
+    RejectQrRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRequestVersion, reason]
+      properties:
+        expectedRequestVersion: {type: integer, format: int64, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 1000, description: 'Trimmed nonblank rejection reason.'}
+    GuestAccess:
+      type: object
+      additionalProperties: false
+      required: [guestToken, expiresAt, entryType, serviceType, sourceChannel, restaurant, table]
+      properties:
+        guestToken: {type: string, minLength: 43, maxLength: 43, description: 'Opaque 32-random-byte capability; returned once, only digest stored.'}
+        expiresAt: {type: string, format: date-time}
+        entryType: {$ref: '#/components/schemas/EntryType'}
+        serviceType: {type: string, enum: [DINE_IN, TAKEAWAY]}
+        sourceChannel: {type: string, enum: [QR_TABLE, QR_STATIC]}
+        restaurant: {$ref: '#/components/schemas/GuestRestaurant'}
+        table: {allOf: [{$ref: '#/components/schemas/GuestTable'}], nullable: true, description: 'TABLE display metadata only; null for RESTAURANT.'}
+    GuestRestaurant:
+      type: object
+      additionalProperties: false
+      required: [id, name, currencyCode]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        currencyCode: {type: string, minLength: 3, maxLength: 3}
+    GuestTable:
+      type: object
+      additionalProperties: false
+      required: [id, code, name]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+    GuestReceipt:
+      type: object
+      additionalProperties: false
+      required: [requestId, entryType, serviceType, sourceChannel, status, version, expired, currencyCode, estimatedAmount, approvedAmount, approvedOrderCode, createdAt, expiresAt, items]
+      properties:
+        requestId: {type: string, format: uuid}
+        entryType: {$ref: '#/components/schemas/EntryType'}
+        serviceType: {type: string, enum: [DINE_IN, TAKEAWAY]}
+        sourceChannel: {type: string, enum: [QR_TABLE, QR_STATIC]}
+        status: {$ref: '#/components/schemas/RequestStatus'}
+        version: {type: integer, format: int64, minimum: 0}
+        expired: {type: boolean}
+        currencyCode: {type: string, minLength: 3, maxLength: 3}
+        estimatedAmount: {type: number, minimum: 0, description: 'Submitted quote snapshot, not final bill.'}
+        approvedAmount: {type: number, minimum: 0, nullable: true, description: 'Amount for this request only, never entire table bill.'}
+        approvedOrderCode: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        items: {type: array, items: {$ref: '#/components/schemas/GuestLine'}}
+    GuestLine:
+      type: object
+      additionalProperties: false
+      required: [requestItemId, itemId, itemName, unit, quantity, estimatedUnitPrice, estimatedLineTotal, note, approvedOrderItemId, approvedUnitPrice, approvedLineTotal, status]
+      properties:
+        requestItemId: {type: string, format: uuid}
+        itemId: {type: string, format: uuid}
+        itemName: {type: string}
+        unit: {type: string}
+        quantity: {type: number, exclusiveMinimum: true, minimum: 0}
+        estimatedUnitPrice: {type: number, minimum: 0}
+        estimatedLineTotal: {type: number, minimum: 0}
+        note: {type: string, nullable: true}
+        approvedOrderItemId: {type: string, format: uuid, nullable: true}
+        approvedUnitPrice: {type: number, minimum: 0, nullable: true}
+        approvedLineTotal: {type: number, minimum: 0, nullable: true}
+        status: {type: string, enum: [PENDING, COOKING, READY, SERVED, CANCELLED], nullable: true, description: 'Linked order item status after approval; null while request has no order items.'}
+    StaffSummary:
+      type: object
+      additionalProperties: false
+      required: [requestId, entryType, serviceType, sourceChannel, status, version, expired, currencyCode, estimatedAmount, createdAt, expiresAt, items]
+      properties:
+        requestId: {type: string, format: uuid}
+        entryType: {$ref: '#/components/schemas/EntryType'}
+        serviceType: {type: string, enum: [DINE_IN, TAKEAWAY]}
+        sourceChannel: {type: string, enum: [QR_TABLE, QR_STATIC]}
+        status: {$ref: '#/components/schemas/RequestStatus'}
+        version: {type: integer, format: int64, minimum: 0}
+        expired: {type: boolean, description: 'Clock projection; stored PENDING can already be expired.'}
+        tableId: {type: string, format: uuid, nullable: true}
+        observedSessionId: {type: string, format: uuid, nullable: true}
+        customerName: {type: string, nullable: true}
+        customerPhone: {type: string, nullable: true}
+        note: {type: string, nullable: true}
+        currencyCode: {type: string, minLength: 3, maxLength: 3}
+        estimatedAmount: {type: number, minimum: 0}
+        approvedAmount: {type: number, minimum: 0, nullable: true}
+        approvedOrderId: {type: string, format: uuid, nullable: true}
+        approvedSessionId: {type: string, format: uuid, nullable: true}
+        approvedBy: {type: string, format: uuid, nullable: true}
+        approvedAt: {type: string, format: date-time, nullable: true}
+        rejectedBy: {type: string, format: uuid, nullable: true}
+        rejectedAt: {type: string, format: date-time, nullable: true}
+        rejectionReason: {type: string, nullable: true}
+        cancelledAt: {type: string, format: date-time, nullable: true}
+        cancellationReason: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        items: {type: array, items: {$ref: '#/components/schemas/StaffLine'}}
+    StaffLine:
+      type: object
+      additionalProperties: false
+      required: [id, itemId, itemName, unit, quantity, unitPrice, lineTotal]
+      properties:
+        id: {type: string, format: uuid}
+        itemId: {type: string, format: uuid}
+        itemName: {type: string}
+        unit: {type: string}
+        quantity: {type: number, exclusiveMinimum: true, minimum: 0}
+        unitPrice: {type: number, minimum: 0, description: 'Submitted snapshot price.'}
+        lineTotal: {type: number, minimum: 0}
+        note: {type: string, nullable: true}
+        approvedOrderItemId: {type: string, format: uuid, nullable: true}
+    StaffPage:
+      type: object
+      additionalProperties: false
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/StaffSummary'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
+    StaffDetail:
+      type: object
+      additionalProperties: false
+      required: [request, canApprove]
+      properties:
+        request: {$ref: '#/components/schemas/StaffSummary'}
+        currentQuote: {allOf: [{$ref: '#/components/schemas/Quote'}], nullable: true}
+        reviewContextHash: {type: string, nullable: true, pattern: '^[a-f0-9]{64}$'}
+        canApprove: {type: boolean}
+        reasonCode: {type: string, nullable: true}
+        reviewContext: {allOf: [{$ref: '#/components/schemas/TableReviewContext'}], nullable: true, description: 'TABLE only; RESTAURANT has no table/session context.'}
+    Quote:
+      type: object
+      additionalProperties: false
+      required: [currencyCode, amount, lines]
+      properties:
+        currencyCode: {type: string, minLength: 3, maxLength: 3}
+        amount: {type: number, minimum: 0}
+        lines: {type: array, items: {$ref: '#/components/schemas/QuoteLine'}}
+    QuoteLine:
+      type: object
+      additionalProperties: false
+      required: [itemId, quantity, itemName, unit, unitPrice, lineTotal]
+      properties:
+        itemId: {type: string, format: uuid}
+        quantity: {type: number, exclusiveMinimum: true, minimum: 0}
+        note: {type: string, nullable: true}
+        itemName: {type: string}
+        unit: {type: string}
+        unitPrice: {type: number, minimum: 0}
+        lineTotal: {type: number, minimum: 0}
+    TableReviewContext:
+      type: object
+      additionalProperties: false
+      properties:
+        currentSessionId: {type: string, format: uuid, nullable: true}
+        tableAccessEpoch: {type: integer, format: int64, nullable: true}
+        sessionVersion: {type: integer, format: int64, nullable: true, minimum: 0}
+        guestCount: {type: integer, format: int32, nullable: true, minimum: 1}
+        currentOrder: {allOf: [{$ref: '#/components/schemas/ServingOrder'}], nullable: true}
+    ServingOrder:
+      type: object
+      additionalProperties: false
+      required: [id, version, status, paymentStatus, currencyCode, totalAmount, paidAmount]
+      properties:
+        id: {type: string, format: uuid}
+        version: {type: integer, format: int64, minimum: 0}
+        status: {type: string, enum: [OPEN, CONFIRMED, PREPARING, READY, SERVED]}
+        paymentStatus: {type: string, enum: [UNPAID, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED]}
+        currencyCode: {type: string}
+        totalAmount: {type: number, minimum: 0}
+        paidAmount: {type: number, minimum: 0}
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [requestId, status, version, approvedOrderId, approvedBy, approvedAt, approvedAmount, approvedOrderItemIds, replay, order]
+      properties:
+        requestId: {type: string, format: uuid}
+        status: {type: string, enum: [APPROVED]}
+        version: {type: integer, format: int64, minimum: 0}
+        approvedOrderId: {type: string, format: uuid}
+        approvedSessionId: {type: string, format: uuid, nullable: true}
+        approvedBy: {type: string, format: uuid}
+        approvedAt: {type: string, format: date-time}
+        approvedAmount: {type: number, minimum: 0, description: 'Amount attributable only to this approved request, not root bill.'}
+        approvedOrderItemIds: {type: array, items: {type: string, format: uuid}}
+        replay: {type: boolean}
+        order: {$ref: 'order-api.yaml#/components/schemas/Order'}
+    Error:
+      type: object
+      additionalProperties: false
+      required: [success, code, message, fieldErrors, timestamp]
+      properties:
+        success: {type: boolean, enum: [false]}
+        code: {type: string}
+        message: {type: string}
+        fieldErrors: {type: object, additionalProperties: {type: string}}
+        timestamp: {type: string, format: date-time}

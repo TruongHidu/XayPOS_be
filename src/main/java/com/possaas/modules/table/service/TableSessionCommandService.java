@@ -2,6 +2,7 @@ package com.possaas.modules.table.service;
 
 import com.possaas.modules.table.dto.*;
 import com.possaas.modules.table.application.port.TableSessionUsagePolicy;
+import com.possaas.modules.table.application.port.TableGuestAccessLifecycle;
 import com.possaas.modules.table.entity.*;
 import com.possaas.modules.table.repository.TableSessionRepository;
 import java.time.Clock;
@@ -24,6 +25,7 @@ public class TableSessionCommandService {
     private final Clock clock;
     private final TableSessionUsagePolicy usage;
     private final TableSessionOpeningOperation opening;
+    private final TableGuestAccessLifecycle qrRequests;
 
     public TableSessionResponse open(UUID tableId, TableRequests.OpenSession r, String ip) {
         var actor = access.require(true);
@@ -67,6 +69,7 @@ public class TableSessionCommandService {
         session.setUpdatedAt(now);
         sessions.saveAndFlush(session);
         audit.record(actor, "TABLE_SESSION_CANCELLED", session, before, audit.snapshot(session), ip);
+        qrRequests.invalidateTable(actor.restaurantId(), session.getTableId(), "SESSION_CANCELLED", actor.userId(), now, ip);
         return mapper.session(session);
     }
 }

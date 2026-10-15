@@ -11,6 +11,16 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class OrderCompletionPolicy {
+    public void requireTableSession(Order order) {
+        if (order.getTableSessionId() == null)
+            throw new ConflictException("INVALID_ORDER_SEATING", "DINE_IN completion requires a table session");
+    }
+
+    public void requireOpenSession(boolean closed) {
+        if (closed)
+            throw new ConflictException("TABLE_SESSION_NOT_OPEN", "An unfinished order requires an open session");
+    }
+
     public void requireCompletable(Order order,Collection<OrderItem> lines) {
         if(order.getStatus()==OrderStatus.CANCELLED || order.getStatus()==OrderStatus.OPEN)
             throw new ConflictException("ORDER_NOT_READY_FOR_COMPLETION","Order is not ready for completion");

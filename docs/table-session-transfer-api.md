@@ -186,5 +186,9 @@ Giữ V1–V19 và các index ux_table_session_open, ux_order_serving_session ng
 Không backfill lịch sử giả cho các phiên cũ. Backup và áp dụng V20 theo quy trình
 deployment thông thường; lượt triển khai code chỉ kiểm chứng schema test cô lập.
 
-Ngoài phạm vi: gộp/tách/hoán đổi, payment/refund/invoice, đóng phiên/bill, KDS,
-QR ordering, sửa Flutter/Web. Hướng dẫn FE: [table-session-transfer-fe-sync.md](table-session-transfer-fe-sync.md).
+V25: transfer cũng tăng guest-access epoch, revoke grant và hủy các QR requests PENDING
+ở cả bàn nguồn và bàn đích trong cùng transaction. Order và các món đã duyệt vẫn giữ nguyên;
+QR mang đi không bị ảnh hưởng. Xem [QR request/approval](public-qr-order-api.md).
+
+Ngoài phạm vi của API transfer: gộp/tách/hoán đổi, payment/refund/invoice, đóng phiên/bill,
+KDS, sửa Flutter/Web. Hướng dẫn FE: [table-session-transfer-fe-sync.md](table-session-transfer-fe-sync.md).

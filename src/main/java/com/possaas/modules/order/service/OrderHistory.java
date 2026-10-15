@@ -17,6 +17,9 @@ public class OrderHistory {
     public void transitioned(Order order,OrderItem line,UUID actor,OrderItemStatus from,Instant now) {
         record(order,List.of(line),actor,from,line.getStatus(),null,now);
     }
+    public void transitioned(Order order,List<OrderItem> lines,UUID actor,OrderItemStatus from,OrderItemStatus to,Instant now) {
+        record(order,lines,actor,from,to,null,now);
+    }
     private void record(Order order,List<OrderItem> lines,UUID actor,OrderItemStatus from,OrderItemStatus to,String note,Instant now) {
         histories.saveAll(lines.stream().map(line->{
             var entry=new OrderItemStatusHistory(); entry.setRestaurantId(order.getRestaurantId()); entry.setOrderItemId(line.getId());
