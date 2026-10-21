@@ -1,5 +1,10 @@
 # Tenant profile and staff API
 
+V32: [Snapshot công thức order item](order-recipe-snapshot-api.md) được chốt khi
+SUBMIT/confirm/approve QR, không giữ chỗ/trừ kho. API đọc riêng
+`GET /api/v1/orders/{orderId}/items/{orderItemId}/recipe-snapshot` cần ORDER_VIEW +
+RECIPE_VIEW và ORDER_MANAGEMENT + RECIPE_MANAGEMENT; order/public QR không lộ recipe.
+
 Đơn hàng nhân viên: [ORDER MVP API](order-api.md), namespace `/api/v1/orders`, permission ORDER_* và feature ORDER_MANAGEMENT. Ghi nhận thanh toán thủ công: [PAYMENT MVP API](payment-api.md), permission PAYMENT_* và feature PAYMENT_MANAGEMENT.
 
 Lấy/khởi tạo/đổi link menu chung nhà hàng: [Public restaurant menu API](public-restaurant-menu-api.md), nhóm `/api/v1/restaurants/me/menu-link` yêu cầu `RESTAURANT_PROFILE_UPDATE`.
@@ -205,9 +210,10 @@ Example group response:
 {"id":"11111111-1111-4111-8111-111111111111","name":"Drinks","displayOrder":0,"active":true,"version":0,"createdAt":"2026-10-02T00:00:00Z","updatedAt":"2026-10-02T00:00:00Z"}
 ```
 
-Example item response (internal cost, inventory and metadata are excluded):
+Example item response (`costPrice` is available to authenticated tenant menu management;
+inventory flags and metadata remain excluded):
 ```json
-{"id":"22222222-2222-4222-8222-222222222222","group":null,"sku":"COFFEE01","name":"Coffee","baseUnit":"cup","description":"Iced coffee","imageUrl":"https://example.com/coffee.jpg","salePrice":35000.00,"active":true,"availabilityStatus":"AVAILABLE","sellable":true,"version":0,"createdAt":"2026-10-02T00:00:00Z","updatedAt":"2026-10-02T00:00:00Z"}
+{"id":"22222222-2222-4222-8222-222222222222","group":null,"sku":"COFFEE01","name":"Coffee","baseUnit":"cup","description":"Iced coffee","imageUrl":"https://example.com/coffee.jpg","salePrice":35000.00,"costPrice":12000.00,"active":true,"availabilityStatus":"AVAILABLE","sellable":true,"version":0,"createdAt":"2026-10-02T00:00:00Z","updatedAt":"2026-10-02T00:00:00Z"}
 ```
 
 When assigned, group is `{"id":"<uuid>","name":"Drinks","active":true}`.
@@ -219,8 +225,12 @@ createdAt/name/salePrice/updatedAt. IDs break ties. Search matches literal
 wildcards; item search covers name and SKU. Item-only filters: groupId,
 availabilityStatus, sellable. Item group data is batch loaded, not N+1.
 
+Khi menu item có công thức active, đổi `baseUnit` trả `MENU_ITEM_UNIT_IN_USE` và
+xóa mềm trả `MENU_ITEM_HAS_ACTIVE_RECIPE`. Tắt/bật món, đổi tên, giá, mô tả, ảnh
+hoặc group vẫn được phép.
+
 PATCH group accepts name/displayOrder/expectedVersion. PATCH item accepts
-name/sku/baseUnit/description/imageUrl/salePrice/expectedVersion.
+name/sku/baseUnit/description/imageUrl/salePrice/costPrice/expectedVersion.
 Omitted/null fields stay unchanged; blank sku/description/imageUrl clears them.
 Blank name/baseUnit is invalid. A body with only expectedVersion returns
 EMPTY_UPDATE_REQUEST. Lifecycle/internal/type/tenant fields are not accepted.
@@ -249,6 +259,31 @@ Examples:
 ```json
 {"groupId":null,"expectedVersion":0}
 ```
+
+## Recipe versions (V29)
+
+Recipe API nằm dưới `/api/v1/menu/items/{menuItemId}/recipes`, yêu cầu feature
+`RECIPE_MANAGEMENT` và permission `RECIPE_VIEW/CREATE/UPDATE/DELETE` tương ứng.
+Version active là bất biến: sửa công thức tạo business version mới và giữ history;
+deactivate là soft transition, không hard delete. Ingredient và yield unit được
+snapshot để lịch sử không đổi. Chi tiết header, body, response, lỗi và Postman xem
+[Recipe API](recipe-api.md). Contract đầy đủ nằm trong
+[tenant OpenAPI](openapi/tenant-api.yaml).
+
+`GET /api/v1/menu/items/{menuItemId}/recipes/{recipeId}/cost-estimate` yêu cầu
+`RECIPE_VIEW` và `RECIPE_MANAGEMENT`, không cần kho/tồn hoặc permission inventory.
+GET không body, không expectedVersion/idempotency key; trả `Cache-Control: no-store`.
+Định lượng/tên/SKU/đơn vị/yield lấy từ snapshot phiên bản được chọn (active hoặc
+inactive), đơn giá từ `ingredient.costPrice` hiện tại trên một baseUnit. Mọi
+nguyên liệu hợp lệ đều được tính, kể cả không tracking/inactive/soft-deleted;
+snapshot unit khác current baseUnit trả `409 INGREDIENT_COST_UNIT_MISMATCH`.
+Gross quantity giữ chính xác; lineCost HALF_UP 2 chữ số, tổng cộng các line đã làm
+tròn, per-yield HALF_UP 2 chữ số. Giá 0 hợp lệ và có warning
+`ZERO_INGREDIENT_REFERENCE_COST`; thiếu giá không tự thay bằng 0. Response có
+`costSource=INGREDIENT_COST_PRICE`, `totalBatchCost`, `costPerYieldUnit`, ingredient
+lines, warnings và `estimatedAt` từ Clock. Đây là ước tính theo giá hiện tại,
+không cập nhật costPrice/menu/recipe/tồn/ledger/audit và không phải giá vốn lịch sử.
+Xem ví dụ Postman và hướng dẫn Flutter/web trong [Recipe API](recipe-api.md).
 
 The last two bodies belong to PUT /items/{id}/group. groupId must be present;
 explicit null removes the assignment. New assignments require an active,
@@ -298,12 +333,41 @@ Rejected/no-op requests do not record success. Audit failure rolls back mutation
 Creation uses command service → MenuItemFactory → ItemCreationStrategyRegistry
 → MenuItemCreationStrategy; persistence/audit stay in the command service.
 The stateless strategy receives trusted normalized input and a Clock timestamp.
-Registry rejects duplicate types and requires MENU_ITEM support. Future ingredient
-creation can supply an IngredientCreationStrategy and separately authorized API.
+Registry rejects duplicate types and requires both MENU_ITEM and INGREDIENT support.
+V28 supplies `IngredientCreationStrategy` and the separately authorized ingredient API.
 A recipe is a versioned relation of MENU_ITEM to INGREDIENT, not another item type
 or strategy for a package/role. Add a recipe application boundary when implementing
 that feature; do not put recipe payloads in metadata. This release has no recipe,
 inventory, public QR, variants or upload endpoints.
+
+## Ingredient catalog (V28)
+
+Ingredient CRUD uses `/api/v1/menu/ingredients`, persists `items.item_type=INGREDIENT`
+and never broadens `/api/v1/menu/items`. It requires the matching
+`INGREDIENT_VIEW/CREATE/UPDATE/DELETE` permission plus at least one of
+`RECIPE_MANAGEMENT` or `INVENTORY_MANAGEMENT` in the effective immutable snapshot.
+Tenant comes only from JWT. OWNER and system SUPER_ADMIN receive these permissions
+by default; MANAGER/WAITER/CASHIER/KITCHEN do not.
+
+| Method and path | Permission | Success |
+|---|---|---|
+| GET /api/v1/menu/ingredients | INGREDIENT_VIEW | 200 page |
+| GET /api/v1/menu/ingredients/{ingredientId} | INGREDIENT_VIEW | 200 ingredient |
+| POST /api/v1/menu/ingredients | INGREDIENT_CREATE | 201 ingredient |
+| PATCH /api/v1/menu/ingredients/{ingredientId} | INGREDIENT_UPDATE | 200 ingredient |
+| PATCH /api/v1/menu/ingredients/{ingredientId}/status | INGREDIENT_UPDATE | 200 ingredient |
+| DELETE /api/v1/menu/ingredients/{ingredientId}?expectedVersion=0 | INGREDIENT_DELETE | 204 |
+
+Search/filter/sort, request/response examples, Postman headers, version semantics,
+errors and current exclusions are documented in [Ingredient catalog API](ingredient-api.md).
+`costPrice` is the current reference cost per base unit; `trackInventory` alone
+does not create stock. Confirming a RECEIPT now updates tracked ingredient costPrice
+using moving weighted average over all tenant warehouses. Drafts, ISSUE and
+ADJUSTMENT do not reprice; confirmed replay does not recalculate. Price/stock/ledger
+and audit commit atomically. Refresh ingredient detail/version and recipe estimate
+after receipt confirmation; sale prices and menu-item costPrice are unchanged.
+This is not a complete historical inventory valuation system. See inventory-api.md.
+Ingredient has no group/sale availability and cannot be sold or exposed publicly.
 ## Tables, areas and seating sessions (V15)
 
 The explicitly authorized QR management endpoints below are the exception to the
@@ -618,6 +682,29 @@ recording separately; see [payment-api.md](payment-api.md).
 V20 adds moving an OPEN session to an empty table without changing its orders:
 [transfer API](table-session-transfer-api.md) and [FE synchronization](table-session-transfer-fe-sync.md).
 ORDER MVP is now available separately in [order-api.md](order-api.md); public menus are documented separately.
+
+## Inventory Phase 1 và 2
+
+V30 adds tenant warehouse management, exactly-at-most-one active default warehouse,
+sparse current balances, minimum thresholds and a derived low-stock query. All routes
+are under `/api/v1/inventory`, require the effective `INVENTORY_MANAGEMENT` snapshot
+feature and the endpoint permission. `/low-stock` additionally requires
+`LOW_STOCK_ALERT`. See [inventory-api.md](inventory-api.md) for bodies, responses,
+Postman examples, error codes and concurrency behavior.
+
+Tracked ingredients without a physical balance row are returned as logical zero
+balances; reads never create rows. `minQuantity=0` disables low-stock. Phase 1 has
+no quantity mutation, stock document/transaction, unit conversion, automatic recipe
+deduction, persistent alert, stock audit or supplier API. Ingredient base-unit,
+tracking removal and deletion are blocked with `INGREDIENT_HAS_STOCK` while any
+warehouse has non-zero stock.
+
+V31 adds `RECEIPT`, `ISSUE` and `ADJUSTMENT` stock documents. Draft editing uses
+`expectedVersion`; creation uses a tenant-scoped `Idempotency-Key`. Confirm is the
+only transition that atomically changes balances and appends immutable inventory
+transactions. It locks balances in deterministic ingredient order, forbids negative
+stock and rolls the whole document back on any invalid line. Confirm/cancel retries
+are no-ops without duplicate ledger or audit. See [inventory-api.md](inventory-api.md).
 
 Staff may now send DINE_IN orders using POST /api/v1/orders with tableId + SUBMIT:
 an OPEN session is reused, or seating is opened only when the order is sent.

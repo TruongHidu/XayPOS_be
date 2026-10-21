@@ -29,6 +29,7 @@ public class OrderCommandService {
     private final OrderAudit audit;
     private final OrderResponseMapper mapper;
     private final Clock clock;
+    private final OrderInventoryAllocationOperation inventory;
 
     public OrderResponse update(UUID id,OrderRequests.Update request,String ip) {
         var locked=access.lock(); var actor=locked.actor(); var order=access.order(actor.restaurantId(),id);
@@ -53,7 +54,10 @@ public class OrderCommandService {
 
     public OrderResponse confirm(UUID id,OrderRequests.Version request,String ip) {
         var locked=access.lock(); var actor=locked.actor(); var order=access.order(actor.restaurantId(),id); var lines=lines(order);
-        if(order.getStatus()==OrderStatus.CONFIRMED) return mapper.detail(order,lines);
+        if(order.getStatus()==OrderStatus.CONFIRMED) {
+            inventory.validate(order,lines);
+            return mapper.detail(order,lines);
+        }
         lifecycle.requireEditable(order); lifecycle.requireVersion(order,request.expectedVersion());
         confirmation.confirm(order,lines,actor,now(),ip); return mapper.detail(order,lines);
     }
@@ -61,9 +65,11 @@ public class OrderCommandService {
     public OrderResponse cancelItem(UUID id,UUID lineId,OrderRequests.Cancel request,String ip) {
         var locked=access.lock(); var actor=locked.actor(); var order=access.order(actor.restaurantId(),id);
         var lines=lines(order); var line=line(lines,lineId); lifecycle.requireLineCancellationPermission(order,actor);
+        inventory.validate(order,lines);
         if(line.getStatus()==OrderItemStatus.CANCELLED) return mapper.detail(order,lines);
         lifecycle.requireLineCancellationState(order); lifecycle.requireVersion(order,request.expectedVersion()); lifecycle.requirePending(line);
         var before=audit.snapshot(order,lines); var now=now(); String reason=request.reason().trim();
+        inventory.release(order,List.of(line),actor,now,ip);
         cancelLine(line,reason,now); boolean cancelledOrder=lines.stream().allMatch(l->l.getStatus()==OrderItemStatus.CANCELLED);
         if(cancelledOrder) cancelRoot(order,reason,now);
         else order.setStatus(servingStatus.aggregate(order,lines));
@@ -74,10 +80,13 @@ public class OrderCommandService {
 
     public OrderResponse cancel(UUID id,OrderRequests.Cancel request,String ip) {
         var locked=access.lock(); var actor=locked.actor(); var order=access.order(actor.restaurantId(),id); var lines=lines(order);
+        inventory.validate(order,lines);
         if(order.getStatus()==OrderStatus.CANCELLED) return mapper.detail(order,lines);
         lifecycle.requireCancellable(order,lines); lifecycle.requireVersion(order,request.expectedVersion());
         var before=audit.snapshot(order,lines); var now=now(); String reason=request.reason().trim();
-        var changed=lines.stream().filter(l->l.getStatus()!=OrderItemStatus.CANCELLED).toList(); changed.forEach(l->cancelLine(l,reason,now));
+        var changed=lines.stream().filter(l->l.getStatus()!=OrderItemStatus.CANCELLED).toList();
+        inventory.release(order,changed,actor,now,ip);
+        changed.forEach(l->cancelLine(l,reason,now));
         cancelRoot(order,reason,now); finish(actor,order,lines,before,"ORDER_CANCELLED",now,ip);
         history.cancelled(order,changed,actor.userId(),reason,now); orders.flush(); return mapper.detail(order,lines);
     }

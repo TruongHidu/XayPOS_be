@@ -5,6 +5,7 @@ import com.possaas.common.exception.ConflictException;
 import com.possaas.modules.order.repository.OrderItemRepository;
 import com.possaas.modules.order.service.OrderAccessService;
 import com.possaas.modules.order.service.OrderResponseMapper;
+import com.possaas.modules.order.service.OrderInventoryAllocationOperation;
 import com.possaas.modules.order.service.chain.*;
 import com.possaas.modules.qrorder.dto.QrApprovalResponse;
 import com.possaas.modules.qrorder.entity.*;
@@ -19,6 +20,7 @@ public class QrApprovalReplayHandler implements OrderHandler<QrApprovalContext,Q
     private final OrderItemRepository items;
     private final OrderResponseMapper orderMapper;
     private final QrStaffResponseMapper mapper;
+    private final OrderInventoryAllocationOperation inventory;
     @Override public QrApprovalResponse handle(QrApprovalContext c, OrderNext<QrApprovalContext,QrApprovalResponse> next) {
         var r = c.getRequest(); var body = c.getCommand();
         if (!body.isTargetSessionPresent()) throw new BusinessException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "targetSessionId must be supplied explicitly");
@@ -28,7 +30,9 @@ public class QrApprovalReplayHandler implements OrderHandler<QrApprovalContext,Q
             if (body.getTargetSessionId() != null && !body.getTargetSessionId().equals(r.getApprovedSessionId()))
                 throw new ConflictException("QR_REQUEST_SESSION_CHANGED", "Request was approved for another session");
             var root = orders.order(r.getRestaurantId(), r.getApprovedOrderId());
-            var response = orderMapper.detail(root, items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(r.getRestaurantId(), root.getId()));
+            var lines = items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(r.getRestaurantId(), root.getId());
+            inventory.validate(root, lines);
+            var response = orderMapper.detail(root, lines);
             return next.complete(mapper.approved(r, c.getItems(), response, true));
         }
         if (r.getStatus() != QrRequestStatus.PENDING)

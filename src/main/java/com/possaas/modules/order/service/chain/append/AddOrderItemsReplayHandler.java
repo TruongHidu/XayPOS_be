@@ -14,6 +14,7 @@ public class AddOrderItemsReplayHandler implements OrderHandler<AddOrderItemsCon
     private final OrderAppendIdempotency idempotency;
     private final OrderItemRepository items;
     private final OrderResponseMapper mapper;
+    private final OrderInventoryAllocationOperation inventory;
     @Override public OrderAppendService.Result handle(AddOrderItemsContext c,OrderNext<AddOrderItemsContext,OrderAppendService.Result> next) {
         var actor=c.facts().locked().actor(); submission.requireAppend(actor);
         var order=access.order(actor.restaurantId(),c.orderId()); c.order(order);
@@ -21,9 +22,11 @@ public class AddOrderItemsReplayHandler implements OrderHandler<AddOrderItemsCon
         if(request.effectiveMode()==OrderSubmissionMode.SUBMIT) {
             access.requireCreationFeatures(actor.restaurantId(),order.getServiceType());
             key=fingerprint.key(c.rawKey()); hash=fingerprint.appendHash(actor.userId(),order.getId(),request);
-            if(idempotency.replay(actor.restaurantId(),order.getId(),actor.userId(),key,hash))
-                return next.complete(new OrderAppendService.Result(mapper.detail(order,
-                    items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(actor.restaurantId(),order.getId())),true));
+            if(idempotency.replay(actor.restaurantId(),order.getId(),actor.userId(),key,hash)) {
+                var lines=items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(actor.restaurantId(),order.getId());
+                inventory.validate(order,lines);
+                return next.complete(new OrderAppendService.Result(mapper.detail(order,lines),true));
+            }
         }
         c.normalized(new AddOrderItemsContext.Normalized(request,key,hash));
         return next.proceed(c);

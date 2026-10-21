@@ -2,6 +2,7 @@ package com.possaas.modules.qrorder.controller;
 
 import com.possaas.common.exception.BusinessException;
 import com.possaas.common.exception.GlobalExceptionHandler.ErrorResponse;
+import com.possaas.modules.order.service.OrderInventoryPersistenceConflict;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Clock;
 import java.util.Map;
@@ -33,8 +34,13 @@ public class QrStaffErrorHandler {
     @ExceptionHandler({DataIntegrityViolationException.class, OptimisticLockingFailureException.class, PessimisticLockingFailureException.class,
         jakarta.persistence.LockTimeoutException.class, jakarta.persistence.PessimisticLockException.class})
     ResponseEntity<ErrorResponse> conflict(RuntimeException failure) {
+        var inventory = OrderInventoryPersistenceConflict.translate(failure);
+        if (inventory != null) return business(inventory);
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof org.hibernate.exception.ConstraintViolationException constraint) {
+                if ("uq_order_recipe_snapshot_line".equals(constraint.getConstraintName())
+                        || "uq_order_recipe_usage_ingredient".equals(constraint.getConstraintName()))
+                    return error(HttpStatus.CONFLICT, "ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT", "Order recipe snapshot already exists or conflicts with immutable data");
                 if ("uq_qr_request_idempotency".equals(constraint.getConstraintName()))
                     return error(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "Idempotency key conflicts with another request");
                 if ("ux_order_serving_session".equals(constraint.getConstraintName()))
@@ -44,6 +50,8 @@ public class QrStaffErrorHandler {
         return error(HttpStatus.CONFLICT, "CONCURRENT_QR_REQUEST_UPDATE", "QR request changed concurrently or conflicts with a persistence constraint");
     }
     @ExceptionHandler(Exception.class) ResponseEntity<ErrorResponse> unexpected(Exception ignored) {
+        var inventory = OrderInventoryPersistenceConflict.translate(ignored);
+        if (inventory != null) return business(inventory);
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not process the QR review request");
     }
     private ResponseEntity<ErrorResponse> error(HttpStatus status, String code, String message) {

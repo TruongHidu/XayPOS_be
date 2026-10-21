@@ -2,6 +2,18 @@
 
 Backend-only MVP. [OpenAPI](openapi/public-qr-order-api.yaml) · [Hướng dẫn đồng bộ FE](qr-order-fe-sync.md).
 
+V32 chốt [recipe snapshot](order-recipe-snapshot-api.md) tại approve, không ở guest
+submit/review. Approve tạo mới và gọi thêm cùng dùng operation snapshot của ORDER;
+recipe version lấy tại lúc approve, không tự sửa snapshot dòng cũ. Lỗi snapshot
+rollback cả approval/order/session/idempotency/audit trong transaction. Không thay
+body hoặc quyền QR. V33 tiếp tục [giữ chỗ nguyên liệu](order-inventory-allocation-api.md)
+chỉ khi approve; guest pending/review/reject/cancel/expire không giữ kho. Approve
+thiếu available hoặc kho default trả 409 và request vẫn PENDING. Sau bổ sung tồn,
+staff review/approve lại theo version/hash/quote guard. Replay không giữ kho thêm.
+Ingredient/allocation/cost không xuất hiện trong public QR response.
+
+Quote/hash/request DTO giữ contract hiện có.
+
 `QrOrderRequest` là yêu cầu của khách, không phải order. PENDING không mở phiên, tạo order/order_items, gửi bếp, tính vào bill, làm bàn bận hoặc đặt giữ bàn. Sau approval mới có order/món và history/audit nghiệp vụ. `QrOrderRequest.PENDING` khác `OrderItem.PENDING` (món đã được duyệt vào order, chờ chế biến).
 
 ## Luồng và quyền
@@ -360,6 +372,7 @@ Envelope gồm `success: false`, `code`, `message`, `fieldErrors`, `timestamp`. 
 | 409 | QR_ORDER_CHECKOUT_IN_PROGRESS / ORDER_HAS_FINANCIAL_OBLIGATIONS | Không gọi thêm vào phiên/order đang checkout hoặc có nghĩa vụ |
 | 409 | INVALID_QR_REQUEST_TRANSITION | Terminal state không cho hành động được yêu cầu |
 | 409 | IDEMPOTENCY_KEY_REUSED | Key cũ nhưng actor/scope/payload khác; kiểm tra intent |
+| 409 | INVENTORY_DEFAULT_WAREHOUSE_REQUIRED / INSUFFICIENT_AVAILABLE_STOCK | Approve rollback, request vẫn PENDING; cấu hình/nhập tồn rồi review lại |
 | 429 | QR_RATE_LIMIT_EXCEEDED | Tôn trọng Retry-After; không đổi identity/key để bypass |
 | 413 | QR_REQUEST_BODY_TOO_LARGE | Body QR POST vượt 32768 bytes; giảm payload, không bypass qua chunked |
 | 500 | INTERNAL_ERROR | Fail an toàn, không giả lỗi entitlement |
@@ -415,4 +428,4 @@ Guest access TTL cho phép 1–1440 phút; request TTL 1–60 phút. Env overrid
 
 Mask path token cho guest-access ở proxy/CDN/APM/access logs và header X-QR-Guest-Token; giữ web/security/JDBC payload tracing tắt. Website dùng Referrer-Policy no-referrer. CORS giữ origins hiện có, không wildcard; không tin forwarded IP nếu chưa cấu hình trusted proxy.
 
-TTL không đổi stored request sang EXPIRED; `expired` projection và rule Clock quyết định. Chưa có cleanup background job. Không triển khai FE, WebSocket/outbox, guest edit/cancel, direct QR order, gateway/refund/invoice/printing/recipe/inventory/delivery/CRM. Pending/history được giữ, không xóa lịch sử subscription/order.
+TTL không đổi stored request sang EXPIRED; `expired` projection và rule Clock quyết định. Chưa có cleanup background job. Không triển khai FE, WebSocket/outbox, guest edit/cancel, direct QR order, gateway/refund/invoice/printing/delivery/CRM. Recipe snapshot và inventory allocation chạy nội bộ khi approve; không public API nguyên liệu. Pending/history được giữ, không xóa lịch sử subscription/order.

@@ -25,6 +25,7 @@ public class OrderCompletionService {
     private final OrderAudit audit;
     private final OrderResponseMapper mapper;
     private final Clock clock;
+    private final OrderInventoryAllocationOperation inventory;
 
     @Transactional
     public OrderResponse complete(UUID id,long expectedVersion,String ip) {
@@ -39,6 +40,7 @@ public class OrderCompletionService {
             sessionClosed=sessionClosure.isClosed(actor.restaurantId(),order.getTableSessionId());
         }
         var lines=items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(actor.restaurantId(),id);
+        inventory.validate(order,lines);
         if(order.getStatus()==OrderStatus.COMPLETED) {
             if(dineIn && !sessionClosed) {
                 // Repair a legacy completed order's exact OPEN session without mutating the order again.

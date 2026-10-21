@@ -24,6 +24,7 @@ public class MenuItemCommandService {
     private final MenuItemFactory factory;
     private final MenuItemValidationPolicy validation;
     private final MenuItemLifecyclePolicy lifecycle;
+    private final RecipeDependencyPolicy recipeDependencies;
     private final MenuResponseMapper mapper;
     private final MenuAudit audit;
     private final Clock clock;
@@ -35,7 +36,7 @@ public class MenuItemCommandService {
                 validation.required(r.name(), 150), validation.required(r.baseUnit(), 30),
                 validation.optional(r.description()), validation.image(r.imageUrl()), validation.price(r.salePrice()),
                 validation.price(r.costPrice() == null ? BigDecimal.ZERO : r.costPrice()),
-                r.active() == null || r.active(), clock.instant());
+                false, r.active() == null || r.active(), clock.instant());
         var item = factory.create(ItemType.MENU_ITEM, context);
         items.saveAndFlush(item);
         audit.record(actor, "MENU_ITEM_CREATED", item, null, audit.snapshot(item), ip);
@@ -52,8 +53,12 @@ public class MenuItemCommandService {
         var before = audit.snapshot(item);
         if (r.name() != null)
             item.setName(validation.required(r.name(), 150));
-        if (r.baseUnit() != null)
-            item.setBaseUnit(validation.required(r.baseUnit(), 30));
+        if (r.baseUnit() != null) {
+            String baseUnit = validation.required(r.baseUnit(), 30);
+            if (!Objects.equals(item.getBaseUnit(), baseUnit))
+                recipeDependencies.requireMenuItemUnitChangeAllowed(actor.restaurantId(), id);
+            item.setBaseUnit(baseUnit);
+        }
         if (r.sku() != null)
             item.setSku(validation.sku(r.sku()));
         if (r.description() != null)
@@ -114,6 +119,7 @@ public class MenuItemCommandService {
         if (item.getDeletedAt() != null)
             return;
         lifecycle.requireVersion(item, version);
+        recipeDependencies.requireMenuItemDeleteAllowed(actor.restaurantId(), id);
         var before = audit.snapshot(item);
         lifecycle.softDelete(item, clock.instant());
         persist(actor, item, "MENU_ITEM_DELETED", before, ip);

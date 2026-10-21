@@ -1,0 +1,6 @@
+package com.possaas.modules.inventory.entity;
+
+public enum InventoryAllocationSkipReason {
+    INVENTORY_FEATURE_DISABLED, SNAPSHOT_NO_RECIPE, SNAPSHOT_FEATURE_DISABLED,
+    NO_TRACKED_INGREDIENTS, LEGACY_UNAVAILABLE
+}

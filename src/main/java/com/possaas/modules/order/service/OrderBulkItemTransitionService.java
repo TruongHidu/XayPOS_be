@@ -37,6 +37,7 @@ public class OrderBulkItemTransitionService {
     private final OrderAudit audit;
     private final OrderResponseMapper mapper;
     private final Clock clock;
+    private final OrderInventoryAllocationOperation inventory;
 
     @Transactional
     public OrderResponse markReady(UUID orderId, long expectedVersion, String ip) {
@@ -65,11 +66,14 @@ public class OrderBulkItemTransitionService {
         submitted.requireSubmitted(order);
         var lines = items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(tenant, orderId);
         var changed = target == OrderItemStatus.READY ? policy.readyItems(lines) : policy.servedItems(lines);
+        inventory.validate(order, lines);
         // A retry after the goal is already satisfied is harmless, even with the original version.
         if (changed.isEmpty()) return mapper.detail(order, lines);
         lifecycle.requireVersion(order, expectedVersion);
         var before = audit.snapshot(order, lines);
         var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        if (target == OrderItemStatus.SERVED)
+            inventory.consume(order, changed.stream().filter(line -> line.getStatus() == OrderItemStatus.PENDING).toList(), actor, now, ip);
         // Capture real source states before mutation; direct serving may contain several states.
         var byPreviousStatus = changed.stream().collect(Collectors.groupingBy(
             OrderItem::getStatus, () -> new EnumMap<>(OrderItemStatus.class), Collectors.toList()));

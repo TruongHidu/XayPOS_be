@@ -37,6 +37,7 @@ public class OrderQrApprovalOperation implements QrApprovedOrderCommand {
     private final OrderServingStatusPolicy servingStatus;
     private final OrderSeatingCommand seating;
     private final OrderResponseMapper mapper;
+    private final OrderInventoryAllocationOperation inventory;
 
     @Override public Preparation prepare(Intent c) {
         if (!c.actor().hasPermission("ORDER_CREATE") || !c.actor().hasPermission("ORDER_UPDATE"))
@@ -93,8 +94,11 @@ public class OrderQrApprovalOperation implements QrApprovedOrderCommand {
             audit.record(c.actor(), "ORDER_CREATED", root, null, p.combined(), c.ip()); orders.flush();
             confirmation.confirm(root, p.combined(), c.actor(), c.now(), c.ip());
         } else {
+            items.saveAllAndFlush(p.added());
+            inventory.validate(root, p.combined());
+            inventory.accept(root, p.added(), c.actor(), c.now(), c.ip());
             p.added().forEach(line -> line.setSentToKitchenAt(c.now()));
-            items.saveAllAndFlush(p.added()); money.apply(root, p.totals());
+            money.apply(root, p.totals());
             root.setStatus(servingStatus.aggregate(root, p.combined())); root.changed(c.now()); orders.saveAndFlush(root);
             history.created(root, p.added(), c.actor().userId(), c.now());
             audit.record(c.actor(), "ORDER_ITEMS_ADDED", root, p.before(), p.combined(), c.ip());

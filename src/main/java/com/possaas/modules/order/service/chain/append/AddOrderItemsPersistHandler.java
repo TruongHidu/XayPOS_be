@@ -15,11 +15,16 @@ public class AddOrderItemsPersistHandler implements OrderHandler<AddOrderItemsCo
     private final OrderConfirmationOperation confirmation;
     private final OrderAppendIdempotency idempotency;
     private final OrderServingStatusPolicy servingStatus;
+    private final OrderInventoryAllocationOperation inventory;
     @Override public OrderAppendService.Result handle(AddOrderItemsContext c,OrderNext<AddOrderItemsContext,OrderAppendService.Result> next) {
         var actor=c.facts().locked().actor(); var now=c.facts().now(); var order=c.order(); var p=c.prepared();
-        if(c.normalized().request().effectiveMode()==OrderSubmissionMode.SUBMIT && order.getStatus()!=OrderStatus.OPEN)
+        items.saveAll(p.added());
+        if(c.normalized().request().effectiveMode()==OrderSubmissionMode.SUBMIT && order.getStatus()!=OrderStatus.OPEN) {
+            inventory.validate(order,p.combined());
+            inventory.accept(order,p.added(),actor,now,c.facts().ip());
             p.added().forEach(line -> line.setSentToKitchenAt(now));
-        items.saveAll(p.added()); money.apply(order,p.totals());
+        }
+        money.apply(order,p.totals());
         if(c.normalized().request().effectiveMode()==OrderSubmissionMode.SUBMIT)
             order.setStatus(servingStatus.aggregate(order,p.combined()));
         order.changed(now); orders.saveAndFlush(order);

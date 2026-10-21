@@ -68,6 +68,8 @@ class QrOrderIntegrationTest {
     @Autowired PackagePlanRepository packages; @Autowired RestaurantSubscriptionRepository subscriptions;
     @Autowired ItemRepository items; @Autowired RestaurantTableRepository tables; @Autowired TableSessionRepository sessions;
     @MockitoSpyBean AuditService audit;
+    @Autowired com.possaas.modules.menu.repository.RecipeRepository recipes;
+    @Autowired com.possaas.modules.menu.repository.RecipeItemRepository recipeItems;
     Restaurant restaurant; User user; RestaurantSubscription subscription; RestaurantTable table; Item item;
     record Reply(int status,JsonNode body,String replay,String cache) {
         UUID requestId() { return UUID.fromString(body.path("requestId").asText()); }
@@ -408,6 +410,124 @@ class QrOrderIntegrationTest {
         var first=submit(guest,"trim",padded); first.expect(201);
         var replay=submit(guest,"trim",payload()); replay.expect(200); assertThat(replay.requestId()).isEqualTo(first.requestId());
         assertThat(jdbc.queryForObject("select customer_name from qr_order_requests where id=?",String.class,first.requestId())).isEqualTo("Guest");
+    }
+
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void recipeSnapshotIsChosenAtApprovalAndNeverAtGuestSubmitOrReview(boolean dine) throws Exception {
+        var features=new ArrayList<>(FEATURES);features.add("RECIPE_MANAGEMENT");features(features);
+        Recipe first=qrRecipe(1,"100");
+        String guest=mint(dine);var request=submit(guest,"snapshot",payload());request.expect(201);var reviewed=review(request);reviewed.expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isZero();
+        first.deactivate(NOW);recipes.saveAndFlush(first);Recipe second=qrRecipe(2,"200");
+        var approved=approve(request,reviewed,null,ALL);approved.expect(200);
+        assertThat(jdbc.queryForObject("select recipe_id from order_item_recipe_snapshots where restaurant_id=?",UUID.class,restaurant.getId())).isEqualTo(second.getId());
+        assertThat(jdbc.queryForObject("select required_quantity from order_item_recipe_usages where restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("200");
+        var replay=approve(request,reviewed,null,ALL);replay.expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);assertThat(count("order_item_recipe_usages")).isEqualTo(1);
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);
+        var publicReceipt=guestGet(guest,request);publicReceipt.expect(200);
+        assertThat(publicReceipt.body.toString()).doesNotContain("recipeId","recipeVersion","requiredQuantity","ingredientId");
+    }
+    @Test void qrAppendCapturesOnlyNewLinesUsingNewRecipeVersion() throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);Recipe firstRecipe=qrRecipe(1,"100");
+        String guest=mint(true);var first=submit(guest,"snapshot-a",payload());var a=approve(first,review(first),null,ALL);a.expect(200);
+        UUID session=UUID.fromString(a.body.path("approvedSessionId").asText());
+        UUID oldLine=UUID.fromString(a.body.at("/order/items/0/id").asText());
+        firstRecipe.deactivate(NOW);recipes.saveAndFlush(firstRecipe);Recipe next=qrRecipe(2,"200");
+        var additional=submit(guest,"snapshot-b",payload());var reviewed=review(additional);var b=approve(additional,reviewed,session,ALL);b.expect(200);
+        assertThat(b.orderId()).isEqualTo(a.orderId());
+        assertThat(jdbc.queryForObject("select recipe_id from order_item_recipe_snapshots where order_item_id=?",UUID.class,oldLine)).isEqualTo(firstRecipe.getId());
+        UUID newLine=UUID.fromString(b.body.at("/order/items/1/id").asText());
+        assertThat(jdbc.queryForObject("select recipe_id from order_item_recipe_snapshots where order_item_id=?",UUID.class,newLine)).isEqualTo(next.getId());
+        approve(additional,reviewed,session,ALL).expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isEqualTo(2);assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(2);
+    }
+    @Test void rejectedQrRequestDoesNotCaptureRecipe() throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);qrRecipe(1,"100");
+        var request=submit(mint(false),"snapshot-reject",payload());request.expect(201);var reviewed=review(request);reviewed.expect(200);
+        staff(post(STAFF+"/"+request.requestId()+"/reject"),Map.of("expectedRequestVersion",reviewed.body.at("/request/version").asLong(),"reason","reject"),ALL).expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isZero();assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isZero();
+    }
+    @Test void failedQrSnapshotRollsBackRequestOrderSessionAndCanBeRetried() throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);qrRecipe(1,"100");
+        var request=submit(mint(true),"snapshot-failure",payload());request.expect(201);var reviewed=review(request);
+        doThrow(new IllegalStateException("forced snapshot audit failure")).when(audit).recordAll(anyList());
+        approve(request,reviewed,null,ALL).expect(500);
+        assertThat(status(request)).isEqualTo("PENDING");
+        for(String name:List.of("orders","order_items","table_sessions","order_item_recipe_snapshots","order_item_recipe_usages"))assertThat(count(name)).as(name).isZero();
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isZero();reset(audit);
+        approve(request,reviewed,null,ALL).expect(200);assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);
+    }
+    @Test void failedQrAppendSnapshotPreservesExistingOrderAndRequestPending() throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);qrRecipe(1,"100");
+        String guest=mint(true);var first=submit(guest,"snapshot-existing",payload());var a=approve(first,review(first),null,ALL);a.expect(200);
+        UUID session=UUID.fromString(a.body.path("approvedSessionId").asText());
+        var more=submit(guest,"snapshot-more",payload());var reviewed=review(more);
+        doThrow(new IllegalStateException("forced append snapshot audit failure")).when(audit).recordAll(anyList());
+        approve(more,reviewed,session,ALL).expect(500);reset(audit);
+        assertThat(status(more)).isEqualTo("PENDING");assertThat(count("order_items")).isEqualTo(1);assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select version from orders where id=?",Long.class,a.orderId())).isEqualTo(a.orderVersion());
+        approve(more,reviewed,session,ALL).expect(200);assertThat(count("order_item_recipe_snapshots")).isEqualTo(2);
+    }
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void inventoryEnabledPendingReviewAndRejectNeverReserve(boolean dine) throws Exception {
+        inventoryFixture("500");String guest=mint(dine);var request=submit(guest,"inventory-pending",payload());request.expect(201);
+        var reviewed=review(request);reviewed.expect(200);
+        assertThat(count("order_item_inventory_allocations")).isZero();assertThat(count("inventory_reservations")).isZero();
+        assertThat(jdbc.queryForObject("select sum(reserved_quantity) from inventory_balances where restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("0");
+        staff(post(STAFF+"/"+request.requestId()+"/reject"),Map.of("expectedRequestVersion",reviewed.body.at("/request/version").asLong(),"reason","reject"),ALL).expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isZero();assertThat(count("order_item_inventory_allocations")).isZero();
+        assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isZero();
+    }
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void inventoryQrApprovalReservesOnceWithoutExtraWarehousePermissions(boolean dine) throws Exception {
+        inventoryFixture("500");String guest=mint(dine);var request=submit(guest,"inventory-create",payload());request.expect(201);var reviewed=review(request);reviewed.expect(200);
+        var approved=approve(request,reviewed,null,ALL);approved.expect(200);approve(request,reviewed,null,ALL).expect(200);
+        assertThat(count("order_item_inventory_allocations")).isEqualTo(1);assertThat(count("inventory_reservations")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select status from order_item_inventory_allocations where restaurant_id=?",String.class,restaurant.getId())).isEqualTo("RESERVED");
+        assertThat(jdbc.queryForObject("select sum(reserved_quantity) from inventory_balances where restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("100");
+        assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isEqualTo(1);
+        var publicReceipt=guestGet(guest,request);publicReceipt.expect(200);
+        assertThat(publicReceipt.body.toString()).doesNotContain("allocationId","reservationId","ingredientId","requiredQuantity","unitCost");
+        assertThat(approved.body.path("order").toString()).doesNotContain("allocationId","reservationId","ingredients","unitCost");
+    }
+    @Test void inventoryQrAdditionalApprovalReservesOnlyNewLinesAndShortageLeavesRequestPending() throws Exception {
+        UUID source=inventoryFixture("150");String guest=mint(true);var first=submit(guest,"inventory-first",payload());first.expect(201);
+        var a=approve(first,review(first),null,ALL);a.expect(200);UUID session=UUID.fromString(a.body.path("approvedSessionId").asText());
+        var next=submit(guest,"inventory-add",payload());next.expect(201);var reviewed=review(next);reviewed.expect(200);
+        long audits=count("audit_logs");approve(next,reviewed,session,ALL).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(status(next)).isEqualTo("PENDING");assertThat(count("order_items")).isEqualTo(1);assertThat(count("order_item_inventory_allocations")).isEqualTo(1);
+        assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);assertThat(count("audit_logs")).isEqualTo(audits);
+        inventoryReceipt(source,"100");var fresh=review(next);fresh.expect(200);approve(next,fresh,session,ALL).expect(200);approve(next,fresh,session,ALL).expect(200);
+        assertThat(count("orders")).isEqualTo(1);assertThat(count("inventory_reservations")).isEqualTo(2);assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select sum(reserved_quantity) from inventory_balances where restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("200");
+    }
+    @Test void inventoryQrShortageRollsBackNewSessionOrderAndSnapshotButCanBeApprovedAfterReceipt() throws Exception {
+        UUID source=inventoryFixture("50");var request=submit(mint(true),"inventory-short",payload());request.expect(201);var reviewed=review(request);reviewed.expect(200);
+        long audits=count("audit_logs");approve(request,reviewed,null,ALL).error(409,"INSUFFICIENT_AVAILABLE_STOCK");assertThat(status(request)).isEqualTo("PENDING");
+        for(String name:List.of("orders","order_items","table_sessions","order_item_recipe_snapshots","order_item_recipe_usages","order_item_inventory_allocations","inventory_reservations"))assertThat(count(name)).as(name).isZero();
+        assertThat(count("audit_logs")).isEqualTo(audits);inventoryReceipt(source,"100");approve(request,review(request),null,ALL).expect(200);
+        assertThat(count("orders")).isEqualTo(1);assertThat(count("inventory_reservations")).isEqualTo(1);assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isEqualTo(1);
+    }
+    UUID inventoryFixture(String physical) throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");codes.add("INVENTORY_MANAGEMENT");features(codes);
+        Recipe snapshotRecipe=qrRecipe(1,"100");UUID source=jdbc.queryForObject("select ingredient_id from recipe_items where recipe_id=?",UUID.class,snapshotRecipe.getId());
+        var permissions=new HashSet<>(ALL);permissions.add("WAREHOUSE_CREATE");
+        staff(post("/api/v1/inventory/warehouses"),Map.of("code","MAIN","name","Main"),permissions).expect(201);
+        inventoryReceipt(source,physical);return source;
+    }
+    void inventoryReceipt(UUID ingredientId,String quantity) throws Exception {
+        UUID target=jdbc.queryForObject("select id from warehouses where restaurant_id=? and is_default=true",UUID.class,restaurant.getId());
+        var permissions=new HashSet<>(ALL);permissions.add("INVENTORY_RECEIVE");
+        var receipt=staff(post("/api/v1/inventory/stock-documents").header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("documentType","RECEIPT","warehouseId",target,"items",List.of(Map.of("ingredientId",ingredientId,"quantity",new BigDecimal(quantity),"unitCost",10))),permissions);receipt.expect(201);
+        staff(post("/api/v1/inventory/stock-documents/"+receipt.body.path("id").asText()+"/confirm"),Map.of("expectedVersion",receipt.body.path("version").asLong()),permissions).expect(200);
+    }
+
+    Recipe qrRecipe(int version,String quantity) {
+        Item ingredient=new Item();ingredient.initialize(restaurant.getId(),NOW);ingredient.setName("Ingredient snapshot");ingredient.setItemType(ItemType.INGREDIENT);
+        ingredient.setBaseUnit("g");ingredient.setTrackInventory(true);ingredient.setSalePrice(BigDecimal.ZERO);ingredient=items.saveAndFlush(ingredient);
+        Recipe recipe=new Recipe();recipe.initialize(restaurant.getId(),item.getId(),version,BigDecimal.ONE,item.getBaseUnit(),NOW);recipe=recipes.saveAndFlush(recipe);
+        RecipeItem line=new RecipeItem();line.initialize(restaurant.getId(),recipe.getId(),ingredient,new BigDecimal(quantity),BigDecimal.ZERO,NOW);recipeItems.saveAndFlush(line);return recipe;
     }
 
     String mint(boolean dine) throws Exception {

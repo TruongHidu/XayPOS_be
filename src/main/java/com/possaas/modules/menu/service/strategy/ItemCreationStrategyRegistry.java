@@ -13,8 +13,9 @@ public class ItemCreationStrategyRegistry {
         for (var s : implementations)
             if (map.put(s.supportedType(), s) != null)
                 throw new IllegalStateException("Duplicate item creation strategy: " + s.supportedType());
-        if (!map.containsKey(ItemType.MENU_ITEM))
-            throw new IllegalStateException("MENU_ITEM creation strategy is required");
+        for (ItemType required : List.of(ItemType.MENU_ITEM, ItemType.INGREDIENT))
+            if (!map.containsKey(required))
+                throw new IllegalStateException(required + " creation strategy is required");
         strategies = Map.copyOf(map);
     }
 

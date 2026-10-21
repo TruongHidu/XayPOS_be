@@ -1,8 +1,8 @@
 "openapi": "3.0.3"
 "info":
   "title": "POS SaaS Staff Order MVP"
-  "version": "1.5.0"
-  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/single-item and bulk mark-ready/mark-served/complete/close operations are documented in kitchen-lifecycle-api.yaml. V23 grants KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN without bypassing snapshot features or user DENY; bulk body uses expectedOrderVersion. V24 complete DINE_IN atomically closes exactly order.tableSessionId after full payment, all live items SERVED and session readiness, with ORDER_COMPLETE+TABLE_CLOSE and ORDER_MANAGEMENT+TABLE_MANAGEMENT. TAKEAWAY requires only ORDER_COMPLETE+ORDER_MANAGEMENT and no TABLE operation. Complete body remains expectedVersion of ORDER and response remains OrderResponse; CLOSED retries are no-ops, legacy COMPLETED+OPEN repairs close only the session if ready. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including manual close/cancel according to existing policies; refresh/login required. V25 QR ordering uses separate guest pending-request and staff-approval APIs in public-qr-order-api.yaml, never private ORDER permitAll or client QR source overrides. Staff hashes, DTOs and POS_QUICK_ORDER gate remain unchanged. No /orders/from-table route or recipe/inventory deduction; occupancy stays in TABLE."
+  "version": "1.6.0"
+  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/single-item and bulk mark-ready/mark-served/complete/close operations are documented in kitchen-lifecycle-api.yaml. V23 grants KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN without bypassing snapshot features or user DENY; bulk body uses expectedOrderVersion. V24 complete DINE_IN atomically closes exactly order.tableSessionId after full payment, all live items SERVED and session readiness, with ORDER_COMPLETE+TABLE_CLOSE and ORDER_MANAGEMENT+TABLE_MANAGEMENT. TAKEAWAY requires only ORDER_COMPLETE+ORDER_MANAGEMENT and no TABLE operation. Complete body remains expectedVersion of ORDER and response remains OrderResponse; CLOSED retries are no-ops, legacy COMPLETED+OPEN repairs close only the session if ready. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including manual close/cancel according to existing policies; refresh/login required. V25 QR ordering uses separate guest pending-request and staff-approval APIs in public-qr-order-api.yaml. Staff hashes, DTOs and POS_QUICK_ORDER gate remain unchanged. V33 reserves tracked immutable snapshot usages during SUBMIT/confirm/append/QR approve; DRAFT and QR pending never reserve. Missing default warehouse or insufficient available stock returns 409 INVENTORY_DEFAULT_WAREHOUSE_REQUIRED/INSUFFICIENT_AVAILABLE_STOCK and rolls back the whole command. PENDING starts consume once; cancel PENDING releases without increasing physical. Durable SKIPPED never applies inventory later. Existing staff permissions suffice without inventory/recipe management permissions. Payment/complete do not deduct; table transfer preserves allocation warehouse. Allocation details remain separate in tenant-api.yaml and never enter ordinary OrderResponse. No /orders/from-table route; occupancy stays in TABLE."
 "security":
   -
     "BearerAuth": []
@@ -572,6 +572,40 @@
         "404": { "$ref": "#/components/responses/NotFound" }
         "409": { "$ref": "#/components/responses/Conflict" }
         "500": { "$ref": "#/components/responses/Internal" }
+  "/api/v1/orders/{orderId}/items/{orderItemId}/recipe-snapshot":
+    "get":
+      "operationId": "getOrderItemRecipeSnapshot"
+      "description": "Requires ORDER_VIEW plus RECIPE_VIEW, ORDER_MANAGEMENT plus RECIPE_MANAGEMENT and the normal tenant/account/restaurant/subscription guards. Reads immutable recipe acceptance data only; no live recipe/ingredient/cost lookup or mutation. Cross-tenant or wrong-order lines return 404. CAPTURED includes all recipe ingredients, including trackInventory=false; quantities use final CEILING scale 3, waste=quantity*(1+waste/100). NO_RECIPE and FEATURE_DISABLED decisions are durable; LEGACY_UNAVAILABLE means pre-V32 submitted lines with no guessed recipe and null capturedAt. NOT_SUBMITTED is response-only for unsent lines. Submitted missing/drifted snapshots return ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT. Does not reserve or deduct inventory, compute actual historical cost or expose private recipe data in regular ORDER/KDS/public QR responses."
+      "security": [{"BearerAuth": []}]
+      "x-permission": "ORDER_VIEW and RECIPE_VIEW"
+      "parameters":
+        - {"name": "orderId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+        - {"name": "orderItemId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      "responses":
+        "200":
+          "description": "Immutable snapshot or NOT_SUBMITTED; no body is sent in the request."
+          "headers": {"Cache-Control": {"schema": {"type": "string", "example": "no-store"}}}
+          "content":
+            "application/json":
+              "schema": {"$ref": "#/components/schemas/OrderRecipeSnapshot"}
+              "example":
+                "orderId": "11111111-1111-4111-8111-111111111111"
+                "orderItemId": "22222222-2222-4222-8222-222222222222"
+                "snapshotStatus": "CAPTURED"
+                "recipeId": "33333333-3333-4333-8333-333333333333"
+                "recipeVersion": 2
+                "yieldQuantity": 10.000
+                "yieldUnit": "phần"
+                "orderQuantity": 3.000
+                "orderUnit": "phần"
+                "capturedAt": "2026-10-20T08:00:00Z"
+                "ingredients": [{"ingredientId": "44444444-4444-4444-8444-444444444444", "sku": "BEEF", "name": "Thịt bò", "unit": "g", "recipeQuantity": 1000.000, "wastePercent": 5.00, "trackInventory": true, "requiredQuantity": 315.000}]
+        "400": {"$ref": "#/components/responses/BadRequest"}
+        "401": {"$ref": "#/components/responses/Unauthorized"}
+        "403": {"$ref": "#/components/responses/Forbidden"}
+        "404": {"$ref": "#/components/responses/NotFound"}
+        "409": {"$ref": "#/components/responses/Conflict"}
+        "500": {"$ref": "#/components/responses/Internal"}
 "components":
   "securitySchemes":
     "BearerAuth":
@@ -660,6 +694,35 @@
         - "DRAFT"
         - "SUBMIT"
       "description": "Command intent, not a status. Absent/null means legacy DRAFT."
+    "OrderRecipeSnapshot":
+      "type": "object"
+      "additionalProperties": false
+      "required": ["orderId", "orderItemId", "snapshotStatus", "recipeId", "recipeVersion", "yieldQuantity", "yieldUnit", "orderQuantity", "orderUnit", "capturedAt", "ingredients"]
+      "properties":
+        "orderId": {"type": "string", "format": "uuid"}
+        "orderItemId": {"type": "string", "format": "uuid"}
+        "snapshotStatus": {"type": "string", "enum": ["CAPTURED", "NO_RECIPE", "FEATURE_DISABLED", "LEGACY_UNAVAILABLE", "NOT_SUBMITTED"]}
+        "recipeId": {"type": "string", "format": "uuid", "nullable": true}
+        "recipeVersion": {"type": "integer", "minimum": 1, "nullable": true, "description": "Immutable recipe business version, not lock_version."}
+        "yieldQuantity": {"type": "number", "exclusiveMinimum": true, "minimum": 0, "multipleOf": 0.001, "nullable": true}
+        "yieldUnit": {"type": "string", "nullable": true}
+        "orderQuantity": {"type": "number", "exclusiveMinimum": true, "minimum": 0, "multipleOf": 0.001}
+        "orderUnit": {"type": "string"}
+        "capturedAt": {"type": "string", "format": "date-time", "nullable": true}
+        "ingredients": {"type": "array", "items": {"$ref": "#/components/schemas/OrderRecipeUsage"}}
+    "OrderRecipeUsage":
+      "type": "object"
+      "additionalProperties": false
+      "required": ["ingredientId", "sku", "name", "unit", "recipeQuantity", "wastePercent", "trackInventory", "requiredQuantity"]
+      "properties":
+        "ingredientId": {"type": "string", "format": "uuid"}
+        "sku": {"type": "string", "nullable": true}
+        "name": {"type": "string"}
+        "unit": {"type": "string"}
+        "recipeQuantity": {"type": "number", "minimum": 0, "exclusiveMinimum": true, "multipleOf": 0.001}
+        "wastePercent": {"type": "number", "minimum": 0, "maximum": 100, "multipleOf": 0.01}
+        "trackInventory": {"type": "boolean"}
+        "requiredQuantity": {"type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 99999999999.999, "multipleOf": 0.001}
     "OrderStatus":
       "type": "string"
       "enum":

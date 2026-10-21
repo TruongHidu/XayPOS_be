@@ -124,7 +124,7 @@ class QrStaffApprovalPolicyTest {
         var access = mock(OrderAccessService.class); var items = mock(OrderItemRepository.class);
         when(access.order(tenant, request.getApprovedOrderId())).thenReturn(root);
         when(items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(tenant, root.getId())).thenReturn(List.of());
-        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper());
+        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper(), mock(com.possaas.modules.order.service.OrderInventoryAllocationOperation.class));
         var context = new QrApprovalContext(new OrderAccessService.Locked(staff, restaurant()), now, "127.0.0.1", approve(null), request, List.of());
         var chain = new OrderChain<QrApprovalContext,QrApprovalResponse>(List.of(replay, (c,n) -> { throw new AssertionError("Replay reached mutable validation"); }),
             c -> { throw new AssertionError("Replay reached persistence"); });
@@ -135,7 +135,7 @@ class QrStaffApprovalPolicyTest {
 
     @Test void replayWrongTargetAndTakeawayNonNullTargetFailBeforeRootReads() {
         var access = mock(OrderAccessService.class); var items = mock(OrderItemRepository.class);
-        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper());
+        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper(), mock(com.possaas.modules.order.service.OrderInventoryAllocationOperation.class));
         var request = request(QrEntryType.TABLE); request.setStatus(QrRequestStatus.APPROVED); request.setApprovedSessionId(session);
         var chain = new OrderChain<QrApprovalContext,QrApprovalResponse>(List.of(replay), c -> { throw new AssertionError(); });
         var context = new QrApprovalContext(new OrderAccessService.Locked(staff, restaurant()), now, null, approve(UUID.randomUUID()), request, List.of());
@@ -147,7 +147,7 @@ class QrStaffApprovalPolicyTest {
     @Test void stalePendingVersionNeverReachesApprovalPreparation() {
         var request = request(QrEntryType.RESTAURANT); request.setVersion(1);
         var access = mock(OrderAccessService.class); var items = mock(OrderItemRepository.class);
-        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper());
+        var replay = new QrApprovalReplayHandler(access, items, new OrderResponseMapper(), new QrStaffResponseMapper(), mock(com.possaas.modules.order.service.OrderInventoryAllocationOperation.class));
         var chain = new OrderChain<QrApprovalContext,QrApprovalResponse>(List.of(replay), c -> { throw new AssertionError(); });
         var context = new QrApprovalContext(new OrderAccessService.Locked(staff, restaurant()), now, null, approve(null), request, List.of());
         assertCode(() -> chain.execute(context), "CONCURRENT_QR_REQUEST_UPDATE"); verifyNoInteractions(access, items);

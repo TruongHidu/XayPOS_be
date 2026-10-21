@@ -2,6 +2,7 @@ package com.possaas.modules.order.controller;
 
 import com.possaas.common.exception.BusinessException;
 import com.possaas.common.exception.GlobalExceptionHandler.ErrorResponse;
+import com.possaas.modules.order.service.OrderInventoryPersistenceConflict;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Clock;
 import java.util.Map;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-@RestControllerAdvice(assignableTypes={OrderQueryController.class,OrderCommandController.class,OrderSessionQueryController.class,KitchenQueueController.class})
+@RestControllerAdvice(assignableTypes={OrderQueryController.class,OrderCommandController.class,OrderSessionQueryController.class,KitchenQueueController.class,OrderRecipeSnapshotController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE) @RequiredArgsConstructor
 public class OrderConflictHandler {
     private final Clock clock;
@@ -32,8 +33,11 @@ public class OrderConflictHandler {
     @ExceptionHandler({DataIntegrityViolationException.class,OptimisticLockingFailureException.class,PessimisticLockingFailureException.class,
             jakarta.persistence.LockTimeoutException.class,jakarta.persistence.PessimisticLockException.class})
     ResponseEntity<ErrorResponse> conflict(RuntimeException failure) {
+        var inventory=OrderInventoryPersistenceConflict.translate(failure);
+        if(inventory!=null) return business(inventory);
         for(Throwable cause=failure;cause!=null;cause=cause.getCause()) {
             if(cause instanceof org.hibernate.exception.ConstraintViolationException constraint) {
+                if("uq_order_recipe_snapshot_line".equals(constraint.getConstraintName()) || "uq_order_recipe_usage_ingredient".equals(constraint.getConstraintName())) return error(HttpStatus.CONFLICT,"ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT","Order recipe snapshot already exists or conflicts with immutable data");
                 if("ux_order_serving_session".equals(constraint.getConstraintName())) return error(HttpStatus.CONFLICT,"TABLE_SESSION_HAS_SERVING_ORDER","Session already has a serving order; append to the existing order");
                 if("ux_table_session_open".equals(constraint.getConstraintName())) return error(HttpStatus.CONFLICT,"TABLE_ALREADY_OCCUPIED","Table already has an open session; reload before retrying");
                 if("uq_order_idempotency".equals(constraint.getConstraintName()) || "uq_order_item_submission_key".equals(constraint.getConstraintName())) return error(HttpStatus.CONFLICT,"IDEMPOTENCY_KEY_REUSED","Idempotency key conflict; reload before retrying");
@@ -43,7 +47,11 @@ public class OrderConflictHandler {
         return error(HttpStatus.CONFLICT,"CONCURRENT_ORDER_UPDATE","Order changed concurrently or conflicts with a persistence constraint");
     }
     @ExceptionHandler(Exception.class)
-    ResponseEntity<ErrorResponse> unexpected(Exception failure) { return error(HttpStatus.INTERNAL_SERVER_ERROR,"INTERNAL_ERROR","Could not process the order request"); }
+    ResponseEntity<ErrorResponse> unexpected(Exception failure) {
+        var inventory=OrderInventoryPersistenceConflict.translate(failure);
+        if(inventory!=null) return business(inventory);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR,"INTERNAL_ERROR","Could not process the order request");
+    }
     private ResponseEntity<ErrorResponse> error(HttpStatus status,String code,String message) {
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(new ErrorResponse(false,code,message,Map.of(),clock.instant()));
     }

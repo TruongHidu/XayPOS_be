@@ -1,5 +1,20 @@
 # POS SaaS Backend
 
+## Inventory
+
+V30 triển khai Inventory Phase 1: warehouse/default warehouse, sparse current
+balance, minimum threshold và derived low-stock query. `quantity` chỉ đọc; chưa có
+API nhập/xuất/chuyển/điều chỉnh, stock transaction hoặc tự trừ theo order/công thức.
+Warehouse/balance cần `INVENTORY_MANAGEMENT`; low-stock cần thêm
+`LOW_STOCK_ALERT`. Permission ghi mới chỉ grant OWNER/SUPER_ADMIN. Xem
+[Inventory API](docs/inventory-api.md) và [OpenAPI tenant](docs/openapi/tenant-api.yaml).
+
+V31 triển khai Inventory Phase 2: chứng từ `RECEIPT`, `ISSUE`, `ADJUSTMENT`, chỉnh
+DRAFT bằng optimistic locking, confirm/cancel idempotent, cập nhật balance atomic và
+sổ `inventory_transactions` append-only. Xác nhận không cho tồn âm và rollback toàn
+bộ nếu bất kỳ dòng nào lỗi. Chưa có transfer, kiểm kê, nhà cung cấp, đổi đơn vị, tự
+trừ theo order/công thức hoặc hoàn tác chứng từ đã xác nhận.
+
 ## Operational reports
 
 Tenant operational reporting is available under `/api/v1/reports`. It separates successful payment collections from completed-order sales, applies restaurant timezone/currency filters, and exposes only read-only report DTOs. See [Report API](docs/report-api.md), [OpenAPI](docs/openapi/report-api.yaml), and [frontend synchronization notes](docs/report-fe-sync.md).
@@ -96,6 +111,27 @@ cho các lần capture snapshot sau migration, giữ nguyên feature rows/lịch
 Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
 V14 triển khai API nhóm món và món bán với Strategy tạo item, soft delete, version và audit.
 Xem mục Menu trong docs/tenant-api.md và docs/openapi/tenant-api.yaml.
+V28 bổ sung danh mục nguyên liệu trên cùng bảng `items` (`item_type=INGREDIENT`),
+Strategy riêng, soft delete/version/audit và permission INGREDIENT_*; truy cập cần
+RECIPE_MANAGEMENT hoặc INVENTORY_MANAGEMENT trong snapshot. Đây chưa phải module kho:
+[API/Postman](docs/ingredient-api.md) · [OpenAPI tenant](docs/openapi/tenant-api.yaml).
+V29 bổ sung aggregate công thức với immutable business version, đúng một active
+version/món, ingredient snapshot, audit và permission RECIPE_*; truy cập chỉ dùng
+RECIPE_MANAGEMENT. Công thức chưa trừ kho, không nhúng vào response order/public menu:
+[API/Postman](docs/recipe-api.md) · [OpenAPI tenant](docs/openapi/tenant-api.yaml).
+Recipe cost estimate bổ sung `GET .../recipes/{recipeId}/cost-estimate`: snapshot
+định lượng của đúng version + giá nguyên liệu tham chiếu hiện tại, batch/per-yield
+cost, warning giá 0 và kiểm tra đơn vị. Yêu cầu RECIPE_VIEW + RECIPE_MANAGEMENT;
+chỉ đọc, no-store, không cần migration/kho/tồn và không cập nhật costPrice hay ledger.
+V32 chốt snapshot recipe/định lượng bất biến tại SUBMIT, confirm, gọi thêm và QR
+approval; DRAFT/QR pending không capture, legacy không đoán recipe. API đọc riêng
+cần ORDER_VIEW + RECIPE_VIEW và RECIPE_MANAGEMENT, không lộ qua order/public QR.
+Chưa giữ chỗ hoặc trừ kho: [API/Postman và thiết kế](docs/order-recipe-snapshot-api.md).
+Confirm RECEIPT nay cập nhật `INGREDIENT.costPrice` theo bình quân liên hoàn trên
+tổng tồn các kho cùng tenant, cùng transaction với tồn/ledger/audit; retry không
+tính lặp. Không đổi giá bán hay `MENU_ITEM.costPrice`; recipe estimate đọc giá mới.
+Không cần migration; xem quy tắc giá 0, cập nhật version và giới hạn định giá tại
+[Inventory API](docs/inventory-api.md).
 V15 triển khai 21 API khu vực/bàn, QR quản trị và phiên xếp khách OPEN -> CANCELLED.
 Yêu cầu TABLE_MANAGEMENT và TABLE_* tương ứng; occupancy suy ra từ phiên OPEN,
 được bảo vệ bằng tenant lock, @Version và partial unique index. QR token không xuất
@@ -103,7 +139,8 @@ hiện trong response bàn thông thường hoặc audit. Xem mục Tables trong
 Public menu QR và menu chung nhà hàng đã có API đọc riêng; complete DINE_IN tự đóng phiên đủ điều kiện.
 `/api/v1/table-sessions/{sessionId}/close` vẫn dùng được riêng và idempotent sau auto-close.
 V16/V17 triển khai ORDER MVP và usage guard thực tế dùng chung restaurant lock
-với hủy phiên. Từ V21 đã có ghi nhận payment thủ công; V22 có KDS tối thiểu, inventory/report/AI vẫn chưa có API nghiệp vụ.
+với hủy phiên. Từ V21 đã có ghi nhận payment thủ công; V22 có KDS tối thiểu,
+V27 có báo cáo vận hành và V30 có nền tảng inventory; AI vẫn chưa có API nghiệp vụ.
 V18 thêm ledger `order_item_submissions`: tenant-scoped key cho append SUBMIT, replay không thêm dòng lần hai.
 Không gửi submissionMode vẫn DRAFT như cũ. SUBMIT tạo cần ORDER_CREATE + ORDER_UPDATE;
 append cần ORDER_UPDATE và key/version cố định cho một intent. Không tự gộp order theo bàn.
@@ -153,6 +190,12 @@ JWT secret nằm ở `app.jwt.secret`; khi triển khai thật phải đặt `JW
 ## Cấu trúc
 
 Mã nguồn nằm dưới namespace `com.possaas`, được chia thành `common`, `config`, `modules`, `infrastructure` và `jobs`. Migration đặt tại `src/main/resources/db/migration`.
+
+Giai đoạn 5 dùng recipe snapshot để giữ chỗ khi gửi món, tiêu thụ khi bắt đầu thực
+hiện và giải phóng khi hủy PENDING. Tài liệu:
+[API và Postman](docs/order-inventory-allocation-api.md),
+[thiết kế/migration](docs/order-inventory-allocation-implementation.md),
+[đồng bộ FE](docs/order-inventory-allocation-fe-sync.md).
 
 ## Feature, package và subscription
 

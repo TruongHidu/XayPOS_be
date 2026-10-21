@@ -4,6 +4,14 @@ Luồng KDS là **SUBMIT (món PENDING) → COOKING → READY → SERVED → COM
 
 Tất cả API dùng `Authorization: Bearer <accessToken>`, tenant từ JWT, `Cache-Control: no-store`. Mutation JSON cần `Content-Type: application/json`. Dùng quyền hiệu lực (gồm GRANT/DENY), không hard-code role. KDS cần snapshot `KITCHEN_DISPLAY`; mark-served/complete cần `ORDER_MANAGEMENT`; complete DINE_IN thêm `TABLE_MANAGEMENT`, giống close riêng.
 
+V33 tự consume allocation RESERVED khi PENDING -> COOKING hoặc bulk PENDING ->
+SERVED, cùng transaction trạng thái/history/audit. Các bước READY/SERVED tiếp theo
+không trừ lại. Quyền action hiện có đủ, không thêm INVENTORY_ISSUE/RECIPE_VIEW.
+Allocation SKIPPED không trừ kho muộn; reservation đã chốt tiếp tục consume/release
+khi feature recipe/inventory bị gỡ. Payment/complete không consume bù; complete
+từ chối dữ liệu còn RESERVED hoặc SERVED chưa CONSUMED. Request/response và rule
+single/bulk giữ nguyên. [Chi tiết và FE](order-inventory-allocation-api.md).
+
 | API | Permission | Body | Thành công |
 | --- | --- | --- | --- |
 | `GET /api/v1/kitchen/items?status=PENDING&page=0&size=20` | `KITCHEN_VIEW` | Không | `200 PageResponse<KitchenQueueItemResponse>` |

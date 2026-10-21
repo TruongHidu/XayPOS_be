@@ -6,6 +6,9 @@ info:
     QR TABLE (DINE_IN/QR_TABLE) and RESTAURANT (TAKEAWAY/QR_STATIC) use guest pending requests followed by staff approval.
     No OPEN session or PIN is required before submission. Pending requests create no order, items, kitchen history, bill or occupancy.
     Guest tokens are opaque capabilities, not staff JWTs or proof of physical presence.
+    V33 reserves tracked recipe snapshot usages only during staff approval. Pending/review/reject/cancel/expire never reserve.
+    INVENTORY_DEFAULT_WAREHOUSE_REQUIRED or INSUFFICIENT_AVAILABLE_STOCK returns 409 and rolls back approval, new order/session, snapshots and allocations; request remains PENDING.
+    Approval replay never reserves twice. Staff review/version/hash/quote guards remain required after replenishment. No ingredient/allocation/cost detail is exposed to guests.
 security:
   - BearerAuth: []
 paths:

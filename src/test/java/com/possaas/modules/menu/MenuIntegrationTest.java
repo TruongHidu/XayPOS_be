@@ -113,7 +113,8 @@ class MenuIntegrationTest {
         var item = createItem(group.id(), " coffee ");
         verify(strategy).create(any());
         assertThat(item.body.path("sku").asText()).isEqualTo("COFFEE");
-        assertThat(item.body.toString()).doesNotContain("costPrice", "trackInventory", "metadata", "itemType");
+        assertThat(item.body.path("costPrice").decimalValue()).isEqualByComparingTo("0.00");
+        assertThat(item.body.toString()).doesNotContain("trackInventory", "metadata", "itemType");
         var changed = call(patch(path(item) + "/availability")
                 .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}"));
         changed.expect(200);
@@ -191,7 +192,7 @@ class MenuIntegrationTest {
     @Test
     void validationAndReadOnlyFieldsCannotBypassBusinessRules() throws Exception {
         for (String extra : List.of("\"itemType\":\"INGREDIENT\"",
-                "\"restaurantId\":\"" + owner.getRestaurantId() + "\"", "\"costPrice\":1",
+                "\"restaurantId\":\"" + owner.getRestaurantId() + "\"",
                 "\"availabilityStatus\":\"OUT_OF_STOCK\"", "\"metadata\":{}", "\"recipe\":{}")) {
             call(post("/api/v1/menu/items")
                     .content("{\"name\":\"Coffee\",\"baseUnit\":\"cup\",\"salePrice\":1," + extra + "}"))

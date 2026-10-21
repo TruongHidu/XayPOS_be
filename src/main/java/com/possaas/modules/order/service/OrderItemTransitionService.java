@@ -32,6 +32,7 @@ public class OrderItemTransitionService {
     private final OrderAudit audit;
     private final OrderResponseMapper mapper;
     private final Clock clock;
+    private final OrderInventoryAllocationOperation inventory;
 
     @Transactional
     public OrderResponse transition(UUID orderId,UUID itemId,long expectedVersion,
@@ -48,10 +49,13 @@ public class OrderItemTransitionService {
             new ResourceNotFoundException("ORDER_ITEM_NOT_FOUND","Order item not found"));
         policy.requireSubmitted(order);
         var lines=items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(tenant,orderId);
-        if(!policy.requireTransition(line.getStatus(),source,target)) return mapper.detail(order,lines);
+        boolean changed=policy.requireTransition(line.getStatus(),source,target);
+        inventory.validate(order,lines);
+        if(!changed) return mapper.detail(order,lines);
         lifecycle.requireVersion(order,expectedVersion);
         var before=audit.snapshot(order,lines);
         var now=clock.instant().truncatedTo(ChronoUnit.MICROS);
+        if(source==OrderItemStatus.PENDING) inventory.consume(order,java.util.List.of(line),actor,now,ip);
         line.setStatus(target); line.setUpdatedAt(now);
         order.setStatus(servingStatus.aggregate(order,lines));
         order.changed(now);

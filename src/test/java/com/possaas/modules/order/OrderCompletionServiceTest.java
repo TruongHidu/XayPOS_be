@@ -28,6 +28,7 @@ import com.possaas.modules.order.service.OrderAudit;
 import com.possaas.modules.order.service.OrderCompletionPolicy;
 import com.possaas.modules.order.service.OrderCompletionService;
 import com.possaas.modules.order.service.OrderLifecyclePolicy;
+import com.possaas.modules.order.service.OrderInventoryAllocationOperation;
 import com.possaas.modules.order.service.OrderResponseMapper;
 import com.possaas.modules.restaurant.entity.Restaurant;
 import com.possaas.modules.table.application.port.OrderSessionClosureCommand;
@@ -66,7 +67,7 @@ class OrderCompletionServiceTest {
         items = mock(OrderItemRepository.class); closure = mock(OrderSessionClosureCommand.class);
         audit = mock(OrderAudit.class); mapper = mock(OrderResponseMapper.class);
         service = new OrderCompletionService(access, orders, items, new OrderLifecyclePolicy(),
-            new OrderCompletionPolicy(), closure, audit, mapper, Clock.fixed(NOW, ZoneOffset.UTC));
+            new OrderCompletionPolicy(), closure, audit, mapper, Clock.fixed(NOW, ZoneOffset.UTC), mock(OrderInventoryAllocationOperation.class));
         order = new Order(); order.initialize(tenant, NOW.minusSeconds(60)); order.setId(orderId);
         order.setServiceType(ServiceType.DINE_IN); order.setTableSessionId(sessionId);
         order.setStatus(OrderStatus.SERVED); order.setPaymentStatus(OrderPaymentStatus.PAID);

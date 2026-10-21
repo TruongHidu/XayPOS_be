@@ -6,7 +6,19 @@ session.tableId là bàn hiện tại/cuối cùng, không phải snapshot nơi 
 Active-order và gọi thêm vẫn dùng cùng session/order sau chuyển. Original create/append
 retry giữ nguyên payload/key (kể cả tableId nguồn cũ); không đổi fingerprint hoặc CoR/Strategy.
 
-Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; ghi nhận thanh toán thủ công xem [payment-api.md](payment-api.md). KDS, hoàn tất order và đóng phiên xem [kitchen-completion-api.md](kitchen-completion-api.md). QR gọi món dùng [request/approval APIs riêng](public-qr-order-api.md), không mở private ORDER cho guest. Chưa có recipe hoặc trừ kho. OpenAPI: [order-api.yaml](openapi/order-api.yaml) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml).
+Order dành cho nhân viên đã đăng nhập: tại bàn (DINE_IN) hoặc mang đi (TAKEAWAY). Dùng menu/bàn/phiên hiện có; ghi nhận thanh toán thủ công xem [payment-api.md](payment-api.md). KDS, hoàn tất order và đóng phiên xem [kitchen-completion-api.md](kitchen-completion-api.md). QR gọi món dùng [request/approval APIs riêng](public-qr-order-api.md), không mở private ORDER cho guest. OpenAPI: [order-api.yaml](openapi/order-api.yaml) và [kitchen-lifecycle-api.yaml](openapi/kitchen-lifecycle-api.yaml).
+
+V32 bổ sung snapshot công thức bất biến khi SUBMIT/confirm/approve QR, không trừ
+kho hoặc thay response order thường. API đọc quản trị và kịch bản Postman:
+[Snapshot công thức order item](order-recipe-snapshot-api.md).
+
+V33 bổ sung [allocation nguyên liệu](order-inventory-allocation-api.md): snapshot
+vẫn chốt định lượng, allocation giữ chỗ khi chấp nhận món, RECIPE_USE giảm tồn khi
+PENDING bắt đầu thực hiện, cancel PENDING giải phóng reserved. DRAFT/QR pending
+không giữ chỗ. Request và quyền ORDER/KDS không đổi; không cần quyền quản lý kho
+cho side effect. Thiếu kho default/available trả 409 và rollback toàn bộ command.
+Payment/complete không trừ lại; complete kiểm không còn RESERVED bị bỏ quên.
+Đổi bàn không thay kho đã chốt. [Đồng bộ FE](order-inventory-allocation-fe-sync.md).
 
 Files và kết quả test thực tế: [order-implementation.md](order-implementation.md).
 
@@ -26,6 +38,7 @@ Các endpoint đọc/tạo/sửa/hủy ORDER trong bảng dưới yêu cầu fea
 | --- | --- | --- |
 | GET | /api/v1/orders | ORDER_VIEW |
 | GET | /api/v1/orders/{orderId} | ORDER_VIEW |
+| GET | /api/v1/orders/{orderId}/items/{orderItemId}/recipe-snapshot | ORDER_VIEW và RECIPE_VIEW; ORDER_MANAGEMENT và RECIPE_MANAGEMENT |
 | GET | /api/v1/table-sessions/{sessionId}/active-order | ORDER_VIEW |
 | POST | /api/v1/orders | ORDER_CREATE; SUBMIT cần thêm ORDER_UPDATE; mở phiên mới cần thêm TABLE_OPEN |
 | PATCH | /api/v1/orders/{orderId} | ORDER_UPDATE |

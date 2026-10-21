@@ -107,7 +107,7 @@ class OrderQrApprovalOperationTest {
         when(menu.requireSellable(eq(tenant), any())).thenReturn(Map.of(itemId, new SellableMenuItem(itemId, "Món", "phần", new BigDecimal("20.00"))));
         return new OrderQrApprovalOperation(factory, new OrderSessionServingPolicy(orders), new OrderAppendPolicy(new OrderLifecyclePolicy(), seatingQuery),
             checkout, new OrderCodeGenerator(), new OrderLineFactory(menu, money), money, confirmation, orders, items, history,
-            audit, new OrderServingStatusPolicy(), seatingCommand, new OrderResponseMapper());
+            audit, new OrderServingStatusPolicy(), seatingCommand, new OrderResponseMapper(), mock(OrderInventoryAllocationOperation.class));
     }
     private QrApprovedOrderCommand.Intent intent(ServiceType type, SourceChannel source, UUID table, UUID session, String price) {
         var expected = new BigDecimal(price);

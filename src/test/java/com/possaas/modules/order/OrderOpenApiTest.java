@@ -11,7 +11,7 @@ class OrderOpenApiTest {
     private JsonNode document() throws Exception {
         try(var input=Files.newInputStream(Path.of("docs/openapi/order-api.yaml"))) { return new ObjectMapper().valueToTree(new Yaml().load(input)); }
     }
-    @Test void documentCoversTenPrivateOperationsAndResolvesEveryReference() throws Exception {
+    @Test void documentCoversElevenPrivateOperationsAndResolvesEveryReference() throws Exception {
         var root=document(); var operations=new HashSet<String>();
         root.path("paths").fields().forEachRemaining(path->{
             assertThat(path.getKey().startsWith("/api/v1/orders") ||
@@ -24,7 +24,7 @@ class OrderOpenApiTest {
                 for(String status:List.of("400","401","403","404","409","500")) assertThat(operation.path("responses").has(status)).isTrue();
             });
         });
-        assertThat(operations).hasSize(10); references(root,root);
+        assertThat(operations).hasSize(11); references(root,root);
         var create=root.at("/paths/~1api~1v1~1orders/post");
         assertThat(create.path("parameters").get(0).path("name").asText()).isEqualTo("Idempotency-Key");
         assertThat(create.path("parameters").get(0).path("required").asBoolean()).isTrue();
@@ -38,6 +38,15 @@ class OrderOpenApiTest {
         for(String name:List.of("costPrice","requestHash","idempotencyKey","mutationSequence","metadata")) assertThat(order.has(name)).isFalse();
         assertThat(root.at("/components/schemas/OrderItem/properties").has("costPrice")).isFalse();
         assertThat(root.at("/components/schemas/UpdateItem/required").toString()).contains("expectedVersion");
+    }
+    @Test void recipeSnapshotIsSeparateReadOnlyPrivateOperationWithAccurateExample() throws Exception {
+        var root=document();var operation=root.at("/paths/~1api~1v1~1orders~1{orderId}~1items~1{orderItemId}~1recipe-snapshot/get");
+        assertThat(operation.path("description").asText()).contains("ORDER_VIEW","RECIPE_VIEW","RECIPE_MANAGEMENT","LEGACY_UNAVAILABLE","CEILING");
+        assertThat(operation.has("requestBody")).isFalse();assertThat(operation.path("parameters").size()).isEqualTo(2);
+        assertThat(operation.at("/responses/200/headers/Cache-Control/schema/example").asText()).isEqualTo("no-store");
+        assertThat(operation.at("/responses/200/content/application~1json/example/ingredients/0/requiredQuantity").decimalValue()).isEqualByComparingTo("315.000");
+        assertThat(root.at("/components/schemas/OrderRecipeSnapshot/properties/snapshotStatus/enum").toString()).contains("CAPTURED","NO_RECIPE","FEATURE_DISABLED","LEGACY_UNAVAILABLE","NOT_SUBMITTED");
+        for(String field:List.of("recipeId","recipeVersion","ingredients"))assertThat(root.at("/components/schemas/OrderItem/properties").has(field)).isFalse();
     }
     @Test void tableSubmissionExtendsExistingRouteWithExclusiveSeatingShapesAndConditionalPermission() throws Exception {
         var root=document(); var create=root.at("/components/schemas/CreateOrder");

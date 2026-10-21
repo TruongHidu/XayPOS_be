@@ -13,6 +13,7 @@ public class CreateOrderReplayHandler implements OrderHandler<CreateOrderContext
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderResponseMapper mapper;
+    private final OrderInventoryAllocationOperation inventory;
     @Override public OrderCreationService.Result handle(CreateOrderContext c,OrderNext<CreateOrderContext,OrderCreationService.Result> next) {
         var actor=c.facts().locked().actor();
         var request=normalizer.normalize(c.request());
@@ -23,8 +24,9 @@ public class CreateOrderReplayHandler implements OrderHandler<CreateOrderContext
         var existing=orders.findByRestaurantIdAndIdempotencyKey(actor.restaurantId(),key);
         if(existing.isPresent()) {
             var order=existing.get(); idempotency.requireReplayMatch(order,actor.userId(),hash);
-            return next.complete(new OrderCreationService.Result(mapper.detail(order,
-                items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(actor.restaurantId(),order.getId())),true));
+            var lines=items.findAllByRestaurantIdAndOrderIdOrderByLineNumberAsc(actor.restaurantId(),order.getId());
+            inventory.validate(order,lines);
+            return next.complete(new OrderCreationService.Result(mapper.detail(order,lines),true));
         }
         return next.proceed(c);
     }

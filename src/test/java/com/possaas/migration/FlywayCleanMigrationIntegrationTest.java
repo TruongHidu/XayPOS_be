@@ -8,21 +8,43 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.UUID;
+import java.util.Map;
 
 import javax.sql.DataSource;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FlywayCleanMigrationIntegrationTest {
 
     private static final String TEST_SCHEMA_PREFIX = "it_flyway_";
+    private static final String CONTEXT_SCHEMA = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+
+    @DynamicPropertySource
+    static void isolatedContext(DynamicPropertyRegistry properties) {
+        String base = System.getenv().getOrDefault("DB_URL", "jdbc:postgresql://localhost:5432/kiot_tay_db");
+        String url = base.contains("currentSchema=")
+                ? base.replaceAll("currentSchema=[^&]*", "currentSchema=" + CONTEXT_SCHEMA)
+                : base + (base.contains("?") ? "&" : "?") + "currentSchema=" + CONTEXT_SCHEMA;
+        properties.add("spring.datasource.url", () -> url);
+        properties.add("spring.flyway.schemas", () -> CONTEXT_SCHEMA);
+        properties.add("spring.flyway.default-schema", () -> CONTEXT_SCHEMA);
+        properties.add("spring.jpa.properties.hibernate.default_schema", () -> CONTEXT_SCHEMA);
+    }
 
     @Autowired
     private DataSource dataSource;
+
+    @AfterAll
+    void cleanupContextSchema() throws Exception { dropTestSchema(CONTEXT_SCHEMA); }
 
     @Test
     void migratesAllVersionsOnAnEmptyPostgresqlSchema() throws Exception {
@@ -40,8 +62,26 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("27");
-            assertThat(countTables(schema)).isEqualTo(27);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("33");
+            assertThat(countTables(schema)).isEqualTo(38);
+            assertThat(tableExists(schema, "order_item_inventory_allocations")).isTrue();
+            assertThat(tableExists(schema, "inventory_reservations")).isTrue();
+            assertThat(tableExists(schema, "order_item_recipe_snapshots")).isTrue();
+            assertThat(tableExists(schema, "order_item_recipe_usages")).isTrue();
+            assertThat(tableExists(schema, "stock_documents")).isTrue();
+            assertThat(tableExists(schema, "stock_document_items")).isTrue();
+            assertThat(tableExists(schema, "inventory_transactions")).isTrue();
+            assertThat(indexExists(schema, "ix_stock_document_status_created")).isTrue();
+            assertThat(indexExists(schema, "ix_inventory_transaction_item_created")).isTrue();
+            assertThat(tableExists(schema, "warehouses")).isTrue();
+            assertThat(tableExists(schema, "inventory_balances")).isTrue();
+            assertThat(indexExists(schema, "ux_warehouse_default")).isTrue();
+            assertThat(indexExists(schema, "ix_inventory_balance_tenant_warehouse_item")).isTrue();
+            assertThat(tableExists(schema, "recipes")).isTrue();
+            assertThat(tableExists(schema, "recipe_items")).isTrue();
+            assertThat(indexExists(schema, "ux_recipe_active")).isTrue();
+            assertThat(indexExists(schema, "ix_recipe_history")).isTrue();
+            assertThat(indexExists(schema, "ix_recipe_item_ingredient")).isTrue();
             assertThat(tableExists(schema, "qr_table_access")).isTrue();
             assertThat(tableExists(schema, "qr_guest_authorizations")).isTrue();
             assertThat(tableExists(schema, "qr_order_requests")).isTrue();
@@ -80,6 +120,49 @@ class FlywayCleanMigrationIntegrationTest {
                 assertThat(rows.getString(1)).isEqualTo("CASHIER,MANAGER,OWNER,WAITER");
             }
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
+                     + "\".permissions WHERE module='INVENTORY' AND code IN "
+                     + "('INGREDIENT_VIEW','INGREDIENT_CREATE','INGREDIENT_UPDATE','INGREDIENT_DELETE')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(4);
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT string_agg(DISTINCT r.code,',' ORDER BY r.code) FROM \""
+                     + schema + "\".roles r JOIN \"" + schema + "\".role_permissions rp ON rp.role_id=r.id JOIN \""
+                     + schema + "\".permissions p ON p.id=rp.permission_id WHERE p.code LIKE 'INGREDIENT_%'")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("OWNER,SUPER_ADMIN");
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
+                     + "\".permissions WHERE module='INVENTORY' AND code IN "
+                     + "('WAREHOUSE_CREATE','WAREHOUSE_UPDATE','WAREHOUSE_DELETE','INVENTORY_THRESHOLD_UPDATE')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(4);
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT string_agg(DISTINCT r.code,',' ORDER BY r.code) FROM \""
+                     + schema + "\".roles r JOIN \"" + schema + "\".role_permissions rp ON rp.role_id=r.id JOIN \""
+                     + schema + "\".permissions p ON p.id=rp.permission_id WHERE p.code IN "
+                     + "('WAREHOUSE_CREATE','WAREHOUSE_UPDATE','WAREHOUSE_DELETE','INVENTORY_THRESHOLD_UPDATE')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("OWNER,SUPER_ADMIN");
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
+                     + "\".permissions WHERE module='MENU' AND code IN "
+                     + "('RECIPE_VIEW','RECIPE_CREATE','RECIPE_UPDATE','RECIPE_DELETE')")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isEqualTo(4);
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT string_agg(DISTINCT r.code,',' ORDER BY r.code) FROM \""
+                     + schema + "\".roles r JOIN \"" + schema + "\".role_permissions rp ON rp.role_id=r.id JOIN \""
+                     + schema + "\".permissions p ON p.id=rp.permission_id WHERE p.code LIKE 'RECIPE_%'")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("OWNER,SUPER_ADMIN");
+            }
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery("SELECT p.code, p.max_staff FROM \"" + schema
                      + "\".packages p JOIN \"" + schema + "\".package_features pf ON pf.package_id=p.id JOIN \""
                      + schema + "\".features f ON f.id=pf.feature_id WHERE f.code='STAFF_MANAGEMENT' ORDER BY p.code")) {
@@ -87,6 +170,271 @@ class FlywayCleanMigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("PREMIUM"); assertThat(rows.getString(2)).isEqualTo("30");
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("PRO"); assertThat(rows.getString(2)).isEqualTo("10");
                 assertThat(rows.next()).isFalse();
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v28OnlyAddsIngredientPermissionsAndPreservesCatalogPackagesAndSnapshots() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("27").load().migrate();
+            String restaurantId = "00000000-0000-0000-0000-000000000028";
+            String snapshot = "{\"schemaVersion\":1,\"packageCode\":\"PRO\",\"features\":[{\"code\":\"RECIPE_MANAGEMENT\",\"limits\":{}}]}";
+            int packageFeatures;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES('" + restaurantId
+                    + "','V28_KEEP','V28 keep','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "items(restaurant_id,sku,name,item_type,base_unit,sale_price,"
+                    + "cost_price,track_inventory,availability_status,is_active,metadata,created_at,updated_at) VALUES('"
+                    + restaurantId + "','KEEP','Keep ingredient','INGREDIENT','g',0,12.50,true,'AVAILABLE',true,"
+                    + "'{}'::jsonb,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "restaurant_subscriptions(restaurant_id,package_id,status,"
+                    + "start_at,end_at,price_amount,currency_code,feature_snapshot) SELECT '" + restaurantId
+                    + "',id,'ACTIVE',now(),now()+interval '1 day',0,'VND','" + snapshot
+                    + "'::jsonb FROM " + prefix + "packages WHERE code='PRO'");
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    rows.next(); packageFeatures = rows.getInt(1);
+                }
+            }
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("28").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                try (ResultSet rows = statement.executeQuery("SELECT sku,item_type,cost_price,track_inventory FROM "
+                    + prefix + "items WHERE restaurant_id='" + restaurantId + "'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getString(1)).isEqualTo("KEEP");
+                    assertThat(rows.getString(2)).isEqualTo("INGREDIENT");
+                    assertThat(rows.getBigDecimal(3)).isEqualByComparingTo("12.50");
+                    assertThat(rows.getBoolean(4)).isTrue();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT feature_snapshot='" + snapshot
+                    + "'::jsonb FROM " + prefix + "restaurant_subscriptions WHERE restaurant_id='" + restaurantId + "'")) {
+                    assertThat(rows.next()).isTrue(); assertThat(rows.getBoolean(1)).isTrue();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    assertThat(rows.next()).isTrue(); assertThat(rows.getInt(1)).isEqualTo(packageFeatures);
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix
+                    + "role_permissions rp JOIN " + prefix + "roles r ON r.id=rp.role_id JOIN " + prefix
+                    + "permissions p ON p.id=rp.permission_id WHERE p.code LIKE 'INGREDIENT_%' "
+                    + "AND r.code NOT IN ('OWNER','SUPER_ADMIN')")) {
+                    assertThat(rows.next()).isTrue(); assertThat(rows.getInt(1)).isZero();
+                }
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v29CreatesRecipeSchemaAndPreservesV28DataPackagesAndSnapshots() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("28").load().migrate();
+            String restaurantId = "00000000-0000-0000-0000-000000000029";
+            String snapshot = "{\"schemaVersion\":1,\"packageCode\":\"PRO\",\"features\":[{\"code\":\"RECIPE_MANAGEMENT\",\"limits\":{}}]}";
+            int packageFeatures;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES('" + restaurantId
+                        + "','V29_KEEP','V29 keep','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "items(restaurant_id,sku,name,item_type,base_unit,sale_price,"
+                        + "cost_price,track_inventory,availability_status,is_active,metadata,created_at,updated_at) VALUES "
+                        + "('" + restaurantId + "','MENU-KEEP','Keep dish','MENU_ITEM','portion',10,2,false,'AVAILABLE',true,'{}'::jsonb,now(),now()),"
+                        + "('" + restaurantId + "','ING-KEEP','Keep ingredient','INGREDIENT','g',0,2,true,'AVAILABLE',true,'{}'::jsonb,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "restaurant_subscriptions(restaurant_id,package_id,status,"
+                        + "start_at,end_at,price_amount,currency_code,feature_snapshot) SELECT '" + restaurantId
+                        + "',id,'ACTIVE',now(),now()+interval '1 day',0,'VND','" + snapshot
+                        + "'::jsonb FROM " + prefix + "packages WHERE code='PRO'");
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    rows.next();
+                    packageFeatures = rows.getInt(1);
+                }
+            }
+
+            Flyway flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("29").load();
+            flyway.migrate();
+            flyway.validate();
+
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                assertThat(tableExists(schema, "recipes")).isTrue();
+                assertThat(tableExists(schema, "recipe_items")).isTrue();
+                assertThat(indexExists(schema, "ux_recipe_active")).isTrue();
+                try (ResultSet rows = statement.executeQuery("SELECT string_agg(sku,',' ORDER BY sku) FROM " + prefix
+                        + "items WHERE restaurant_id='" + restaurantId + "'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getString(1)).isEqualTo("ING-KEEP,MENU-KEEP");
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT feature_snapshot='" + snapshot
+                        + "'::jsonb FROM " + prefix + "restaurant_subscriptions WHERE restaurant_id='" + restaurantId + "'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getBoolean(1)).isTrue();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt(1)).isEqualTo(packageFeatures);
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "recipes")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt(1)).isZero();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT string_agg(DISTINCT r.code,',' ORDER BY r.code) FROM "
+                        + prefix + "roles r JOIN " + prefix + "role_permissions rp ON rp.role_id=r.id JOIN " + prefix
+                        + "permissions p ON p.id=rp.permission_id WHERE p.code LIKE 'RECIPE_%'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getString(1)).isEqualTo("OWNER,SUPER_ADMIN");
+                }
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v30CreatesInventoryFoundationAndPreservesV29DataPackagesAndSnapshots() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("29").load().migrate();
+            String restaurantId = "00000000-0000-0000-0000-000000000030";
+            String itemId = "00000000-0000-0000-0000-000000000031";
+            String snapshot = "{\"schemaVersion\":1,\"packageCode\":\"PREMIUM\",\"features\":[{\"code\":\"INVENTORY_MANAGEMENT\",\"limits\":{}}]}";
+            int packageFeatures;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES('" + restaurantId
+                        + "','V30_KEEP','V30 keep','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "items(id,restaurant_id,sku,name,item_type,base_unit,sale_price,"
+                        + "cost_price,track_inventory,availability_status,is_active,metadata,created_at,updated_at) VALUES('"
+                        + itemId + "','" + restaurantId + "','ING-V30','Keep ingredient','INGREDIENT','g',0,2,true,"
+                        + "'AVAILABLE',true,'{}'::jsonb,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "restaurant_subscriptions(restaurant_id,package_id,status,"
+                        + "start_at,end_at,price_amount,currency_code,feature_snapshot) SELECT '" + restaurantId
+                        + "',id,'ACTIVE',now(),now()+interval '1 day',0,'VND','" + snapshot
+                        + "'::jsonb FROM " + prefix + "packages WHERE code='PREMIUM'");
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    rows.next();
+                    packageFeatures = rows.getInt(1);
+                }
+            }
+
+            Flyway flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("30").load();
+            flyway.migrate();
+            flyway.validate();
+
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                assertThat(tableExists(schema, "warehouses")).isTrue();
+                assertThat(tableExists(schema, "inventory_balances")).isTrue();
+                try (ResultSet rows = statement.executeQuery("SELECT feature_snapshot='" + snapshot
+                        + "'::jsonb FROM " + prefix + "restaurant_subscriptions WHERE restaurant_id='" + restaurantId + "'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getBoolean(1)).isTrue();
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt(1)).isEqualTo(packageFeatures);
+                }
+                statement.execute("INSERT INTO " + prefix + "warehouses(id,restaurant_id,code,name,is_default,is_active,"
+                        + "created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000032','" + restaurantId
+                        + "','MAIN','Main',true,true,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "inventory_balances(restaurant_id,warehouse_id,item_id,"
+                        + "quantity,min_quantity,created_at,updated_at) VALUES('" + restaurantId
+                        + "','00000000-0000-0000-0000-000000000032','" + itemId + "',0,5,now(),now())");
+                try (ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "inventory_balances")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt(1)).isEqualTo(1);
+                }
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v31CreatesStockLedgerAndPreservesExistingInventory() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("30").load().migrate();
+            String restaurantId = "00000000-0000-0000-0000-000000000131";
+            String warehouseId = "00000000-0000-0000-0000-000000000132";
+            String itemId = "00000000-0000-0000-0000-000000000133";
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES('" + restaurantId
+                        + "','V31_KEEP','V31 keep','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "items(id,restaurant_id,sku,name,item_type,base_unit,sale_price,"
+                        + "cost_price,track_inventory,availability_status,is_active,metadata,created_at,updated_at) VALUES('"
+                        + itemId + "','" + restaurantId + "','ING-V31','Keep stock','INGREDIENT','g',0,2,true,"
+                        + "'AVAILABLE',true,'{}'::jsonb,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "warehouses(id,restaurant_id,code,name,is_default,is_active,"
+                        + "created_at,updated_at) VALUES('" + warehouseId + "','" + restaurantId
+                        + "','MAIN','Main',true,true,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "inventory_balances(restaurant_id,warehouse_id,item_id,"
+                        + "quantity,min_quantity,created_at,updated_at) VALUES('" + restaurantId + "','" + warehouseId
+                        + "','" + itemId + "',7.500,2,now(),now())");
+            }
+            Flyway flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("31").load();
+            flyway.migrate();
+            flyway.validate();
+            assertThat(tableExists(schema, "stock_documents")).isTrue();
+            assertThat(tableExists(schema, "stock_document_items")).isTrue();
+            assertThat(tableExists(schema, "inventory_transactions")).isTrue();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT quantity,min_quantity FROM " + prefix
+                            + "inventory_balances WHERE item_id='" + itemId + "'")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getBigDecimal(1)).isEqualByComparingTo("7.500");
+                assertThat(rows.getBigDecimal(2)).isEqualByComparingTo("2.000");
+            }
+        } finally {
+            dropTestSchema(schema);
+        }
+    }
+
+    @Test
+    void v31FailsClearlyWhenLegacyNegativeBalanceExists() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("30").load().migrate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES "
+                        + "('00000000-0000-0000-0000-000000000141','V31_NEG','Negative fixture','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "items(id,restaurant_id,name,item_type,base_unit,sale_price,"
+                        + "cost_price,track_inventory,availability_status,is_active,metadata,created_at,updated_at) VALUES "
+                        + "('00000000-0000-0000-0000-000000000143','00000000-0000-0000-0000-000000000141',"
+                        + "'Negative','INGREDIENT','g',0,0,true,'AVAILABLE',true,'{}'::jsonb,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "warehouses(id,restaurant_id,code,name,is_default,is_active,"
+                        + "created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000142',"
+                        + "'00000000-0000-0000-0000-000000000141','MAIN','Main',true,true,now(),now())");
+                statement.execute("INSERT INTO " + prefix + "inventory_balances(restaurant_id,warehouse_id,item_id,"
+                        + "quantity,min_quantity,created_at,updated_at) VALUES('00000000-0000-0000-0000-000000000141',"
+                        + "'00000000-0000-0000-0000-000000000142','00000000-0000-0000-0000-000000000143',-1,0,now(),now())");
+            }
+            Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("31").load();
+            assertThatThrownBy(upgrade::migrate)
+                    .hasStackTraceContaining("V31 cannot add non-negative inventory constraint");
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT quantity FROM " + prefix + "inventory_balances")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getBigDecimal(1)).isEqualByComparingTo("-1.000");
             }
         } finally {
             dropTestSchema(schema);
@@ -441,6 +789,127 @@ class FlywayCleanMigrationIntegrationTest {
                     statement.execute(sql);
                 } finally { connection.setSchema(originalSchema); }
                 assertThat(tableSnapshot(statement, prefix, "role_permissions")).isEqualTo(allGrants);
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v32MarksOnlyHistoricSubmittedLinesWithoutGuessingRecipesOrMutatingExistingData() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("31").load().migrate();
+            String tenant=UUID.randomUUID().toString(), menu=UUID.randomUUID().toString(), recipe=UUID.randomUUID().toString();
+            String submittedOrder=UUID.randomUUID().toString(), draftOrder=UUID.randomUUID().toString();
+            String submitted=UUID.randomUUID().toString(), draft=UUID.randomUUID().toString(), cancelled=UUID.randomUUID().toString();
+            Map<String,String> before=new java.util.LinkedHashMap<>();
+            try(Connection connection=dataSource.getConnection();Statement statement=connection.createStatement()) {
+                statement.execute("INSERT INTO "+prefix+"restaurants(id,code,name,status) VALUES('"+tenant+"','V32_KEEP','Legacy','ACTIVE')");
+                statement.execute("INSERT INTO "+prefix+"items(id,restaurant_id,name,item_type,base_unit,sale_price,cost_price,availability_status,created_at,updated_at) VALUES('"+menu+"','"+tenant+"','Food','MENU_ITEM','portion',100,10,'AVAILABLE',now(),now())");
+                statement.execute("INSERT INTO "+prefix+"recipes(id,restaurant_id,menu_item_id,recipe_version,yield_quantity,yield_unit,is_active,created_at,updated_at) VALUES('"+recipe+"','"+tenant+"','"+menu+"',7,10,'portion',true,now(),now())");
+                for(String order:java.util.List.of(submittedOrder,draftOrder)) {
+                    boolean sent=order.equals(submittedOrder);
+                    statement.execute("INSERT INTO "+prefix+"orders(id,restaurant_id,order_code,service_type,source_channel,status,currency_code,version,idempotency_key,request_hash,confirmed_at,created_at,updated_at) VALUES('"+order+"','"+tenant+"','"+order+"','TAKEAWAY','CASHIER','"+(sent?"CONFIRMED":"OPEN")+"','VND',7,'"+order+"','"+"a".repeat(64)+"',"+(sent?"now()":"NULL")+",now(),now())");
+                }
+                statement.execute("INSERT INTO "+prefix+"order_items(id,restaurant_id,order_id,item_id,item_name,unit,quantity,unit_price,line_total,status,line_number,sent_to_kitchen_at,created_at,updated_at) VALUES('"+submitted+"','"+tenant+"','"+submittedOrder+"','"+menu+"','Food','portion',3,100,300,'PENDING',1,now(),now(),now())");
+                statement.execute("INSERT INTO "+prefix+"order_items(id,restaurant_id,order_id,item_id,item_name,unit,quantity,unit_price,line_total,status,line_number,created_at,updated_at) VALUES('"+draft+"','"+tenant+"','"+draftOrder+"','"+menu+"','Food','portion',2,100,200,'PENDING',1,now(),now())");
+                statement.execute("INSERT INTO "+prefix+"order_items(id,restaurant_id,order_id,item_id,item_name,unit,quantity,unit_price,line_total,status,cancel_reason,line_number,created_at,updated_at) VALUES('"+cancelled+"','"+tenant+"','"+draftOrder+"','"+menu+"','Food','portion',1,100,100,'CANCELLED','not submitted',2,now(),now())");
+                for(String table:java.util.List.of("orders","order_items","recipes","items","audit_logs","inventory_balances","inventory_transactions"))
+                    before.put(table,tableSnapshot(statement,prefix,table));
+            }
+            Flyway upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("32").load();
+            upgraded.migrate();upgraded.validate();
+            try(Connection connection=dataSource.getConnection();Statement statement=connection.createStatement()) {
+                for(var entry:before.entrySet())assertThat(tableSnapshot(statement,prefix,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                try(ResultSet rows=statement.executeQuery("SELECT order_item_id,snapshot_status,recipe_id,captured_at,order_quantity_snapshot FROM "+prefix+"order_item_recipe_snapshots")) {
+                    assertThat(rows.next()).isTrue();assertThat(rows.getString(1)).isEqualTo(submitted);
+                    assertThat(rows.getString(2)).isEqualTo("LEGACY_UNAVAILABLE");assertThat(rows.getObject(3)).isNull();
+                    assertThat(rows.getObject(4)).isNull();assertThat(rows.getBigDecimal(5)).isEqualByComparingTo("3");assertThat(rows.next()).isFalse();
+                }
+                try(ResultSet rows=statement.executeQuery("SELECT count(*) FROM "+prefix+"order_item_recipe_usages")) {rows.next();assertThat(rows.getLong(1)).isZero();}
+            }
+        } finally {dropTestSchema(schema);}
+    }
+
+    @Test
+    void v33MarksHistoricInventoryAsSkippedAndPreservesPhysicalStockSnapshotsAndLedger() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String p = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("32").load().migrate();
+            String tenant=UUID.randomUUID().toString(), owner=UUID.randomUUID().toString();
+            String menu=UUID.randomUUID().toString(), ingredient=UUID.randomUUID().toString(), recipe=UUID.randomUUID().toString();
+            String order=UUID.randomUUID().toString(), draftOrder=UUID.randomUUID().toString();
+            String capturedLine=UUID.randomUUID().toString(), legacyLine=UUID.randomUUID().toString();
+            String draftLine=UUID.randomUUID().toString(), cancelledDraft=UUID.randomUUID().toString();
+            String snapshot=UUID.randomUUID().toString(), warehouse=UUID.randomUUID().toString();
+            String document=UUID.randomUUID().toString(), documentItem=UUID.randomUUID().toString();
+            Map<String,String> before = new java.util.LinkedHashMap<>();
+            try (Connection connection=dataSource.getConnection(); Statement s=connection.createStatement()) {
+                // CAPTURED header and its immutable usage must be inserted in one transaction.
+                // Trigger queries must resolve this fixture schema, not the Spring context schema.
+                String previousSchema = connection.getSchema();
+                connection.setSchema(schema);
+                connection.setAutoCommit(false);
+                s.execute("INSERT INTO "+p+"restaurants(id,code,name,status) VALUES('"+tenant+"','V33_KEEP','Keep physical stock','ACTIVE')");
+                s.execute("INSERT INTO "+p+"users(id,restaurant_id,role_id,email,password_hash,name) SELECT '"+owner+"','"+tenant+"',id,'v33@example.test','fixture','Owner' FROM "+p+"roles WHERE restaurant_id IS NULL AND code='OWNER'");
+                s.execute("INSERT INTO "+p+"items(id,restaurant_id,name,item_type,base_unit,sale_price,cost_price,track_inventory,availability_status,created_at,updated_at) VALUES "
+                        +"('"+menu+"','"+tenant+"','Food','MENU_ITEM','portion',100,0,false,'AVAILABLE',now(),now()),"
+                        +"('"+ingredient+"','"+tenant+"','Ingredient','INGREDIENT','g',0,2,true,'AVAILABLE',now(),now())");
+                s.execute("INSERT INTO "+p+"recipes(id,restaurant_id,menu_item_id,recipe_version,yield_quantity,yield_unit,is_active,created_at,updated_at) VALUES('"+recipe+"','"+tenant+"','"+menu+"',1,10,'portion',true,now(),now())");
+                for(String id:java.util.List.of(order,draftOrder)) {
+                    boolean submitted=id.equals(order);
+                    s.execute("INSERT INTO "+p+"orders(id,restaurant_id,order_code,service_type,source_channel,status,currency_code,version,idempotency_key,request_hash,confirmed_at,created_at,updated_at) VALUES('"+id+"','"+tenant+"','"+id+"','TAKEAWAY','CASHIER','"+(submitted?"CONFIRMED":"OPEN")+"','VND',9,'"+id+"',repeat('a',64),"+(submitted?"now()":"NULL")+",now(),now())");
+                }
+                int lineNumber=0;
+                for(String id:java.util.List.of(capturedLine,legacyLine,draftLine,cancelledDraft)) {
+                    boolean sent=id.equals(capturedLine)||id.equals(legacyLine);
+                    boolean cancelled=id.equals(cancelledDraft);
+                    s.execute("INSERT INTO "+p+"order_items(id,restaurant_id,order_id,item_id,item_name,unit,quantity,unit_price,line_total,status,cancel_reason,line_number,sent_to_kitchen_at,created_at,updated_at) VALUES('"+id+"','"+tenant+"','"+(sent?order:draftOrder)+"','"+menu+"','Food','portion',3,100,300,'"+(cancelled?"CANCELLED":"PENDING")+"',"+(cancelled?"'never submitted'":"NULL")+","+(++lineNumber)+","+(sent?"now()":"NULL")+",now(),now())");
+                }
+                s.execute("INSERT INTO "+p+"order_item_recipe_snapshots(id,restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,recipe_id,recipe_version,yield_quantity,yield_unit,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) VALUES('"+snapshot+"','"+tenant+"','"+capturedLine+"','"+menu+"','CAPTURED','"+recipe+"',1,10,'portion',3,'portion',now(),now())");
+                s.execute("INSERT INTO "+p+"order_item_recipe_usages(restaurant_id,recipe_snapshot_id,ingredient_id,ingredient_name_snapshot,ingredient_unit_snapshot,recipe_quantity_snapshot,waste_percent_snapshot,track_inventory_snapshot,required_quantity,created_at) VALUES('"+tenant+"','"+snapshot+"','"+ingredient+"','Ingredient','g',1000,5,true,315,now())");
+                s.execute("INSERT INTO "+p+"warehouses(id,restaurant_id,code,name,is_default,is_active,created_at,updated_at) VALUES('"+warehouse+"','"+tenant+"','MAIN','Main',true,true,now(),now())");
+                s.execute("INSERT INTO "+p+"inventory_balances(restaurant_id,warehouse_id,item_id,quantity,min_quantity,created_at,updated_at) VALUES('"+tenant+"','"+warehouse+"','"+ingredient+"',1000,10,now(),now())");
+                s.execute("INSERT INTO "+p+"stock_documents(id,restaurant_id,warehouse_id,document_code,document_type,status,idempotency_key,creation_request_hash,created_by,confirmed_by,confirmed_at,line_count,total_quantity,total_cost,created_at,updated_at) VALUES('"+document+"','"+tenant+"','"+warehouse+"','OLD_RECEIPT','RECEIPT','CONFIRMED','old-key',repeat('b',64),'"+owner+"','"+owner+"',now(),1,1000,2000,now(),now())");
+                s.execute("INSERT INTO "+p+"stock_document_items(id,restaurant_id,stock_document_id,ingredient_id,ingredient_sku,ingredient_name,unit,quantity,unit_cost,total_cost,created_at,updated_at) VALUES('"+documentItem+"','"+tenant+"','"+document+"','"+ingredient+"','OLD','Old historical name','g',1000,2,2000,now(),now())");
+                s.execute("INSERT INTO "+p+"inventory_transactions(restaurant_id,warehouse_id,item_id,transaction_type,stock_document_id,stock_document_item_id,quantity_change,before_quantity,after_quantity,unit,unit_cost,idempotency_key,created_by,created_at) VALUES('"+tenant+"','"+warehouse+"','"+ingredient+"','RECEIPT','"+document+"','"+documentItem+"',1000,0,1000,'g',2,'old-ledger-key','"+owner+"',now())");
+                connection.commit();
+                connection.setAutoCommit(true);
+                for(String table:java.util.List.of("orders","order_items","items","recipes","order_item_recipe_snapshots",
+                        "order_item_recipe_usages","stock_documents","stock_document_items","inventory_balances","inventory_transactions","audit_logs"))
+                    before.put(table,tableSnapshot(s,p,table));
+                connection.setSchema(previousSchema);
+            }
+            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                    .locations("classpath:db/migration").target("33").load();
+            upgraded.migrate(); upgraded.validate();
+            try(Connection connection=dataSource.getConnection();Statement s=connection.createStatement()) {
+                for(var entry:before.entrySet()) {
+                    if(!java.util.Set.of("inventory_balances","inventory_transactions").contains(entry.getKey()))
+                        assertThat(tableSnapshot(s,p,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                }
+                try(ResultSet rows=s.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(t)-'reserved_quantity' ORDER BY (to_jsonb(t)-'reserved_quantity')::text),'[]'::jsonb)::text FROM "+p+"inventory_balances t")) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo(before.get("inventory_balances"));
+                }
+                try(ResultSet rows=s.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(t)-ARRAY['source_type','order_id','order_item_id','reservation_id','recipe_usage_id']::text[] ORDER BY t.id),'[]'::jsonb)::text FROM "+p+"inventory_transactions t")) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo(before.get("inventory_transactions"));
+                }
+                try(ResultSet rows=s.executeQuery("SELECT count(*),bool_and(status='SKIPPED' AND skip_reason='LEGACY_UNAVAILABLE' AND warehouse_id IS NULL) FROM "+p+"order_item_inventory_allocations")) {
+                    rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); assertThat(rows.getBoolean(2)).isTrue();
+                }
+                try(ResultSet rows=s.executeQuery("SELECT count(*) FROM "+p+"inventory_reservations")) { rows.next(); assertThat(rows.getInt(1)).isZero(); }
+                try(ResultSet rows=s.executeQuery("SELECT quantity,reserved_quantity FROM "+p+"inventory_balances")) { rows.next(); assertThat(rows.getBigDecimal(1)).isEqualByComparingTo("1000"); assertThat(rows.getBigDecimal(2)).isZero(); }
+                try(ResultSet rows=s.executeQuery("SELECT source_type,unit_cost FROM "+p+"inventory_transactions")) { rows.next(); assertThat(rows.getString(1)).isEqualTo("STOCK_DOCUMENT"); assertThat(rows.getBigDecimal(2)).isEqualByComparingTo("2"); }
+                assertThatThrownBy(() -> s.execute("UPDATE "+p+"inventory_transactions SET unit_cost=9"))
+                        .hasMessageContaining("append-only");
+                assertThatThrownBy(() -> s.execute("DELETE FROM "+p+"inventory_transactions"))
+                        .hasMessageContaining("append-only");
             }
         } finally { dropTestSchema(schema); }
     }

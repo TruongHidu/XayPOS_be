@@ -7,6 +7,170 @@ security:
   -
     bearerAuth: []
 paths:
+  "/api/v1/inventory/orders/{orderId}/items/{orderItemId}/allocation":
+    get:
+      tags: ["Inventory"]
+      operationId: "getOrderItemInventoryAllocation"
+      description: "Requires ORDER_VIEW, RECIPE_VIEW and INVENTORY_VIEW plus effective ORDER_MANAGEMENT, RECIPE_MANAGEMENT and INVENTORY_MANAGEMENT. Existing account/restaurant/subscription guards apply. Tenant derives from JWT; item must belong to this order. Read-only persisted allocation and ingredient snapshots; no live recipe lookup, mutation or actual order cost. DRAFT returns response-only NOT_SUBMITTED; durable SKIPPED retains its reason. Public QR has no access."
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: "orderId", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+        - {name: "orderItemId", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses:
+        "200":
+          description: "Immutable allocation or response-only NOT_SUBMITTED"
+          headers: {Cache-Control: {schema: {type: "string", example: "no-store"}}}
+          content: {application/json: {schema: {$ref: "#/components/schemas/OrderItemInventoryAllocation"}}}
+        "400": {description: "VALIDATION_ERROR or INVALID_REQUEST_BODY"}
+        "401": {description: "UNAUTHORIZED or ACCOUNT_INACTIVE"}
+        "403": {description: "FORBIDDEN, FEATURE_NOT_ENTITLED or existing tenant/subscription guard"}
+        "404": {description: "ORDER_NOT_FOUND or ORDER_ITEM_NOT_FOUND; foreign tenants and wrong-order items are hidden"}
+        "409": {description: "INVENTORY_ALLOCATION_NOT_FOUND, INVENTORY_ALLOCATION_CONFLICT or INVENTORY_RESERVATION_INVARIANT_VIOLATION"}
+  "/api/v1/inventory/warehouses":
+    get:
+      tags: ["Inventory"]
+      operationId: "listWarehouses"
+      description: "Requires INVENTORY_VIEW and effective INVENTORY_MANAGEMENT. Tenant derives from JWT. Soft-deleted warehouses are excluded."
+      parameters: [{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"active","in":"query","schema":{"type":"boolean"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["code","name","createdAt","updatedAt"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Warehouse page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/WarehousePage"}}}},"403":{"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    post:
+      tags: ["Inventory"]
+      operationId: "createWarehouse"
+      description: "Requires WAREHOUSE_CREATE and INVENTORY_MANAGEMENT. First warehouse is automatically active/default; later warehouses are active/non-default."
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WarehouseCreate"}}}}
+      responses: {"201":{"description":"Created","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Warehouse"}}}},"409":{"description":"WAREHOUSE_CODE_EXISTS or CONCURRENT_WAREHOUSE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}":
+    get:
+      tags: ["Inventory"]
+      operationId: "getWarehouse"
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"}]
+      responses: {"200":{"description":"Warehouse","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Warehouse"}}}},"404":{"description":"WAREHOUSE_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    patch:
+      tags: ["Inventory"]
+      operationId: "updateWarehouse"
+      description: "Requires WAREHOUSE_UPDATE. Only code/name are mutable; normalized no-op does not increment version or audit."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WarehouseUpdate"}}}}
+      responses: {"200":{"description":"Updated or unchanged","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Warehouse"}}}},"409":{"description":"WAREHOUSE_CODE_EXISTS or CONCURRENT_WAREHOUSE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    delete:
+      tags: ["Inventory"]
+      operationId: "deleteWarehouse"
+      description: "Requires WAREHOUSE_DELETE. Soft-delete is idempotent; rejects RESERVED allocations with WAREHOUSE_HAS_RESERVATIONS, non-zero stock and default deletion while another active warehouse exists."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses: {"204":{"description":"Deleted or already deleted"},"409":{"description":"WAREHOUSE_HAS_STOCK, DEFAULT_WAREHOUSE_CANNOT_BE_DELETED or CONCURRENT_WAREHOUSE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}/status":
+    patch:
+      tags: ["Inventory"]
+      operationId: "setWarehouseStatus"
+      description: "Requires WAREHOUSE_UPDATE. Warehouse with RESERVED allocations returns WAREHOUSE_HAS_RESERVATIONS; default or stocked warehouse also cannot be disabled. Desired-state replay is a no-op."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WarehouseStatus"}}}}
+      responses: {"200":{"description":"Warehouse","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Warehouse"}}}},"409":{"description":"DEFAULT_WAREHOUSE_CANNOT_BE_DISABLED, WAREHOUSE_HAS_STOCK or CONCURRENT_WAREHOUSE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}/make-default":
+    post:
+      tags: ["Inventory"]
+      operationId: "makeDefaultWarehouse"
+      description: "Requires WAREHOUSE_UPDATE. Atomically switches the active default under the restaurant lock. Existing allocations retain their original warehouse; new append acceptance may select the new default."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/WarehouseMakeDefault"}}}}
+      responses: {"200":{"description":"New/current default","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Warehouse"}}}},"409":{"description":"WAREHOUSE_INACTIVE or CONCURRENT_WAREHOUSE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}/balances":
+    get:
+      tags: ["Inventory"]
+      operationId: "listInventoryBalances"
+      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. DB-paginated LEFT JOIN returns logical zero balances without writing rows."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"},{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"ingredientActive","in":"query","schema":{"type":"boolean"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["ingredientName","sku","quantity","minQuantity","updatedAt"],"default":"ingredientName"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"asc"}}]
+      responses: {"200":{"description":"Balance page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryBalancePage"}}}},"404":{"description":"WAREHOUSE_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}/balances/{ingredientId}":
+    get:
+      tags: ["Inventory"]
+      operationId: "getInventoryBalance"
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"},{"$ref":"#/components/parameters/IngredientId"}]
+      responses: {"200":{"description":"Physical or logical balance","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryBalance"}}}},"404":{"description":"WAREHOUSE_NOT_FOUND or TRACKED_INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/warehouses/{warehouseId}/balances/{ingredientId}/threshold":
+    patch:
+      tags: ["Inventory"]
+      operationId: "updateInventoryThreshold"
+      description: "Requires INVENTORY_THRESHOLD_UPDATE. expectedVersion is null only for the first physical row. quantity and reservedQuantity are never accepted. minQuantity=0 on a logical balance is a no-op."
+      parameters: [{"$ref":"#/components/parameters/WarehouseId"},{"$ref":"#/components/parameters/IngredientId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryThresholdUpdate"}}}}
+      responses: {"200":{"description":"Physical or logical balance","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryBalance"}}}},"409":{"description":"WAREHOUSE_INACTIVE or CONCURRENT_INVENTORY_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/low-stock":
+    get:
+      tags: ["Inventory"]
+      operationId: "listLowStock"
+      description: "Requires INVENTORY_VIEW plus effective INVENTORY_MANAGEMENT and LOW_STOCK_ALERT. Derived query only: minQuantity > 0 and quantity <= minQuantity; no alert record is created."
+      parameters: [{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"ingredientActive","in":"query","schema":{"type":"boolean"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["ingredientName","sku","quantity","minQuantity","updatedAt"],"default":"quantity"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"asc"}}]
+      responses: {"200":{"description":"Low-stock page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryBalancePage"}}}},"403":{"description":"FORBIDDEN or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents":
+    get:
+      tags: ["Inventory"]
+      operationId: "listStockDocuments"
+      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. Tenant-scoped DB pagination; filters q, type, status, warehouseId and created range."
+      parameters: [{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"type","in":"query","schema":{"$ref":"#/components/schemas/StockDocumentType"}},{"name":"status","in":"query","schema":{"$ref":"#/components/schemas/StockDocumentStatus"}},{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"createdFrom","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"createdTo","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt","updatedAt","documentCode","totalCost"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Stock document page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentPage"}}}}}
+    post:
+      tags: ["Inventory"]
+      operationId: "createStockDocument"
+      description: "Requires INVENTORY_MANAGEMENT and INVENTORY_RECEIVE, INVENTORY_ISSUE or INVENTORY_ADJUST according to documentType. Creates DRAFT only."
+      parameters: [{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":1,"maxLength":100}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentCreate"}}}}
+      responses: {"201":{"description":"Created or idempotent replay","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"IDEMPOTENCY_KEY_REUSED, DUPLICATE_STOCK_DOCUMENT_ITEM or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents/{documentId}":
+    get:
+      tags: ["Inventory"]
+      operationId: "getStockDocument"
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
+      responses: {"200":{"description":"Detail with immutable item snapshots","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"404":{"description":"STOCK_DOCUMENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+    patch:
+      tags: ["Inventory"]
+      operationId: "updateStockDocument"
+      description: "DRAFT only; requires type-specific permission and expectedVersion."
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentUpdate"}}}}
+      responses: {"200":{"description":"Updated or normalized no-op","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"INVALID_STOCK_DOCUMENT_TRANSITION or CONCURRENT_STOCK_DOCUMENT_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents/{documentId}/items":
+    post:
+      tags: ["Inventory"]
+      operationId: "addStockDocumentItem"
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentAddItem"}}}}
+      responses: {"200":{"description":"Updated document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"DUPLICATE_STOCK_DOCUMENT_ITEM or lifecycle/concurrency conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents/{documentId}/items/{documentItemId}":
+    patch:
+      tags: ["Inventory"]
+      operationId: "updateStockDocumentItem"
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"},{"$ref":"#/components/parameters/StockDocumentItemId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentUpdateItem"}}}}
+      responses: {"200":{"description":"Updated document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}}}
+    delete:
+      tags: ["Inventory"]
+      operationId: "deleteStockDocumentItem"
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"},{"$ref":"#/components/parameters/StockDocumentItemId"},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses: {"204":{"description":"Item removed"},"409":{"description":"Lifecycle or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents/{documentId}/confirm":
+    post:
+      tags: ["Inventory"]
+      operationId: "confirmStockDocument"
+      description: "Atomically posts every line, rejects negative stock and appends immutable ledger rows. RECEIPT also updates tracked INGREDIENT.costPrice using MOVING_WEIGHTED_AVERAGE: (pre-receipt physical quantity across ALL tenant warehouses * previous cost + received quantity * receipt unitCost) / final total quantity, rounded HALF_UP to 2 decimals. Zero previous quantity uses receipt unitCost; unitCost omitted/zero still means zero and participates in averaging. Restaurant and ordered ingredient locks prevent concurrent repricing; price, versions, stock, ledger and audit roll back together. ISSUE/ADJUSTMENT and drafts do not reprice. Ledger retains actual receipt unitCost. No sale price, menu-item cost or historical snapshot updates. INGREDIENT_COST_RECALCULATED audit only when cost changes; confirmed replay is a no-op, including no repricing. Existing INVENTORY_RECEIVE permission is sufficient for this derived receipt effect. Refresh ingredient detail/version and recipe cost-estimate after confirmation."
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentTransition"}}}}
+      responses: {"200":{"description":"Confirmed or replayed document. ISSUE/ADJUSTMENT decrease must leave physical quantity >= reservedQuantity; receipt/increase preserve reservedQuantity. Weighted average uses physical quantity, never availableQuantity.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"STOCK_DOCUMENT_EMPTY, INSUFFICIENT_AVAILABLE_STOCK, INVALID_INVENTORY_COST_DATA, invalid transition or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/inventory/stock-documents/{documentId}/cancel":
+    post:
+      tags: ["Inventory"]
+      operationId: "cancelStockDocument"
+      description: "Cancels DRAFT without posting inventory. Cancelled replay is a no-op."
+      parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentTransition"}}}}
+      responses: {"200":{"description":"Cancelled or replayed document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}}}
+  "/api/v1/inventory/transactions":
+    get:
+      tags: ["Inventory"]
+      operationId: "listInventoryTransactions"
+      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. Read-only append-only ledger from STOCK_DOCUMENT or ORDER_ITEM snapshots. RECIPE_USE is negative physical usage, with null document fields and null unitCost meaning not valued; it is not zero-cost or actual order profit. Pagination/sorting occur in the database."
+      parameters: [{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"ingredientId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"documentId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"sourceType","in":"query","schema":{"$ref":"#/components/schemas/InventoryTransactionSourceType"}},{"name":"orderId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"orderItemId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"transactionType","in":"query","schema":{"$ref":"#/components/schemas/InventoryTransactionType"}},{"name":"createdFrom","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"createdTo","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses: {"200":{"description":"Transaction page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryTransactionPage"}}}}}
   "/api/v1/table-sessions/{sessionId}/transfer":
     post: {"tags":["Tables"],"operationId":"transferTableSession","description":"Requires TABLE_TRANSFER and TABLE_MANAGEMENT; no ORDER permission or feature is required. Tenant derives from JWT. Move OPEN seating to an eligible empty table under the shared restaurant lock. Preserve session/order IDs, order versions and physical QR tokens. expectedVersion belongs to SESSION. Replay is resolved before lifecycle/version/target checks but after current authorization; it returns the current session and never reapplies the old movement.","parameters":[{"name":"sessionId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":1,"maxLength":100},"description":"Stable nonblank key, tenant-scoped transfer namespace. Retry with same actor, session, target, expectedVersion and normalized reason."}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableTransferSession"},"example":{"targetTableId":"22222222-2222-4222-8222-222222222222","expectedVersion":3,"reason":"Khách muốn đổi chỗ"}}}},"responses":{"200":{"description":"Current representation of the same session, including on replay after subsequent transfers or closure. No order payload.","headers":{"Cache-Control":{"schema":{"type":"string","enum":["no-store"]}},"Idempotency-Replayed":{"schema":{"type":"boolean"},"description":"false for new movement, true for resource replay"}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableSession"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or INVALID_IDEMPOTENCY_KEY","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_SESSION_NOT_FOUND, TABLE_NOT_FOUND or TABLE_AREA_NOT_FOUND; foreign tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE, TABLE_INACTIVE, TABLE_AREA_INACTIVE, TABLE_ALREADY_OCCUPIED, SAME_TABLE_TRANSFER_NOT_ALLOWED, IDEMPOTENCY_KEY_REUSED or INCONSISTENT_TABLE_SESSION_STATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}
   "/api/v1/table-sessions/{sessionId}/transfers":
@@ -296,7 +460,7 @@ paths:
     "patch":
       "tags": ["Menu"]
       "operationId": "updateMenuGroup"
-      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. expectedVersion is required; actual changes with a stale version return 409. No-op does not change version/timestamps or create audit."
+      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. expectedVersion is required; actual changes with a stale version return 409. No-op does not change version/timestamps or create audit. Changing baseUnit while an active recipe exists returns MENU_ITEM_UNIT_IN_USE."
       "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
       "requestBody":
         "required": true
@@ -336,7 +500,7 @@ paths:
               "schema":
                 "$ref": "#/components/schemas/Error"
         "409":
-          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, MENU_ITEM_UNIT_IN_USE, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
           "content":
             "application/json":
               "schema":
@@ -344,7 +508,7 @@ paths:
     "delete":
       "tags": ["Menu"]
       "operationId": "deleteMenuGroup"
-      "description": "Requires MENU_DELETE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Soft deletion only. Retry of an already deleted same-tenant resource returns 204 without audit even with an old expectedVersion. Deleted item SKU remains reserved. A group with any non-deleted item cannot be deleted."
+      "description": "Requires MENU_DELETE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Soft deletion only. Retry of an already deleted same-tenant resource returns 204 without audit even with an old expectedVersion. Deleted item SKU remains reserved. An item with an active recipe returns MENU_ITEM_HAS_ACTIVE_RECIPE."
       "parameters": [{"name":"groupId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
       "responses":
         "204":
@@ -374,7 +538,7 @@ paths:
               "schema":
                 "$ref": "#/components/schemas/Error"
         "409":
-          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_GROUP_NOT_EMPTY, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
+          "description": "MENU_GROUP_NAME_EXISTS, SKU_EXISTS, MENU_GROUP_INACTIVE, MENU_ITEM_HAS_ACTIVE_RECIPE, INVALID_MENU_ITEM_TRANSITION or CONCURRENT_MENU_UPDATE"
           "content":
             "application/json":
               "schema":
@@ -1700,13 +1864,419 @@ paths:
                 - "ORDER_CANCEL"
               denies:
                 - "TABLE_CLOSE"
+  "/api/v1/menu/ingredients":
+    get:
+      tags: ["Ingredients"]
+      operationId: "listIngredients"
+      description: "Requires INGREDIENT_VIEW and an effective snapshot containing RECIPE_MANAGEMENT or INVENTORY_MANAGEMENT. Tenant comes only from JWT. Ingredient is never returned by the MENU_ITEM or public menu APIs."
+      parameters: [{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"active","in":"query","schema":{"type":"boolean"}},{"name":"trackInventory","in":"query","schema":{"type":"boolean"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt","updatedAt","name","sku","costPrice"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngredientPage"}}}}
+        "400": {"description":"VALIDATION_ERROR","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+    post:
+      tags: ["Ingredients"]
+      operationId: "createIngredient"
+      description: "Requires INGREDIENT_CREATE and the ingredient feature rule. Server fixes itemType=INGREDIENT, groupId=null, salePrice=0, imageUrl=null, availabilityStatus=AVAILABLE and metadata={}."
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngredientCreate"}}}}
+      responses:
+        "201": {"description":"Created","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ingredient"}}}}
+        "400": {"description":"VALIDATION_ERROR or INVALID_REQUEST_BODY","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"SKU_EXISTS or CONCURRENT_INGREDIENT_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/ingredients/{ingredientId}":
+    get:
+      tags: ["Ingredients"]
+      operationId: "getIngredient"
+      description: "Requires INGREDIENT_VIEW and the ingredient feature rule. Foreign tenant, deleted and MENU_ITEM identifiers are hidden as INGREDIENT_NOT_FOUND."
+      parameters: [{"name":"ingredientId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ingredient"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+    patch:
+      tags: ["Ingredients"]
+      operationId: "updateIngredient"
+      description: "Requires INGREDIENT_UPDATE. expectedVersion is required. Omitted/null values stay unchanged; blank sku/description clears to null. Actual no-op creates no audit/version/timestamp change. RESERVED allocations prohibit baseUnit changes or disabling trackInventory with INGREDIENT_HAS_RESERVATIONS. Existing active recipe and nonzero stock guards remain. Name/SKU/cost edits do not alter existing reservation snapshots."
+      parameters: [{"name":"ingredientId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngredientUpdate"}}}}
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ingredient"}}}}
+        "400": {"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"SKU_EXISTS, INGREDIENT_HAS_RESERVATIONS, INGREDIENT_HAS_STOCK, INGREDIENT_UNIT_IN_USE or CONCURRENT_INGREDIENT_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+    delete:
+      tags: ["Ingredients"]
+      operationId: "deleteIngredient"
+      description: "Requires INGREDIENT_DELETE. Soft delete; retry of an already deleted same-tenant ingredient returns 204 without duplicate audit. SKU remains reserved. RESERVED allocations return INGREDIENT_HAS_RESERVATIONS; nonzero stock and active recipe guards remain. Historical usages/reservations are preserved."
+      parameters: [{"name":"ingredientId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses:
+        "204": {"description":"Deleted or already deleted; no body"}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"CONCURRENT_INGREDIENT_UPDATE, INVALID_INGREDIENT_TRANSITION, INGREDIENT_HAS_RESERVATIONS, INGREDIENT_HAS_STOCK or INGREDIENT_USED_BY_ACTIVE_RECIPE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/ingredients/{ingredientId}/status":
+    patch:
+      tags: ["Ingredients"]
+      operationId: "setIngredientStatus"
+      description: "Requires INGREDIENT_UPDATE. Repeating the same active status is idempotent and creates no audit/version/timestamp change. Disabling an ingredient with RESERVED allocations returns INGREDIENT_HAS_RESERVATIONS; active recipe references also remain guarded."
+      parameters: [{"name":"ingredientId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IngredientStatus"}}}}
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ingredient"}}}}
+        "400": {"description":"VALIDATION_ERROR or INVALID_REQUEST_BODY","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"CONCURRENT_INGREDIENT_UPDATE, INVALID_INGREDIENT_TRANSITION, INGREDIENT_HAS_RESERVATIONS or INGREDIENT_USED_BY_ACTIVE_RECIPE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/items/{menuItemId}/recipes":
+    get:
+      tags: ["Recipes"]
+      operationId: "listRecipeVersions"
+      description: "Requires RECIPE_VIEW and RECIPE_MANAGEMENT. Returns version summaries with one grouped ingredient-count query; recipeVersion is the business sequence and version is the optimistic-lock value."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["recipeVersion","createdAt","updatedAt"],"default":"recipeVersion"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RecipePage"}}}}
+        "400": {"description":"VALIDATION_ERROR","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+    post:
+      tags: ["Recipes"]
+      operationId: "createInitialRecipe"
+      description: "Requires RECIPE_CREATE and RECIPE_MANAGEMENT. Creates an immediately active immutable recipe version. yieldUnit is copied from the menu item; ingredients are batch-loaded and snapshotted."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RecipeCreate"}}}}
+      responses:
+        "201": {"description":"Created","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Recipe"}}}}
+        "400": {"description":"VALIDATION_ERROR or INVALID_REQUEST_BODY","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND or INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"ACTIVE_RECIPE_ALREADY_EXISTS, INGREDIENT_INACTIVE, DUPLICATE_RECIPE_INGREDIENT or CONCURRENT_RECIPE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/items/{menuItemId}/recipes/active":
+    get:
+      tags: ["Recipes"]
+      operationId: "getActiveRecipe"
+      description: "Requires RECIPE_VIEW and RECIPE_MANAGEMENT. Returns ingredient name, SKU and unit snapshots from the active recipe version."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Recipe"}}}}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND or ACTIVE_RECIPE_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/items/{menuItemId}/recipes/{recipeId}":
+    get:
+      tags: ["Recipes"]
+      operationId: "getRecipeVersion"
+      description: "Requires RECIPE_VIEW and RECIPE_MANAGEMENT. Tenant and menu-item mismatches are hidden as RECIPE_NOT_FOUND."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"recipeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      responses:
+        "200": {"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Recipe"}}}}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND or RECIPE_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+    delete:
+      tags: ["Recipes"]
+      operationId: "deactivateRecipe"
+      description: "Requires RECIPE_DELETE and RECIPE_MANAGEMENT. Soft-deactivates this exact active recipe. Repeating DELETE for the same inactive version returns 204 without changing a newer active version or writing duplicate audit."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"recipeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
+      responses:
+        "204": {"description":"Deactivated or already inactive; no body"}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND or RECIPE_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"CONCURRENT_RECIPE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/items/{menuItemId}/recipes/{recipeId}/cost-estimate":
+    get:
+      tags: ["Recipes"]
+      operationId: "estimateRecipeCost"
+      summary: "Estimate one recipe version using current ingredient reference costs"
+      description: >-
+        Requires RECIPE_VIEW and RECIPE_MANAGEMENT, with tenant derived only from JWT.
+        No inventory permission/feature, warehouse, stock, request body, expectedVersion
+        or Idempotency-Key is required. Supports active and inactive recipe versions
+        for a nondeleted same-tenant menu item, including inactive/out-of-stock menu items.
+        Uses quantity/waste/yield/name/SKU/unit snapshots of the requested version,
+        but CURRENT Item.costPrice per current baseUnit. Includes untracked, inactive
+        and soft-deleted ingredients when their source is valid. A snapshot/current
+        unit mismatch is a conflict; no unit conversion. This is not historical or
+        FIFO/weighted-average cost. Gross quantity is exact; lineCost is HALF_UP to
+        2 decimals; total is the sum of rounded lines; per-yield is HALF_UP to 2 decimals.
+        Zero reference cost is valid and yields one warning per ingredient; missing
+        cost is never silently treated as zero. Reads ingredient costs in one batch.
+        estimatedAt comes from the injected Clock. No entity versions/timestamps,
+        reference prices, recipes, balances, documents, reservations, ledger or
+        mutation audits are written. Refresh after editing ingredient reference prices.
+      parameters:
+        - {"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}
+        - {"name":"recipeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}
+      responses:
+        "200":
+          description: "Current reference cost estimate; an all-zero estimate is valid with warnings"
+          headers:
+            Cache-Control:
+              description: "Do not store potentially sensitive or stale reference costs"
+              schema: {"type":"string","enum":["no-store"]}
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/RecipeCostEstimate"}
+              example:
+                menuItemId: "11111111-1111-4111-8111-111111111111"
+                recipeId: "44444444-4444-4444-8444-444444444444"
+                recipeVersion: 2
+                recipeActive: true
+                yieldQuantity: 10.000
+                yieldUnit: "tô"
+                currencyCode: "VND"
+                costSource: "INGREDIENT_COST_PRICE"
+                totalBatchCost: 369000.00
+                costPerYieldUnit: 36900.00
+                ingredients:
+                  - ingredientId: "22222222-2222-4222-8222-222222222222"
+                    sku: "NL-THIT-BO"
+                    name: "Thịt bò"
+                    unit: "g"
+                    quantity: 1200.000
+                    wastePercent: 5.00
+                    grossQuantity: 1260.000
+                    unitCost: 250.00
+                    lineCost: 315000.00
+                  - ingredientId: "33333333-3333-4333-8333-333333333333"
+                    sku: "NL-BANH-PHO"
+                    name: "Bánh phở"
+                    unit: "g"
+                    quantity: 1800.000
+                    wastePercent: 0.00
+                    grossQuantity: 1800.000
+                    unitCost: 30.00
+                    lineCost: 54000.00
+                warnings: []
+                estimatedAt: "2026-10-19T08:00:00Z"
+        "400": {"description":"VALIDATION_ERROR or existing invalid UUID/path parameter error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "401": {"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, TENANT_ACCESS_DENIED, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND or RECIPE_NOT_FOUND; recipe from another tenant/menu item is hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"INGREDIENT_COST_UNIT_MISMATCH, INGREDIENT_COST_UNAVAILABLE, INVALID_INGREDIENT_REFERENCE_COST or INVALID_RECIPE_COST_DATA; no partial estimate is returned","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+  "/api/v1/menu/items/{menuItemId}/recipes/{activeRecipeId}/versions":
+    post:
+      tags: ["Recipes"]
+      operationId: "createRecipeVersion"
+      description: "Requires RECIPE_UPDATE and RECIPE_MANAGEMENT. Atomically deactivates the selected active recipe and creates the next immutable business version; request ordering of ingredients is ignored for equality."
+      parameters: [{"name":"menuItemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"activeRecipeId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
+      requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RecipeCreateVersion"}}}}
+      responses:
+        "201": {"description":"Created","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Recipe"}}}}
+        "400": {"description":"VALIDATION_ERROR or INVALID_REQUEST_BODY","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "403": {"description":"FORBIDDEN, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "404": {"description":"MENU_ITEM_NOT_FOUND, RECIPE_NOT_FOUND or INGREDIENT_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
+        "409": {"description":"RECIPE_NOT_ACTIVE, SAME_RECIPE_VERSION_NOT_ALLOWED, INGREDIENT_INACTIVE, DUPLICATE_RECIPE_INGREDIENT or CONCURRENT_RECIPE_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}
 components:
   securitySchemes:
     bearerAuth:
       type: "http"
       scheme: "bearer"
       bearerFormat: "JWT"
+  parameters:
+    WarehouseId:
+      name: "warehouseId"
+      in: "path"
+      required: true
+      schema: {type: "string", format: "uuid"}
+    IngredientId:
+      name: "ingredientId"
+      in: "path"
+      required: true
+      schema: {type: "string", format: "uuid"}
+    StockDocumentId:
+      name: "documentId"
+      in: "path"
+      required: true
+      schema: {type: "string", format: "uuid"}
+    StockDocumentItemId:
+      name: "documentItemId"
+      in: "path"
+      required: true
+      schema: {type: "string", format: "uuid"}
   schemas:
+    Warehouse:
+      type: "object"
+      additionalProperties: false
+      required: ["id","code","name","isDefault","active","version","createdAt","updatedAt"]
+      properties:
+        id: {type: "string", format: "uuid"}
+        code: {type: "string", maxLength: 50}
+        name: {type: "string", maxLength: 100}
+        isDefault: {type: "boolean"}
+        active: {type: "boolean"}
+        version: {type: "integer", format: "int64", minimum: 0}
+        createdAt: {type: "string", format: "date-time"}
+        updatedAt: {type: "string", format: "date-time"}
+    WarehouseCreate:
+      type: "object"
+      additionalProperties: false
+      required: ["code","name"]
+      properties:
+        code: {type: "string", minLength: 1, maxLength: 50}
+        name: {type: "string", minLength: 1, maxLength: 100}
+    WarehouseUpdate:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion"]
+      properties:
+        code: {type: "string", maxLength: 50}
+        name: {type: "string", maxLength: 100}
+        expectedVersion: {type: "integer", format: "int64", minimum: 0}
+    WarehouseStatus:
+      type: "object"
+      additionalProperties: false
+      required: ["active","expectedVersion"]
+      properties:
+        active: {type: "boolean"}
+        expectedVersion: {type: "integer", format: "int64", minimum: 0}
+    WarehouseMakeDefault:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion"]
+      properties:
+        expectedVersion: {type: "integer", format: "int64", minimum: 0}
+    WarehousePage:
+      type: "object"
+      required: ["content","page","size","totalElements","totalPages"]
+      properties:
+        content: {type: "array", items: {"$ref":"#/components/schemas/Warehouse"}}
+        page: {type: "integer"}
+        size: {type: "integer"}
+        totalElements: {type: "integer", format: "int64"}
+        totalPages: {type: "integer"}
+    InventoryBalance:
+      type: "object"
+      additionalProperties: false
+      required: ["configured","warehouseId","warehouseCode","ingredientId","ingredientName","baseUnit","ingredientActive","quantity","reservedQuantity","availableQuantity","minQuantity","lowStock"]
+      properties:
+        balanceId: {type: "string", format: "uuid", nullable: true}
+        configured: {type: "boolean"}
+        warehouseId: {type: "string", format: "uuid"}
+        warehouseCode: {type: "string"}
+        ingredientId: {type: "string", format: "uuid"}
+        ingredientSku: {type: "string", nullable: true}
+        ingredientName: {type: "string"}
+        baseUnit: {type: "string"}
+        ingredientActive: {type: "boolean"}
+        quantity: {type: "number", format: "decimal", readOnly: true, description: "Physical quantity; lowStock retains this basis"}
+        reservedQuantity: {type: "number", format: "decimal", readOnly: true, minimum: 0, description: "Controlled sum of RESERVED allocations; never greater than physical quantity"}
+        availableQuantity: {type: "number", format: "decimal", readOnly: true, minimum: 0, description: "quantity minus reservedQuantity; logical zero is 0 without creating a row"}
+        minQuantity: {type: "number", format: "decimal"}
+        lowStock: {type: "boolean", readOnly: true}
+        version: {type: "integer", format: "int64", nullable: true}
+        createdAt: {type: "string", format: "date-time", nullable: true}
+        updatedAt: {type: "string", format: "date-time", nullable: true}
+    InventoryThresholdUpdate:
+      type: "object"
+      additionalProperties: false
+      required: ["minQuantity"]
+      properties:
+        expectedVersion: {type: "integer", format: "int64", minimum: 0, nullable: true}
+        minQuantity: {type: "number", minimum: 0, multipleOf: 0.001}
+    InventoryBalancePage:
+      type: "object"
+      required: ["content","page","size","totalElements","totalPages"]
+      properties:
+        content: {type: "array", items: {"$ref":"#/components/schemas/InventoryBalance"}}
+        page: {type: "integer"}
+        size: {type: "integer"}
+        totalElements: {type: "integer", format: "int64"}
+        totalPages: {type: "integer"}
+    StockDocumentType: {type: "string", enum: ["RECEIPT","ISSUE","ADJUSTMENT"]}
+    StockDocumentStatus: {type: "string", enum: ["DRAFT","CONFIRMED","CANCELLED"]}
+    AdjustmentDirection: {type: "string", enum: ["INCREASE","DECREASE"], nullable: true}
+    InventoryTransactionType: {type: "string", enum: ["RECEIPT","ISSUE","ADJUSTMENT_INCREASE","ADJUSTMENT_DECREASE","RECIPE_USE"]}
+    InventoryTransactionSourceType: {type: "string", enum: ["STOCK_DOCUMENT","ORDER_ITEM"]}
+    OrderItemInventoryAllocation:
+      type: "object"
+      additionalProperties: false
+      required: ["orderId","orderItemId","status","ingredients"]
+      properties:
+        allocationId: {type: "string", format: "uuid", nullable: true}
+        orderId: {type: "string", format: "uuid"}
+        orderItemId: {type: "string", format: "uuid"}
+        recipeSnapshotId: {type: "string", format: "uuid", nullable: true}
+        status: {type: "string", enum: ["RESERVED","CONSUMED","RELEASED","SKIPPED","NOT_SUBMITTED"], readOnly: true, description: "NOT_SUBMITTED exists only in responses"}
+        skipReason: {type: "string", nullable: true, enum: ["INVENTORY_FEATURE_DISABLED","SNAPSHOT_NO_RECIPE","SNAPSHOT_FEATURE_DISABLED","NO_TRACKED_INGREDIENTS","LEGACY_UNAVAILABLE"]}
+        warehouseId: {type: "string", format: "uuid", nullable: true, description: "Pinned warehouse; null for SKIPPED/NOT_SUBMITTED"}
+        reservedAt: {type: "string", format: "date-time", nullable: true}
+        consumedAt: {type: "string", format: "date-time", nullable: true}
+        releasedAt: {type: "string", format: "date-time", nullable: true}
+        ingredients: {type: "array", items: {$ref: "#/components/schemas/InventoryReservation"}}
+    InventoryReservation:
+      type: "object"
+      additionalProperties: false
+      required: ["reservationId","recipeUsageId","ingredientId","name","unit","quantity"]
+      properties:
+        reservationId: {type: "string", format: "uuid"}
+        recipeUsageId: {type: "string", format: "uuid"}
+        ingredientId: {type: "string", format: "uuid"}
+        sku: {type: "string", nullable: true}
+        name: {type: "string"}
+        unit: {type: "string"}
+        quantity: {type: "number", format: "decimal", readOnly: true, description: "Original tracked recipe usage requiredQuantity; no recalculation"}
+    StockDocumentLineInput:
+      type: "object"
+      additionalProperties: false
+      required: ["ingredientId","quantity"]
+      properties: {ingredientId: {type: "string", format: "uuid"}, quantity: {type: "number", exclusiveMinimum: 0, multipleOf: 0.001}, unitCost: {type: "number", minimum: 0, multipleOf: 0.01, default: 0}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, note: {type: "string", maxLength: 1000, nullable: true}}
+    StockDocumentCreate:
+      type: "object"
+      additionalProperties: false
+      required: ["documentType","warehouseId"]
+      properties: {documentType: {"$ref":"#/components/schemas/StockDocumentType"}, warehouseId: {type: "string", format: "uuid"}, note: {type: "string", maxLength: 2000, nullable: true}, items: {type: "array", maxItems: 100, items: {"$ref":"#/components/schemas/StockDocumentLineInput"}}}
+    StockDocumentUpdate:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion"]
+      properties: {expectedVersion: {type: "integer", format: "int64", minimum: 0}, note: {type: "string", maxLength: 2000, nullable: true}}
+    StockDocumentAddItem:
+      allOf:
+        - {"$ref":"#/components/schemas/StockDocumentLineInput"}
+        - {type: "object", required: ["expectedVersion"], properties: {expectedVersion: {type: "integer", format: "int64", minimum: 0}}}
+    StockDocumentUpdateItem:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion","quantity"]
+      properties: {expectedVersion: {type: "integer", format: "int64", minimum: 0}, quantity: {type: "number", exclusiveMinimum: 0, multipleOf: 0.001}, unitCost: {type: "number", minimum: 0, multipleOf: 0.01, default: 0}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, note: {type: "string", maxLength: 1000, nullable: true}}
+    StockDocumentTransition:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion"]
+      properties: {expectedVersion: {type: "integer", format: "int64", minimum: 0}}
+    StockDocumentItem:
+      type: "object"
+      additionalProperties: false
+      required: ["id","ingredientId","ingredientName","unit","quantity","unitCost","totalCost"]
+      properties: {id: {type: "string", format: "uuid"}, ingredientId: {type: "string", format: "uuid"}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, quantity: {type: "number"}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, unitCost: {type: "number"}, totalCost: {type: "number"}, note: {type: "string", nullable: true}}
+    StockDocumentSummary:
+      type: "object"
+      additionalProperties: false
+      required: ["id","documentCode","documentType","status","warehouseId","warehouseCode","warehouseName","lineCount","totalQuantity","totalCost","createdBy","version","createdAt","updatedAt"]
+      properties: {id: {type: "string", format: "uuid"}, documentCode: {type: "string"}, documentType: {"$ref":"#/components/schemas/StockDocumentType"}, status: {"$ref":"#/components/schemas/StockDocumentStatus"}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, warehouseName: {type: "string"}, note: {type: "string", nullable: true}, lineCount: {type: "integer", minimum: 0}, totalQuantity: {type: "number"}, totalCost: {type: "number"}, createdBy: {type: "string", format: "uuid"}, version: {type: "integer", format: "int64", minimum: 0}, createdAt: {type: "string", format: "date-time"}, updatedAt: {type: "string", format: "date-time"}}
+    StockDocumentDetail:
+      allOf:
+        - {"$ref":"#/components/schemas/StockDocumentSummary"}
+        - {type: "object", required: ["items"], properties: {items: {type: "array", items: {"$ref":"#/components/schemas/StockDocumentItem"}}, confirmedBy: {type: "string", format: "uuid", nullable: true}, cancelledBy: {type: "string", format: "uuid", nullable: true}, confirmedAt: {type: "string", format: "date-time", nullable: true}, cancelledAt: {type: "string", format: "date-time", nullable: true}}}
+    StockDocumentPage:
+      type: "object"
+      required: ["content","page","size","totalElements","totalPages"]
+      properties: {content: {type: "array", items: {"$ref":"#/components/schemas/StockDocumentSummary"}}, page: {type: "integer"}, size: {type: "integer"}, totalElements: {type: "integer", format: "int64"}, totalPages: {type: "integer"}}
+    InventoryTransaction:
+      type: "object"
+      additionalProperties: false
+      required: ["transactionId","sourceType","warehouseId","warehouseCode","ingredientId","ingredientName","unit","stockDocumentId","documentCode","documentType","transactionType","quantityChange","beforeQuantity","afterQuantity","unitCost","createdBy","createdAt"]
+      properties: {transactionId: {type: "string", format: "uuid"}, sourceType: {$ref: "#/components/schemas/InventoryTransactionSourceType"}, orderId: {type: "string", format: "uuid", nullable: true}, orderItemId: {type: "string", format: "uuid", nullable: true}, reservationId: {type: "string", format: "uuid", nullable: true}, recipeUsageId: {type: "string", format: "uuid", nullable: true}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, ingredientId: {type: "string", format: "uuid"}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, stockDocumentId: {type: "string", format: "uuid", nullable: true}, documentCode: {type: "string", nullable: true}, documentType: {type: "string", nullable: true, enum: ["RECEIPT","ISSUE","ADJUSTMENT"]}, transactionType: {"$ref":"#/components/schemas/InventoryTransactionType"}, quantityChange: {type: "number"}, beforeQuantity: {type: "number", description: "Physical quantity before movement"}, afterQuantity: {type: "number", description: "Physical quantity after movement"}, unitCost: {type: "number", nullable: true, description: "Null only for unvalued RECIPE_USE; stock-document rows retain their original valid cost"}, createdBy: {type: "string", format: "uuid"}, createdAt: {type: "string", format: "date-time"}}
+    InventoryTransactionPage:
+      type: "object"
+      required: ["content","page","size","totalElements","totalPages"]
+      properties: {content: {type: "array", items: {"$ref":"#/components/schemas/InventoryTransaction"}}, page: {type: "integer"}, size: {type: "integer"}, totalElements: {type: "integer", format: "int64"}, totalPages: {type: "integer"}}
     TableTransferSession: {"type":"object","additionalProperties":false,"required":["targetTableId","expectedVersion"],"properties":{"targetTableId":{"type":"string","format":"uuid"},"expectedVersion":{"type":"integer","format":"int64","minimum":0,"description":"Session version, not table/order version"},"reason":{"type":"string","nullable":true,"maxLength":1000,"description":"Trimmed; blank becomes null. Stored only in history/audit, never session.note."}}}
     TableTransferTableSnapshot: {"type":"object","required":["id","code","name"],"properties":{"id":{"type":"string","format":"uuid"},"code":{"type":"string","maxLength":50},"name":{"type":"string","maxLength":100}}}
     TableSessionTransfer: {"type":"object","additionalProperties":false,"required":["id","sessionId","fromTable","toTable","actorUserId","reason","sessionVersionBefore","sessionVersionAfter","transferredAt"],"properties":{"id":{"type":"string","format":"uuid"},"sessionId":{"type":"string","format":"uuid"},"fromTable":{"$ref":"#/components/schemas/TableTransferTableSnapshot"},"toTable":{"$ref":"#/components/schemas/TableTransferTableSnapshot"},"actorUserId":{"type":"string","format":"uuid"},"reason":{"type":"string","nullable":true,"maxLength":1000},"sessionVersionBefore":{"type":"integer","format":"int64","minimum":0},"sessionVersionAfter":{"type":"integer","format":"int64","minimum":0},"transferredAt":{"type":"string","format":"date-time"}}}
@@ -1874,6 +2444,12 @@ components:
           "minimum": 0
           "maximum": 999999999999.99
           "multipleOf": 0.01
+        "costPrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
+          "default": 0
         "active":
           "type": "boolean"
           "default": true
@@ -1906,6 +2482,12 @@ components:
           "description": "Absolute HTTP(S) URL without credentials; empty string clears the value."
           "nullable": true
         "salePrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
+          "nullable": true
+        "costPrice":
           "type": "number"
           "minimum": 0
           "maximum": 999999999999.99
@@ -2027,6 +2609,11 @@ components:
           "minimum": 0
           "maximum": 999999999999.99
           "multipleOf": 0.01
+        "costPrice":
+          "type": "number"
+          "minimum": 0
+          "maximum": 999999999999.99
+          "multipleOf": 0.01
         "active":
           "type": "boolean"
         "availabilityStatus":
@@ -2045,7 +2632,7 @@ components:
         "updatedAt":
           "type": "string"
           "format": "date-time"
-      "required": ["id","group","sku","name","baseUnit","description","imageUrl","salePrice","active","availabilityStatus","sellable","version","createdAt","updatedAt"]
+      "required": ["id","group","sku","name","baseUnit","description","imageUrl","salePrice","costPrice","active","availabilityStatus","sellable","version","createdAt","updatedAt"]
     "MenuGroupPage":
       "type": "object"
       "additionalProperties": false
@@ -2081,6 +2668,147 @@ components:
           "format": "int64"
         "totalPages":
           "type": "integer"
+      "required": ["content","page","size","totalElements","totalPages"]
+    "IngredientCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "sku": {"type":"string","maxLength":80,"nullable":true,"description":"Trimmed and uppercase; blank becomes null."}
+        "name": {"type":"string","minLength":1,"maxLength":150}
+        "baseUnit": {"type":"string","minLength":1,"maxLength":30,"description":"No unit conversion is implemented."}
+        "description": {"type":"string","maxLength":10000,"nullable":true}
+        "costPrice": {"type":"number","minimum":0,"maximum":999999999999.99,"multipleOf":0.01,"default":0,"description":"Reference catalog cost only."}
+        "trackInventory": {"type":"boolean","default":false,"description":"Intent flag only; no inventory balance is created."}
+        "active": {"type":"boolean","default":true}
+      "required": ["name","baseUnit"]
+    "IngredientUpdate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "sku": {"type":"string","maxLength":80,"nullable":true}
+        "name": {"type":"string","minLength":1,"maxLength":150,"nullable":true}
+        "baseUnit": {"type":"string","minLength":1,"maxLength":30,"nullable":true}
+        "description": {"type":"string","maxLength":10000,"nullable":true}
+        "costPrice": {"type":"number","minimum":0,"maximum":999999999999.99,"multipleOf":0.01,"nullable":true}
+        "trackInventory": {"type":"boolean","nullable":true}
+        "expectedVersion": {"type":"integer","format":"int64","minimum":0}
+      "required": ["expectedVersion"]
+      "description": "At least one editable non-null field is required. Blank sku/description clears to null."
+    "IngredientStatus":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "active": {"type":"boolean"}
+        "expectedVersion": {"type":"integer","format":"int64","minimum":0}
+      "required": ["active","expectedVersion"]
+    "Ingredient":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id": {"type":"string","format":"uuid"}
+        "sku": {"type":"string","maxLength":80,"nullable":true}
+        "name": {"type":"string","maxLength":150}
+        "baseUnit": {"type":"string","maxLength":30}
+        "description": {"type":"string","maxLength":10000,"nullable":true}
+        "costPrice": {"type":"number","minimum":0,"multipleOf":0.01,"description":"Reference catalog cost only."}
+        "trackInventory": {"type":"boolean","description":"Does not imply a stock balance exists."}
+        "active": {"type":"boolean"}
+        "version": {"type":"integer","format":"int64","minimum":0}
+        "createdAt": {"type":"string","format":"date-time"}
+        "updatedAt": {"type":"string","format":"date-time"}
+      "required": ["id","sku","name","baseUnit","description","costPrice","trackInventory","active","version","createdAt","updatedAt"]
+    "IngredientPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "content": {"type":"array","items":{"$ref":"#/components/schemas/Ingredient"}}
+        "page": {"type":"integer"}
+        "size": {"type":"integer"}
+        "totalElements": {"type":"integer","format":"int64"}
+        "totalPages": {"type":"integer"}
+      "required": ["content","page","size","totalElements","totalPages"]
+    "RecipeIngredientInput":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "ingredientId": {"type":"string","format":"uuid"}
+        "quantity": {"type":"number","minimum":0,"exclusiveMinimum":true,"maximum":999999999.999,"multipleOf":0.001}
+        "wastePercent": {"type":"number","minimum":0,"maximum":100,"multipleOf":0.01,"default":0}
+      "required": ["ingredientId","quantity"]
+    "RecipeCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "yieldQuantity": {"type":"number","minimum":0,"exclusiveMinimum":true,"maximum":999999999.999,"multipleOf":0.001}
+        "ingredients": {"type":"array","minItems":1,"maxItems":100,"items":{"$ref":"#/components/schemas/RecipeIngredientInput"}}
+      "required": ["yieldQuantity","ingredients"]
+    "RecipeCreateVersion":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "expectedVersion": {"type":"integer","format":"int64","minimum":0,"description":"Optimistic lock version, not recipeVersion."}
+        "yieldQuantity": {"type":"number","minimum":0,"exclusiveMinimum":true,"maximum":999999999.999,"multipleOf":0.001}
+        "ingredients": {"type":"array","minItems":1,"maxItems":100,"items":{"$ref":"#/components/schemas/RecipeIngredientInput"}}
+      "required": ["expectedVersion","yieldQuantity","ingredients"]
+    "RecipeIngredient":
+      "type": "object"
+      "additionalProperties": false
+      "properties": {"id":{"type":"string","format":"uuid"},"ingredientId":{"type":"string","format":"uuid"},"sku":{"type":"string","maxLength":80,"nullable":true},"name":{"type":"string","maxLength":150},"unit":{"type":"string","maxLength":30},"quantity":{"type":"number","multipleOf":0.001},"wastePercent":{"type":"number","multipleOf":0.01}}
+      "required": ["id","ingredientId","sku","name","unit","quantity","wastePercent"]
+    "Recipe":
+      "type": "object"
+      "additionalProperties": false
+      "properties": {"id":{"type":"string","format":"uuid"},"menuItemId":{"type":"string","format":"uuid"},"recipeVersion":{"type":"integer","minimum":1,"description":"Immutable business sequence."},"yieldQuantity":{"type":"number","multipleOf":0.001},"yieldUnit":{"type":"string","maxLength":30},"active":{"type":"boolean"},"ingredients":{"type":"array","items":{"$ref":"#/components/schemas/RecipeIngredient"}},"version":{"type":"integer","format":"int64","minimum":0,"description":"Optimistic lock value used as expectedVersion."},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}
+      "required": ["id","menuItemId","recipeVersion","yieldQuantity","yieldUnit","active","ingredients","version","createdAt","updatedAt"]
+    "RecipeSummary":
+      "type": "object"
+      "additionalProperties": false
+      "properties": {"id":{"type":"string","format":"uuid"},"menuItemId":{"type":"string","format":"uuid"},"recipeVersion":{"type":"integer","minimum":1},"yieldQuantity":{"type":"number","multipleOf":0.001},"yieldUnit":{"type":"string","maxLength":30},"active":{"type":"boolean"},"ingredientCount":{"type":"integer","format":"int64","minimum":0},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}
+      "required": ["id","menuItemId","recipeVersion","yieldQuantity","yieldUnit","active","ingredientCount","version","createdAt","updatedAt"]
+    "RecipeCostEstimate":
+      type: "object"
+      additionalProperties: false
+      required: ["menuItemId","recipeId","recipeVersion","recipeActive","yieldQuantity","yieldUnit","currencyCode","costSource","totalBatchCost","costPerYieldUnit","ingredients","warnings","estimatedAt"]
+      properties:
+        menuItemId: {"type":"string","format":"uuid"}
+        recipeId: {"type":"string","format":"uuid"}
+        recipeVersion: {"type":"integer","minimum":1,"description":"Immutable business recipe version, not optimistic-lock version."}
+        recipeActive: {"type":"boolean"}
+        yieldQuantity: {"type":"number","exclusiveMinimum":true,"minimum":0,"multipleOf":0.001}
+        yieldUnit: {"type":"string","maxLength":30}
+        currencyCode: {"type":"string","minLength":3,"maxLength":3,"description":"Restaurant currency; not supplied by the client."}
+        costSource: {"type":"string","enum":["INGREDIENT_COST_PRICE"]}
+        totalBatchCost: {"type":"number","minimum":0,"multipleOf":0.01,"description":"Sum of HALF_UP 2-decimal line costs. Computed without imposing Item.costPrice column precision."}
+        costPerYieldUnit: {"type":"number","minimum":0,"multipleOf":0.01,"description":"totalBatchCost / yieldQuantity, HALF_UP to 2 decimals."}
+        ingredients: {"type":"array","items":{"$ref":"#/components/schemas/RecipeCostEstimateIngredient"}}
+        warnings: {"type":"array","items":{"$ref":"#/components/schemas/RecipeCostEstimateWarning"}}
+        estimatedAt: {"type":"string","format":"date-time","description":"Estimate generation time from Clock, not a stored historical cost timestamp."}
+    "RecipeCostEstimateIngredient":
+      type: "object"
+      additionalProperties: false
+      required: ["ingredientId","sku","name","unit","quantity","wastePercent","grossQuantity","unitCost","lineCost"]
+      properties:
+        ingredientId: {"type":"string","format":"uuid"}
+        sku: {"type":"string","nullable":true,"maxLength":80,"description":"Recipe snapshot SKU."}
+        name: {"type":"string","maxLength":150,"description":"Recipe snapshot name."}
+        unit: {"type":"string","maxLength":30,"description":"Recipe snapshot unit; must match current baseUnit. No conversion."}
+        quantity: {"type":"number","minimum":0,"exclusiveMinimum":true,"multipleOf":0.001,"description":"Recipe batch quantity before additive waste."}
+        wastePercent: {"type":"number","minimum":0,"maximum":100,"multipleOf":0.01}
+        grossQuantity: {"type":"number","minimum":0,"exclusiveMinimum":true,"description":"Exact quantity * (1 + wastePercent / 100), without rounding to stock scale 3. Example 0.0010001 is preserved."}
+        unitCost: {"type":"number","minimum":0,"multipleOf":0.01,"description":"CURRENT ingredient.costPrice per one baseUnit; zero is valid with a warning."}
+        lineCost: {"type":"number","minimum":0,"multipleOf":0.01,"description":"grossQuantity * unitCost, HALF_UP to 2 decimals."}
+    "RecipeCostEstimateWarning":
+      type: "object"
+      additionalProperties: false
+      required: ["code","ingredientId","message"]
+      properties:
+        code: {"type":"string","enum":["ZERO_INGREDIENT_REFERENCE_COST"]}
+        ingredientId: {"type":"string","format":"uuid"}
+        message: {"type":"string","example":"Nguyên liệu đang có giá vốn tham chiếu bằng 0"}
+    "RecipePage":
+      "type": "object"
+      "additionalProperties": false
+      "properties": {"content":{"type":"array","items":{"$ref":"#/components/schemas/RecipeSummary"}},"page":{"type":"integer"},"size":{"type":"integer"},"totalElements":{"type":"integer","format":"int64"},"totalPages":{"type":"integer"}}
       "required": ["content","page","size","totalElements","totalPages"]
     Error:
       type: "object"

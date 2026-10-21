@@ -22,11 +22,15 @@ public class OrderConfirmationOperation {
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderAudit audit;
+    private final OrderInventoryAllocationOperation inventory;
 
     @Transactional(propagation=Propagation.MANDATORY)
     public void confirm(Order order,List<OrderItem> lines,CurrentUser actor,Instant now,String ip) {
         validate(order,lines,actor);
+        inventory.validate(order,lines);
         var before=audit.snapshot(order,lines);
+        inventory.accept(order,lines.stream().filter(line -> line.getStatus()==OrderItemStatus.PENDING
+            && line.getSentToKitchenAt()==null).toList(),actor,now,ip);
         order.setStatus(OrderStatus.CONFIRMED); order.setConfirmedAt(now);
         lines.stream().filter(line -> line.getStatus()==OrderItemStatus.PENDING && line.getSentToKitchenAt()==null)
             .forEach(line -> line.setSentToKitchenAt(now));

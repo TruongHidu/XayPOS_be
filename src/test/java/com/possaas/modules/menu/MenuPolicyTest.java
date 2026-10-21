@@ -16,13 +16,15 @@ class MenuPolicyTest {
 
     private ItemCreationContext context(boolean active) {
         return new ItemCreationContext(UUID.randomUUID(), null, " coffee ", " Coffee ", " cup ", null, null,
-                new BigDecimal("0"), active, Instant.parse("2026-01-01T00:00:00Z"));
+                new BigDecimal("0"), new BigDecimal("0"), false, active,
+                Instant.parse("2026-01-01T00:00:00Z"));
     }
 
     @Test
     void factoryDelegatesAndInitializesSafeDefaults() {
         var strategy = spy(new MenuItemCreationStrategy(validation));
-        var factory = new MenuItemFactory(new ItemCreationStrategyRegistry(List.of(strategy)));
+        var factory = new MenuItemFactory(new ItemCreationStrategyRegistry(
+                List.of(strategy, new IngredientCreationStrategy(validation))));
         var input = context(false);
         var item = factory.create(ItemType.MENU_ITEM, input);
         verify(strategy).create(input);
@@ -40,11 +42,13 @@ class MenuPolicyTest {
     @Test
     void registryRejectsDuplicateMissingAndUnsupportedTypes() {
         var s = new MenuItemCreationStrategy(validation);
-        assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of(s, s)))
+        var ingredient = new IngredientCreationStrategy(validation);
+        assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of(s, s, ingredient)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of())).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of(s)).get(ItemType.INGREDIENT))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of(s))).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new ItemCreationStrategyRegistry(List.of(ingredient)))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
