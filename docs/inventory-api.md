@@ -1,4 +1,21 @@
-# Inventory API — Giai đoạn 1–5
+# Inventory API — Giai đoạn 1–7
+
+Giai đoạn 7 thêm [kiểm kê kho](stock-audit-api.md): DRAFT -> COUNTING -> CONFIRMED,
+hoặc CANCELLED. Các API `/api/v1/inventory/audits` dùng INVENTORY_MANAGEMENT +
+STOCK_AUDIT; GET cần INVENTORY_VIEW, quản lý cần thêm STOCK_AUDIT_MANAGE, chốt cần
+thêm STOCK_AUDIT_CONFIRM. Không khóa kho suốt COUNTING; biến động vật lý sau start
+trả STOCK_AUDIT_SNAPSHOT_STALE, phải hủy và đếm lại. Confirm bảo vệ reserved hiện tại.
+Stock document GET/list thêm stockAuditId nullable; generated ADJUSTMENT chỉ đọc,
+mọi mutation public trả STOCK_DOCUMENT_MANAGED_BY_AUDIT. Public create từ chối
+namespace SYS_STOCK_AUDIT: (trim, không phân biệt hoa/thường). Không đổi ledger source.
+Giá tiền dòng chứng từ làm tròn HALF_UP 2 số khi quantity có 3 số thập phân.
+
+
+Giai đoạn 6 thêm [cảnh báo có lịch sử và acknowledge](low-stock-alert-api.md):
+GET `/api/v1/inventory/alerts`, GET `/api/v1/inventory/alerts/{alertId}` và POST
+`/api/v1/inventory/alerts/{alertId}/acknowledge`. GET cần INVENTORY_VIEW; ACK cần
+thêm INVENTORY_ALERT_ACKNOWLEDGE. Cả ba cần INVENTORY_MANAGEMENT+LOW_STOCK_ALERT.
+GET `/low-stock` cũ vẫn là danh sách số dư thấp, không đổi response hay ghi DB.
 
 Giai đoạn 5 bổ sung [giữ chỗ/tiêu thụ nguyên liệu theo order](order-inventory-allocation-api.md)
 và [hướng dẫn đồng bộ FE](order-inventory-allocation-fe-sync.md). Đây là side effect
@@ -286,7 +303,8 @@ chính: `STOCK_DOCUMENT_NOT_FOUND`, `STOCK_DOCUMENT_ITEM_NOT_FOUND`,
 `409 INVALID_INVENTORY_COST_DATA` và rollback toàn bộ.
 
 Chưa có transfer, kiểm kê, supplier, unit conversion, full inventory valuation,
-hoàn tác chứng từ confirmed, persistent low-stock alert hay sửa/xóa ledger.
+hoàn tác chứng từ confirmed hay sửa/xóa ledger. Giai đoạn 6 đã bổ sung persistent
+low-stock alert; chưa có realtime notification delivery.
 
 V32 bổ sung [snapshot công thức tại lúc gửi món](order-recipe-snapshot-api.md) ở
 module ORDER. V33 dùng tracked usages đã chốt để reserve ở kho default, consume

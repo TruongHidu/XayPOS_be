@@ -26,6 +26,7 @@ public class InventoryBalanceCommandService {
     private final InventoryValidationPolicy validation;
     private final InventoryBalanceResponseMapper mapper;
     private final InventoryAudit audit;
+    private final LowStockAlertReconciliationService alerts;
     private final Clock clock;
 
     public InventoryBalanceResponse updateThreshold(UUID warehouseId, UUID ingredientId,
@@ -45,6 +46,7 @@ public class InventoryBalanceCommandService {
             InventoryBalance balance = new InventoryBalance();
             balance.initialize(actor.restaurantId(), warehouseId, ingredientId, threshold, clock.instant());
             balances.saveAndFlush(balance);
+            alerts.changed(actor, java.util.List.of(balance), ipAddress);
             audit.threshold(actor, balance, null, ipAddress);
             return mapper.map(balance, warehouse, ingredient);
         }
@@ -56,6 +58,7 @@ public class InventoryBalanceCommandService {
         balance.setMinQuantity(threshold);
         balance.touch(clock.instant());
         balances.saveAndFlush(balance);
+        alerts.changed(actor, java.util.List.of(balance), ipAddress);
         audit.threshold(actor, balance, before, ipAddress);
         return mapper.map(balance, warehouse, ingredient);
     }

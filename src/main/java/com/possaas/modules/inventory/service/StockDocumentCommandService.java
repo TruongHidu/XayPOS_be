@@ -48,7 +48,7 @@ public class StockDocumentCommandService {
             String ipAddress) {
         CurrentUser actor = access.mutationActor();
         permissions.require(actor, request.documentType());
-        String key = validation.idempotencyKey(idempotencyHeader);
+        String key = validation.publicDocumentKey(idempotencyHeader);
         String hash = hasher.hash(request);
         var replay = documents.findByRestaurantIdAndIdempotencyKey(actor.restaurantId(), key);
         if (replay.isPresent()) {
@@ -84,6 +84,7 @@ public class StockDocumentCommandService {
         CurrentUser actor = access.mutationActor();
         StockDocument document = access.documentForUpdate(actor.restaurantId(), documentId);
         permissions.require(actor, document.getDocumentType());
+        lifecycle.requireManual(document);
         lifecycle.requireDraft(document);
         lifecycle.requireVersion(document, request.expectedVersion());
         String note = validation.note(request.note());
@@ -145,6 +146,7 @@ public class StockDocumentCommandService {
         CurrentUser actor = access.mutationActor();
         StockDocument document = access.documentForUpdate(actor.restaurantId(), documentId);
         permissions.require(actor, document.getDocumentType());
+        lifecycle.requireManual(document);
         if (document.getStatus() == StockDocumentStatus.CONFIRMED) return response(document);
         lifecycle.requireDraft(document);
         lifecycle.requireVersion(document, request.expectedVersion());
@@ -165,6 +167,7 @@ public class StockDocumentCommandService {
         CurrentUser actor = access.mutationActor();
         StockDocument document = access.documentForUpdate(actor.restaurantId(), documentId);
         permissions.require(actor, document.getDocumentType());
+        lifecycle.requireManual(document);
         if (document.getStatus() == StockDocumentStatus.CANCELLED) return response(document);
         lifecycle.requireDraft(document);
         lifecycle.requireVersion(document, request.expectedVersion());
@@ -178,6 +181,7 @@ public class StockDocumentCommandService {
     private StockDocument mutable(CurrentUser actor, UUID documentId, long expectedVersion) {
         StockDocument document = access.documentForUpdate(actor.restaurantId(), documentId);
         permissions.require(actor, document.getDocumentType());
+        lifecycle.requireManual(document);
         lifecycle.requireDraft(document);
         lifecycle.requireVersion(document, expectedVersion);
         return document;

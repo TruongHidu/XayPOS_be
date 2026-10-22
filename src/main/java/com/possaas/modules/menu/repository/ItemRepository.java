@@ -8,6 +8,9 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificationExecutor<Item> {
+    @Query("select i from Item i where i.restaurantId=:tenant and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT "
+        + "and i.trackInventory=true and i.deletedAt is null order by i.id")
+    List<Item> findAllTrackedIngredients(@Param("tenant") UUID tenant);
     Optional<Item> findByIdAndRestaurantIdAndItemType(UUID id, UUID restaurantId, ItemType type);
     List<Item> findAllByRestaurantIdAndIdIn(UUID restaurantId, Collection<UUID> ids);
 

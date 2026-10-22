@@ -40,6 +40,8 @@ public class StockDocument {
     private String idempotencyKey;
     @Column(name = "creation_request_hash", nullable = false, length = 64)
     private String creationRequestHash;
+    @Column(name = "stock_audit_id", updatable = false)
+    private UUID stockAuditId;
     private String note;
     @Column(name = "line_count", nullable = false)
     private int lineCount;
@@ -83,6 +85,12 @@ public class StockDocument {
     }
 
     public void updateNote(String value, Instant now) { note = value; touch(now); }
+
+    public void linkStockAudit(UUID auditId) {
+        if (id != null || documentType != StockDocumentType.ADJUSTMENT || stockAuditId != null)
+            throw new IllegalStateException("Audit provenance must be assigned to a new adjustment");
+        stockAuditId = java.util.Objects.requireNonNull(auditId);
+    }
 
     public void updateTotals(int count, BigDecimal quantity, BigDecimal cost, Instant now) {
         lineCount = count;

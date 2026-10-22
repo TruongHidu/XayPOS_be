@@ -21,4 +21,5 @@ public record StockDocumentSummaryResponse(
         UUID createdBy,
         long version,
         Instant createdAt,
-        Instant updatedAt) {}
+        Instant updatedAt,
+        UUID stockAuditId) {}

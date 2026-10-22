@@ -251,3 +251,21 @@ Bootstrap idempotent theo email. Sau khi tạo thành công, tắt `SUPER_ADMIN_
   `SUBSCRIPTION_EXPIRATION_INITIAL_DELAY`, `SUBSCRIPTION_EXPIRATION_BATCH_SIZE`.
 - `autoRenew=true` chưa tự gia hạn, tạo subscription hoặc thu tiền vì billing engine nằm ngoài phase
   hiện tại.
+## Inventory Giai đoạn 6
+
+Cảnh báo tồn thấp có lịch sử OPEN/ACKNOWLEDGED/RESOLVED, tự đồng bộ cùng transaction
+nhập/xuất/consume/threshold/lifecycle. Điều kiện dùng tồn vật lý, không dùng available.
+Xem [API và Postman](docs/low-stock-alert-api.md),
+[thiết kế](docs/low-stock-alert-implementation.md) và
+[đồng bộ FE](docs/low-stock-alert-fe-sync.md).
+
+## Inventory Giai đoạn 7
+
+Kiểm kê DRAFT/COUNTING/CONFIRMED/CANCELLED; snapshot khi start, không freeze kho.
+Phát hiện snapshot stale bằng quantity + số ledger movement theo tenant/kho/nguyên
+liệu, bảo vệ reservation hiện tại. Confirm sinh một ADJUSTMENT qua posting chung
+hoặc không sinh document nếu khớp tất cả. Migration V35, quyền STOCK_AUDIT_MANAGE,
+dùng lại INVENTORY_MANAGEMENT + STOCK_AUDIT, không tự sửa package/subscription.
+Xem [API/Postman](docs/stock-audit-api.md), [thiết kế và test](docs/stock-audit-implementation.md),
+[đồng bộ FE](docs/stock-audit-fe-sync.md). Full Maven test phải dùng DB/schema test riêng,
+không chạy migrate schema public của database đang làm việc.

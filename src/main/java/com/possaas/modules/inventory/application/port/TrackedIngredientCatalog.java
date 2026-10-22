@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Map;
 
 public interface TrackedIngredientCatalog {
+    java.util.List<TrackedIngredientSnapshot> findAllTracked(UUID restaurantId);
     TrackedIngredientSnapshot requireTracked(UUID restaurantId, UUID ingredientId);
 
     Map<UUID, TrackedIngredientSnapshot> requireTrackedBatch(UUID restaurantId, Collection<UUID> ingredientIds);

@@ -56,7 +56,7 @@ public class StockDocumentQueryRepository {
         List<StockDocumentSummaryResponse> content = jdbc.query("""
                 SELECT d.id,d.document_code,d.document_type,d.status,d.warehouse_id,
                        w.code AS warehouse_code,w.name AS warehouse_name,d.note,d.line_count,
-                       d.total_quantity,d.total_cost,d.created_by,d.version,d.created_at,d.updated_at
+                       d.total_quantity,d.total_cost,d.created_by,d.version,d.created_at,d.updated_at,d.stock_audit_id
                 """ + from + order + " LIMIT :limit OFFSET :offset", paged, (rs, row) -> map(rs));
         Long count = jdbc.queryForObject("SELECT count(*) " + from, params, Long.class);
         return new PageResult(content, count == null ? 0 : count);
@@ -71,7 +71,7 @@ public class StockDocumentQueryRepository {
                 rs.getString("warehouse_name"), rs.getString("note"), rs.getInt("line_count"),
                 rs.getBigDecimal("total_quantity"), rs.getBigDecimal("total_cost"),
                 rs.getObject("created_by", UUID.class), rs.getLong("version"),
-                rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant());
+                rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(), rs.getObject("stock_audit_id", UUID.class));
     }
 
     private static String order(String sortBy, String direction) {

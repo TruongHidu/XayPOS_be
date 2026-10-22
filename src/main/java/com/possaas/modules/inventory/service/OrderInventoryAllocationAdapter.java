@@ -29,6 +29,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
     private final InventoryAllocationPolicy policy;
     private final InventoryAvailabilityPolicy availability;
     private final InventoryAllocationAudit audit;
+    private final LowStockAlertReconciliationService alerts;
 
     @Override
     public void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, Instant now, String ip) {
@@ -134,6 +135,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
         balances.saveAll(locked.values());
         allocations.saveAllAndFlush(changed);
         transactions.flush();
+        if (consume) alerts.changed(actor, locked.values(), ip);
         audit.record(actor, changed, ip);
     }
 

@@ -39,6 +39,13 @@ public class StockDocumentValidationPolicy {
         return trimmed;
     }
 
+    public String publicDocumentKey(String value) {
+        String key = idempotencyKey(value);
+        if (key.toUpperCase(java.util.Locale.ROOT).startsWith(StockAuditAdjustmentOperation.KEY_PREFIX))
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "RESERVED_IDEMPOTENCY_NAMESPACE", "Idempotency namespace is reserved for internal stock audits");
+        return key;
+    }
+
     private static BusinessException invalidQuantity() {
         return new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT_QUANTITY",
                 "quantity must be positive with at most three decimals");

@@ -26,6 +26,7 @@ public class WarehouseCommandService {
     private final InventoryValidationPolicy validation;
     private final WarehouseResponseMapper mapper;
     private final InventoryAudit audit;
+    private final LowStockAlertReconciliationService alerts;
     private final Clock clock;
 
     public WarehouseResponse create(WarehouseRequests.Create request, String ipAddress) {
@@ -69,6 +70,7 @@ public class WarehouseCommandService {
         warehouse.setActive(request.active());
         persist(actor, warehouse, request.active() ? "WAREHOUSE_ENABLED" : "WAREHOUSE_DISABLED", before,
                 ipAddress);
+        alerts.warehouseChanged(actor, warehouseId, ipAddress);
         return mapper.map(warehouse);
     }
 
@@ -111,6 +113,7 @@ public class WarehouseCommandService {
         warehouse.softDelete(clock.instant());
         warehouses.saveAndFlush(warehouse);
         audit.warehouse(actor, "WAREHOUSE_DELETED", warehouse, before, audit.warehouse(warehouse), ipAddress);
+        alerts.warehouseChanged(actor, warehouseId, ipAddress);
     }
 
     private void persist(CurrentUser actor, Warehouse warehouse, String action, Map<String, Object> before,

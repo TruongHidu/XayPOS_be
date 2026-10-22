@@ -67,7 +67,7 @@ public class StockDocumentItem {
 
     public boolean update(BigDecimal quantity, AdjustmentDirection direction, BigDecimal unitCost,
             String note, Instant now) {
-        BigDecimal newTotalCost = quantity.multiply(unitCost).setScale(2);
+        BigDecimal newTotalCost = quantity.multiply(unitCost).setScale(2, java.math.RoundingMode.HALF_UP);
         if (this.quantity != null
                 && this.quantity.compareTo(quantity) == 0
                 && this.adjustmentDirection == direction

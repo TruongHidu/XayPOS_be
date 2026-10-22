@@ -7,6 +7,7 @@ import com.possaas.modules.menu.dto.IngredientResponse;
 import com.possaas.modules.menu.entity.Item;
 import com.possaas.modules.menu.entity.ItemType;
 import com.possaas.modules.menu.application.port.InventoryStockUsageQuery;
+import com.possaas.modules.menu.application.port.IngredientInventoryAlertLifecycle;
 import com.possaas.modules.menu.repository.ItemRepository;
 import com.possaas.modules.menu.service.strategy.ItemCreationContext;
 import java.math.BigDecimal;
@@ -30,6 +31,7 @@ public class IngredientCommandService {
     private final IngredientLifecyclePolicy lifecycle;
     private final RecipeDependencyPolicy recipeDependencies;
     private final InventoryStockUsageQuery inventoryStock;
+    private final IngredientInventoryAlertLifecycle inventoryAlerts;
     private final IngredientResponseMapper mapper;
     private final IngredientAudit audit;
     private final Clock clock;
@@ -56,6 +58,8 @@ public class IngredientCommandService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EMPTY_UPDATE_REQUEST", "No fields provided");
         lifecycle.requireVersion(ingredient, request.expectedVersion());
         Map<String, Object> before = audit.snapshot(ingredient);
+        String oldUnit = ingredient.getBaseUnit();
+        boolean oldTracking = ingredient.isTrackInventory();
         if (request.sku() != null)
             ingredient.setSku(validation.sku(request.sku()));
         if (request.name() != null)
@@ -81,6 +85,8 @@ public class IngredientCommandService {
             ingredient.setTrackInventory(request.trackInventory());
         if (!before.equals(audit.snapshot(ingredient)))
             persist(actor, ingredient, "INGREDIENT_UPDATED", before, ipAddress);
+        if (!Objects.equals(oldUnit, ingredient.getBaseUnit()) || oldTracking != ingredient.isTrackInventory())
+            inventoryAlerts.changed(actor, ingredientId, ipAddress);
         return mapper.map(ingredient);
     }
 
@@ -113,6 +119,7 @@ public class IngredientCommandService {
         Map<String, Object> before = audit.snapshot(ingredient);
         lifecycle.softDelete(ingredient, clock.instant());
         persist(actor, ingredient, "INGREDIENT_DELETED", before, ipAddress);
+        inventoryAlerts.changed(actor, ingredientId, ipAddress);
     }
 
     private void persist(CurrentUser actor, Item ingredient, String action, Map<String, Object> before,

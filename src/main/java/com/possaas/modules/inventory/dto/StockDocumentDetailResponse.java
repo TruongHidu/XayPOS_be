@@ -27,4 +27,5 @@ public record StockDocumentDetailResponse(
         Instant createdAt,
         Instant updatedAt,
         Instant confirmedAt,
-        Instant cancelledAt) {}
+        Instant cancelledAt,
+        UUID stockAuditId) {}

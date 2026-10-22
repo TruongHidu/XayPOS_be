@@ -62,8 +62,14 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("33");
-            assertThat(countTables(schema)).isEqualTo(38);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("35");
+            assertThat(countTables(schema)).isEqualTo(41);
+            assertThat(tableExists(schema, "stock_audits")).isTrue();
+            assertThat(tableExists(schema, "stock_audit_items")).isTrue();
+            assertThat(indexExists(schema, "ux_stock_audit_counting")).isTrue();
+            assertThat(indexExists(schema, "ux_stock_document_stock_audit")).isTrue();
+            assertThat(tableExists(schema, "low_stock_alerts")).isTrue();
+            assertThat(indexExists(schema, "ux_low_stock_alert_unresolved")).isTrue();
             assertThat(tableExists(schema, "order_item_inventory_allocations")).isTrue();
             assertThat(tableExists(schema, "inventory_reservations")).isTrue();
             assertThat(tableExists(schema, "order_item_recipe_snapshots")).isTrue();
@@ -912,6 +918,98 @@ class FlywayCleanMigrationIntegrationTest {
                         .hasMessageContaining("append-only");
             }
         } finally { dropTestSchema(schema); }
+    }
+
+    @Test
+    void v34BaselinesCurrentLowStockWithoutChangingBalancesLedgerAuditOrFeatures() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");
+        createSchema(schema);
+        String p="\""+schema+"\".";
+        UUID tenant=UUID.randomUUID(),warehouse=UUID.randomUUID(),inactiveWarehouse=UUID.randomUUID();
+        Map<String,String> before=new java.util.HashMap<>();
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("33").load().migrate();
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+                s.execute("INSERT INTO "+p+"restaurants(id,code,name,status) VALUES('"+tenant+"','V34_BASE','Baseline','ACTIVE')");
+                s.execute("INSERT INTO "+p+"warehouses(id,restaurant_id,code,name,is_active,created_at,updated_at) VALUES "
+                    +"('"+warehouse+"','"+tenant+"','MAIN','Main',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+                    +"('"+inactiveWarehouse+"','"+tenant+"','OFF','Off',false,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
+                for(int i=0;i<6;i++) {
+                    UUID item=UUID.randomUUID();
+                    s.execute("INSERT INTO "+p+"items(id,restaurant_id,name,item_type,base_unit,track_inventory,is_active,created_at,updated_at) VALUES('"
+                        +item+"','"+tenant+"','Ingredient "+i+"','INGREDIENT','g',"+(i!=5)+","+(i!=1)+",CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
+                    int quantity=i==2?21:10;int threshold=i==3?0:20;
+                    s.execute("INSERT INTO "+p+"inventory_balances(restaurant_id,warehouse_id,item_id,quantity,min_quantity,created_at,updated_at) VALUES('"
+                        +tenant+"','"+(i==4?inactiveWarehouse:warehouse)+"','"+item+"',"+quantity+","+threshold+",CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)");
+                }
+                for(String table:java.util.List.of("inventory_balances","inventory_transactions","audit_logs","features","package_features","restaurant_subscriptions"))
+                    before.put(table,tableSnapshot(s,p,table));
+            }
+            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").load();upgraded.migrate();upgraded.validate();
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+                for(var entry:before.entrySet())assertThat(tableSnapshot(s,p,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                try(ResultSet r=s.executeQuery("SELECT count(*),bool_and(status='OPEN' AND acknowledged_by IS NULL AND quantity_at_trigger=10 AND threshold_quantity=20 AND triggered_at=created_at) FROM "+p+"low_stock_alerts")) {
+                    r.next();assertThat(r.getInt(1)).isEqualTo(2);assertThat(r.getBoolean(2)).isTrue();
+                }
+                try(ResultSet r=s.executeQuery("SELECT array_agg(r.code ORDER BY r.code)::text FROM "+p+"role_permissions rp JOIN "+p+"roles r ON r.id=rp.role_id JOIN "+p+"permissions p ON p.id=rp.permission_id WHERE p.code='INVENTORY_ALERT_ACKNOWLEDGE'")) {
+                    r.next();assertThat(r.getString(1)).isEqualTo("{OWNER,SUPER_ADMIN}");
+                }
+            }
+        } finally {dropTestSchema(schema);}
+    }
+
+    @Test
+    void v35AddsEmptyStocktakingHistoryWithoutChangingExistingPhysicalData() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");createSchema(schema);
+        String p="\""+schema+"\".";Map<String,String> before=new java.util.LinkedHashMap<>();
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("34").load().migrate();
+            v35DocumentFixture(schema,"regular-key");
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+                for(String table:java.util.List.of("items","warehouses","stock_documents","stock_document_items","inventory_balances",
+                    "inventory_transactions","inventory_reservations","low_stock_alerts","audit_logs","features","packages","package_features","restaurant_subscriptions"))before.put(table,tableSnapshot(s,p,table));
+            }
+            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();upgraded.migrate();upgraded.validate();
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+                for(var entry:before.entrySet()) {
+                    if(entry.getKey().equals("stock_documents")){
+                        try(ResultSet r=s.executeQuery("select coalesce(jsonb_agg(to_jsonb(t)-'stock_audit_id' ORDER BY (to_jsonb(t)-'stock_audit_id')::text),'[]'::jsonb)::text from "+p+"stock_documents t")){r.next();assertThat(r.getString(1)).isEqualTo(entry.getValue());}
+                    }else assertThat(tableSnapshot(s,p,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                }
+                for(String table:java.util.List.of("stock_audits","stock_audit_items"))try(ResultSet r=s.executeQuery("select count(*) from "+p+table)){r.next();assertThat(r.getLong(1)).isZero();}
+                try(ResultSet r=s.executeQuery("select string_agg(r.code,',' order by r.code) from "+p+"roles r join "+p+"role_permissions rp on rp.role_id=r.id join "+p+"permissions p on p.id=rp.permission_id where p.code='STOCK_AUDIT_MANAGE'")){r.next();assertThat(r.getString(1)).isEqualTo("OWNER,SUPER_ADMIN");}
+            }
+        }finally{dropTestSchema(schema);}
+    }
+
+    @Test
+    void v35RejectsReservedManualNamespaceClearlyWithoutChangingOldKeys() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");createSchema(schema);String p="\""+schema+"\".";
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("34").load().migrate();
+            v35DocumentFixture(schema," sys_stock_audit:reserved ");
+            var upgrade=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();
+            assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("reserved SYS_STOCK_AUDIT: namespace");
+            assertThat(tableExists(schema,"stock_audits")).isFalse();
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement();ResultSet r=s.executeQuery("select idempotency_key from "+p+"stock_documents")){r.next();assertThat(r.getString(1)).isEqualTo(" sys_stock_audit:reserved ");}
+        }finally{dropTestSchema(schema);}
+    }
+
+    private void v35DocumentFixture(String schema,String key)throws Exception {
+        String p="\""+schema+"\".";UUID tenant=UUID.randomUUID(),actor=UUID.randomUUID(),warehouse=UUID.randomUUID(),ingredient=UUID.randomUUID(),document=UUID.randomUUID(),line=UUID.randomUUID();
+        try(Connection c=dataSource.getConnection();Statement s=c.createStatement()){
+            c.setSchema(schema);
+            s.execute("insert into "+p+"restaurants(id,code,name,status) values('"+tenant+"','V35_KEEP','Keep','ACTIVE')");
+            s.execute("insert into "+p+"users(id,restaurant_id,role_id,email,password_hash,name) select '"+actor+"','"+tenant+"',id,'v35@test.example','fixture','Owner' from "+p+"roles where restaurant_id is null and code='OWNER'");
+            s.execute("insert into "+p+"items(id,restaurant_id,name,item_type,base_unit,cost_price,track_inventory,created_at,updated_at) values('"+ingredient+"','"+tenant+"','Ingredient','INGREDIENT','g',2,true,now(),now())");
+            s.execute("insert into "+p+"warehouses(id,restaurant_id,code,name,is_default,is_active,created_at,updated_at) values('"+warehouse+"','"+tenant+"','MAIN','Main',true,true,now(),now())");
+            s.execute("insert into "+p+"inventory_balances(restaurant_id,warehouse_id,item_id,quantity,min_quantity,created_at,updated_at) values('"+tenant+"','"+warehouse+"','"+ingredient+"',10,2,now(),now())");
+            s.execute("insert into "+p+"stock_documents(id,restaurant_id,warehouse_id,document_code,document_type,status,idempotency_key,creation_request_hash,created_by,confirmed_by,confirmed_at,line_count,total_quantity,total_cost,created_at,updated_at) values('"+document+"','"+tenant+"','"+warehouse+"','KEEP','RECEIPT','CONFIRMED','"+key+"',repeat('a',64),'"+actor+"','"+actor+"',now(),1,10,20,now(),now())");
+            s.execute("insert into "+p+"stock_document_items(id,restaurant_id,stock_document_id,ingredient_id,ingredient_name,unit,quantity,unit_cost,total_cost,created_at,updated_at) values('"+line+"','"+tenant+"','"+document+"','"+ingredient+"','Old name','g',10,2,20,now(),now())");
+            s.execute("insert into "+p+"inventory_transactions(restaurant_id,warehouse_id,item_id,transaction_type,stock_document_id,stock_document_item_id,quantity_change,before_quantity,after_quantity,unit,unit_cost,idempotency_key,created_by,created_at) values('"+tenant+"','"+warehouse+"','"+ingredient+"','RECEIPT','"+document+"','"+line+"',10,0,10,'g',2,'keep-ledger','"+actor+"',now())");
+        }
     }
 
     private String unrelatedCompletionGrants(Statement statement, String prefix) throws Exception {

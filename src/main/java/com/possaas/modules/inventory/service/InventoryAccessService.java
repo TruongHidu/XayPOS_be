@@ -35,7 +35,11 @@ public class InventoryAccessService {
     }
 
     public CurrentUser requireLowStock() {
-        CurrentUser actor = require(false);
+        return requireLowStock(false);
+    }
+
+    public CurrentUser requireLowStock(boolean mutation) {
+        CurrentUser actor = require(mutation);
         features.requireFeature(actor.restaurantId(), LOW_STOCK_ALERT);
         return actor;
     }

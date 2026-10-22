@@ -39,6 +39,7 @@ public class StockPostingService {
     private final StockDocumentItemFactory itemPolicy;
     private final ReceiptReferenceCostService referenceCosts;
     private final InventoryAvailabilityPolicy availability;
+    private final LowStockAlertReconciliationService alerts;
     private final Clock clock;
 
     public void post(CurrentUser actor, StockDocument document, List<StockDocumentItem> originalItems,
@@ -99,5 +100,6 @@ public class StockPostingService {
         balances.saveAllAndFlush(changed);
         ledger.forEach(transactions::append);
         transactions.flush();
+        alerts.changed(actor, changed, ipAddress);
     }
 }

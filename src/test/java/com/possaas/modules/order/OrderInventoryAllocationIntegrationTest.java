@@ -371,6 +371,79 @@ class OrderInventoryAllocationIntegrationTest {
         assertNoOrderArtifacts();assertThat(count("inventory_balances")).isZero();assertThat(count("audit_logs")).isEqualTo(before);
     }
 
+    @Test void reserveAndReleaseDoNotAlertWhenOnlyAvailableIsLow() throws Exception {
+        stock("1000");alertThreshold("200");var order=create(true,"9").expect(201);
+        balance(warehouse,"1000","945","55");assertThat(count("low_stock_alerts")).isZero();
+        cancel(order).expect(200);assertThat(count("low_stock_alerts")).isZero();
+        assertThat(events("LOW_STOCK_ALERT_TRIGGERED")).isZero();
+    }
+    @ParameterizedTest @ValueSource(strings={"single","bulk","downgrade"})
+    void physicalConsumptionAlertsWithOnlyExistingKitchenOrderPermissions(String mode) throws Exception {
+        stock("1000");alertThreshold("700");var order=create(true,"3").expect(201);
+        assertThat(count("low_stock_alerts")).isZero();
+        if(mode.equals("downgrade"))withoutFeature("INVENTORY_MANAGEMENT");
+        var done=mode.equals("single")?single(order,0,"start-cooking").expect(200):bulk(order,"mark-served").expect(200);
+        assertThat(count("low_stock_alerts")).isEqualTo(1);assertThat(events("LOW_STOCK_ALERT_TRIGGERED")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT quantity_at_trigger FROM low_stock_alerts WHERE restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("685");
+        if(!mode.equals("single"))bulk(done,"mark-served").expect(200);
+        assertThat(count("low_stock_alerts")).isEqualTo(1);assertThat(recipeUses()).isEqualTo(1);
+    }
+    @Test void sharedIngredientBulkConsumptionTriggersOneAlertAfterFinalBalance() throws Exception {
+        stock("1000");alertThreshold("500");var order=create(true,"3").expect(201);order=append(order,"2").expect(200);
+        bulk(order,"mark-served").expect(200);assertThat(count("low_stock_alerts")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT quantity_at_trigger FROM low_stock_alerts WHERE restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("475");
+        assertThat(events("LOW_STOCK_ALERT_TRIGGERED")).isEqualTo(1);
+    }
+    @Test void alertAuditFailureRollsBackConsumptionAndCanRetry() throws Exception {
+        stock("1000");alertThreshold("700");var order=create(true,"3").expect(201);long before=count("audit_logs");
+        doAnswer(invocation->{
+            invocation.callRealMethod();
+            java.util.List<com.possaas.modules.audit.service.AuditRecordCommand> commands=invocation.getArgument(0);
+            if(commands.stream().anyMatch(c->c.actionCode().startsWith("LOW_STOCK_ALERT_")))throw new IllegalStateException("forced alert failure");
+            return null;
+        }).when(audit).recordAll(anyList());
+        bulk(order,"mark-served").expect(500);reset(audit);assertThat(count("low_stock_alerts")).isZero();
+        assertThat(count("audit_logs")).isEqualTo(before);assertThat(recipeUses()).isZero();balance(warehouse,"1000","315","685");
+        assertThat(detail(order).body).isEqualTo(order.body);bulk(order,"mark-served").expect(200);
+        assertThat(count("low_stock_alerts")).isEqualTo(1);
+    }
+    @ParameterizedTest @ValueSource(strings={"reserve","release","insufficient","corrupt-zero"})
+    void stockAuditUsesCurrentReservationWithoutTreatingReservationAsPhysicalMovement(String scenario)throws Exception {
+        setFeatures(java.util.stream.Stream.concat(FEATURES.stream(),java.util.stream.Stream.of("STOCK_AUDIT")).toList());
+        stock("1000");var sheet=stockAudit(scenario.equals("corrupt-zero")?"1000":"800");
+        var order=create(true,scenario.equals("insufficient")?"9":"6").expect(201);
+        if(scenario.equals("release"))cancel(order).expect(200);
+        if(scenario.equals("corrupt-zero"))jdbc.update("update inventory_balances set reserved_quantity=629 where warehouse_id=? and item_id=?",warehouse,ingredient.getId());
+        long recipeBefore=count("order_item_recipe_usages"),ledgerBefore=count("inventory_transactions");
+        var result=call(post("/api/v1/inventory/audits/"+sheet.id()+"/confirm"),Map.of("expectedVersion",sheet.version()),Set.of("INVENTORY_VIEW","STOCK_AUDIT_CONFIRM"));
+        if(scenario.equals("insufficient")){result.error(409,"INSUFFICIENT_AVAILABLE_STOCK");balance(warehouse,"1000","945","55");}
+        else if(scenario.equals("corrupt-zero")){result.error(409,"INVENTORY_RESERVATION_INVARIANT_VIOLATION");assertThat(count("inventory_transactions")).isEqualTo(ledgerBefore);}
+        else {result.expect(200);balance(warehouse,"800",scenario.equals("release")?"0":"630",scenario.equals("release")?"800":"170");assertInvariant();}
+        assertThat(count("order_item_recipe_usages")).isEqualTo(recipeBefore);
+        assertThat(items.findById(menu.getId()).orElseThrow().getSalePrice()).isEqualByComparingTo("50000");
+    }
+    @ParameterizedTest @ValueSource(strings={"start-cooking","mark-served"})
+    void consumptionAfterStockAuditSnapshotAlwaysMakesItStale(String action)throws Exception {
+        setFeatures(java.util.stream.Stream.concat(FEATURES.stream(),java.util.stream.Stream.of("STOCK_AUDIT")).toList());
+        stock("1000");var order=create(true,"3").expect(201);var sheet=stockAudit("800");
+        if(action.equals("start-cooking"))single(order,0,action).expect(200);else bulk(order,action).expect(200);
+        call(post("/api/v1/inventory/audits/"+sheet.id()+"/confirm"),Map.of("expectedVersion",sheet.version()),Set.of("INVENTORY_VIEW","STOCK_AUDIT_CONFIRM")).error(409,"STOCK_AUDIT_SNAPSHOT_STALE");
+        balance(warehouse,"685","0","685");assertThat(count("stock_documents")).isEqualTo(1);
+    }
+    Reply stockAudit(String counted)throws Exception {
+        var permissions=Set.of("INVENTORY_VIEW","STOCK_AUDIT_MANAGE");String url="/api/v1/inventory/audits";
+        var audit=call(post(url).header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("warehouseId",warehouse),permissions).expect(201);
+        audit=call(post(url+"/"+audit.id()+"/start"),Map.of("expectedVersion",audit.version()),permissions).expect(200);
+        var rows=call(get(url+"/"+audit.id()+"/items"),null,Set.of("INVENTORY_VIEW")).expect(200).body.path("content");
+        List<Map<String,Object>> counts=new ArrayList<>();rows.forEach(row->counts.add(Map.of("auditItemId",row.path("id").asText(),"countedQuantity",new BigDecimal(counted))));
+        return call(patch(url+"/"+audit.id()+"/items"),Map.of("expectedVersion",audit.version(),"items",counts),permissions).expect(200);
+    }
+
+    void alertThreshold(String value)throws Exception {
+        long version=jdbc.queryForObject("SELECT version FROM inventory_balances WHERE warehouse_id=? AND item_id=?",Long.class,warehouse,ingredient.getId());
+        call(patch("/api/v1/inventory/warehouses/"+warehouse+"/balances/"+ingredient.getId()+"/threshold"),Map.of("expectedVersion",version,"minQuantity",new BigDecimal(value)),ALL).expect(200);
+    }
+
     Item item(String name,ItemType type,String unit,boolean tracked){var value=new Item();value.initialize(restaurant.getId(),NOW);value.setName(name);value.setItemType(type);value.setBaseUnit(unit);value.setTrackInventory(tracked);value.setSalePrice(type==ItemType.MENU_ITEM?new BigDecimal("50000"):BigDecimal.ZERO);value.setCostPrice(new BigDecimal("10"));return items.saveAndFlush(value);}
     Recipe recipe(Item food,Item source,String quantity,String waste){var value=new Recipe();value.initialize(restaurant.getId(),food.getId(),1,new BigDecimal("10"),food.getBaseUnit(),NOW);value=recipes.saveAndFlush(value);var part=new RecipeItem();part.initialize(restaurant.getId(),value.getId(),source,new BigDecimal(quantity),new BigDecimal(waste),NOW);recipeItems.saveAndFlush(part);return value;}
     void replaceRecipe(String quantity){recipe=recipes.findById(recipe.getId()).orElseThrow();int version=recipe.getRecipeVersion()+1;recipe.deactivate(NOW);recipes.saveAndFlush(recipe);var next=new Recipe();next.initialize(restaurant.getId(),menu.getId(),version,new BigDecimal("10"),menu.getBaseUnit(),NOW);recipe=recipes.saveAndFlush(next);var part=new RecipeItem();part.initialize(restaurant.getId(),recipe.getId(),ingredient,new BigDecimal(quantity),new BigDecimal("5"),NOW);recipeItems.saveAndFlush(part);}

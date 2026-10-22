@@ -7,6 +7,75 @@ security:
   -
     bearerAuth: []
 paths:
+  "/api/v1/inventory/audits": {"get":{"tags":["Inventory stock audits"],"operationId":"listStockAudits","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. Read-only header totals; no embedded items. createdFrom inclusive, createdTo exclusive; from must be before to. Literal substring q.","security":[{"bearerAuth":[]}],"parameters":[{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"status","in":"query","schema":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]}},{"name":"createdFrom","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"createdTo","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt","startedAt","updatedAt","auditCode"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditPage"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"post":{"tags":["Inventory stock audits"],"operationId":"createStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. Creates header only, no stock snapshot. Same key/payload replays; different payload returns IDEMPOTENCY_KEY_REUSED.","security":[{"bearerAuth":[]}],"parameters":[{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","maxLength":100}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditCreate"}}}},"responses":{"201":{"description":"DRAFT created or idempotent replay","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/audits/{auditId}": {"get":{"tags":["Inventory stock audits"],"operationId":"getStockAudit","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"patch":{"tags":["Inventory stock audits"],"operationId":"updateStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditNote"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/audits/{auditId}/items": {"get":{"tags":["Inventory stock audits"],"operationId":"listStockAuditItems","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"counted","in":"query","schema":{"type":"boolean"}},{"name":"differenceOnly","in":"query","schema":{"type":"boolean","default":false}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["name","sku","systemQuantity","countedQuantity","differenceQuantity"],"default":"name"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"asc"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditItemPage"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"patch":{"tags":["Inventory stock audits"],"operationId":"countStockAuditItems","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. COUNTING only. Up to 100 unique auditItemId per request. Atomic batch, one header version increment for changes; no-op still checks expectedVersion. Null count is invalid, zero is counted. Omitted/null line note preserves, blank clears.","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditCounts"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/audits/{auditId}/start": {"post":{"tags":["Inventory stock audits"],"operationId":"startStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. DRAFT -> COUNTING snapshots all tracked undeleted ingredients, including inactive/logical zero. Does not freeze warehouse. COUNTING replay is idempotent before version check, never refreshes counts.","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditTransition"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/audits/{auditId}/confirm": {"post":{"tags":["Inventory stock audits"],"operationId":"confirmStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_CONFIRM, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. COUNTING -> CONFIRMED atomically checks physical quantity, ledger movement count, eligibility/unit and CURRENT reservations. Any physical movement makes snapshot stale, even net-zero movement. Confirmed replay is idempotent before version/staleness checks. Internal ADJUSTMENT requires no INVENTORY_ADJUST. Zero delta for every row produces no document.","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditTransition"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/audits/{auditId}/cancel": {"post":{"tags":["Inventory stock audits"],"operationId":"cancelStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. DRAFT/COUNTING -> CANCELLED preserves snapshots and stock; CANCELLED replay is idempotent before version check. CONFIRMED cannot cancel.","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditNote"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
+  "/api/v1/inventory/alerts":
+    get:
+      tags: ["Inventory alerts"]
+      operationId: "listLowStockAlerts"
+      description: "Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and LOW_STOCK_ALERT. Tenant comes from JWT. Read-only persisted physical-low episodes; absent status returns all statuses. Current metrics never mutate the alert. Historical snapshots remain visible after source soft deletion. No public QR access. No scheduler or notification delivery."
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: "warehouseId", in: "query", schema: {type: "string", format: "uuid"}}
+        - {name: "ingredientId", in: "query", schema: {type: "string", format: "uuid"}}
+        - {name: "status", in: "query", schema: {type: "string", enum: ["OPEN", "ACKNOWLEDGED", "RESOLVED"]}}
+        - {name: "q", in: "query", description: "Literal substring of trigger ingredient name/SKU", schema: {type: "string", maxLength: 100}}
+        - {name: "triggeredFrom", in: "query", description: "Inclusive; must be before triggeredTo", schema: {type: "string", format: "date-time"}}
+        - {name: "triggeredTo", in: "query", description: "Exclusive", schema: {type: "string", format: "date-time"}}
+        - {name: "page", in: "query", schema: {type: "integer", minimum: 0, default: 0}}
+        - {name: "size", in: "query", schema: {type: "integer", minimum: 1, maximum: 100, default: 20}}
+        - {name: "sortBy", in: "query", schema: {type: "string", enum: ["triggeredAt", "updatedAt"], default: "triggeredAt"}}
+        - {name: "direction", in: "query", schema: {type: "string", enum: ["asc", "desc"], default: "desc"}}
+      responses:
+        "200":
+          description: "Alert page; stable ID tie-breaker, not a live low-stock balance page"
+          headers: {Cache-Control: {schema: {type: "string", example: "no-store"}}}
+          content: {application/json: {schema: {$ref: "#/components/schemas/LowStockAlertPage"}}}
+        "400": {description: "VALIDATION_ERROR"}
+        "401": {description: "UNAUTHORIZED or ACCOUNT_INACTIVE"}
+        "403": {description: "FORBIDDEN, FEATURE_NOT_ENTITLED, SUBSCRIPTION_NOT_ACTIVE or restaurant guard"}
+  "/api/v1/inventory/alerts/{alertId}":
+    get:
+      tags: ["Inventory alerts"]
+      operationId: "getLowStockAlert"
+      description: "Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and LOW_STOCK_ALERT. JWT tenant-scoped immutable trigger metadata with separately named live balance metrics. Missing/foreign-tenant alerts return 404; source soft deletion does not hide history."
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: "alertId", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses:
+        "200":
+          description: "Shortage episode"
+          headers: {Cache-Control: {schema: {type: "string", example: "no-store"}}}
+          content: {application/json: {schema: {$ref: "#/components/schemas/LowStockAlert"}}}
+        "400": {description: "VALIDATION_ERROR"}
+        "401": {description: "UNAUTHORIZED or ACCOUNT_INACTIVE"}
+        "403": {description: "FORBIDDEN, FEATURE_NOT_ENTITLED or SUBSCRIPTION_NOT_ACTIVE"}
+        "404": {description: "LOW_STOCK_ALERT_NOT_FOUND"}
+  "/api/v1/inventory/alerts/{alertId}/acknowledge":
+    post:
+      tags: ["Inventory alerts"]
+      operationId: "acknowledgeLowStockAlert"
+      description: "Requires INVENTORY_VIEW and INVENTORY_ALERT_ACKNOWLEDGE plus INVENTORY_MANAGEMENT and LOW_STOCK_ALERT. OPEN requires matching expectedVersion; ACKNOWLEDGED replay is idempotent even with the first request's stale version, preserving original actor/time/version/audit. RESOLVED cannot be acknowledged. Does not change stock or mark it recovered. No Idempotency-Key needed."
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: "alertId", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/LowStockAlertAcknowledge"}}}
+      responses:
+        "200":
+          description: "Acknowledged or unchanged desired-state replay"
+          headers: {Cache-Control: {schema: {type: "string", example: "no-store"}}}
+          content: {application/json: {schema: {$ref: "#/components/schemas/LowStockAlert"}}}
+        "400": {description: "VALIDATION_ERROR or INVALID_REQUEST_BODY"}
+        "401": {description: "UNAUTHORIZED or ACCOUNT_INACTIVE"}
+        "403": {description: "FORBIDDEN, FEATURE_NOT_ENTITLED or SUBSCRIPTION_NOT_ACTIVE"}
+        "404": {description: "LOW_STOCK_ALERT_NOT_FOUND"}
+        "409": {description: "INVALID_LOW_STOCK_ALERT_TRANSITION or CONCURRENT_LOW_STOCK_ALERT_UPDATE"}
   "/api/v1/inventory/orders/{orderId}/items/{orderItemId}/allocation":
     get:
       tags: ["Inventory"]
@@ -112,7 +181,7 @@ paths:
     post:
       tags: ["Inventory"]
       operationId: "createStockDocument"
-      description: "Requires INVENTORY_MANAGEMENT and INVENTORY_RECEIVE, INVENTORY_ISSUE or INVENTORY_ADJUST according to documentType. Creates DRAFT only."
+      description: "Requires INVENTORY_MANAGEMENT and INVENTORY_RECEIVE, INVENTORY_ISSUE or INVENTORY_ADJUST according to documentType. Creates manual DRAFT only. Rejects Idempotency-Key with reserved SYS_STOCK_AUDIT: prefix after trim, case-insensitively, before replay lookup (400 RESERVED_IDEMPOTENCY_NAMESPACE). Client cannot send stockAuditId/origin."
       parameters: [{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":1,"maxLength":100}}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentCreate"}}}}
       responses: {"201":{"description":"Created or idempotent replay","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"IDEMPOTENCY_KEY_REUSED, DUPLICATE_STOCK_DOCUMENT_ITEM or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
@@ -125,7 +194,7 @@ paths:
     patch:
       tags: ["Inventory"]
       operationId: "updateStockDocument"
-      description: "DRAFT only; requires type-specific permission and expectedVersion."
+      description: "DRAFT only; requires type-specific permission and expectedVersion. Any document with server-owned stockAuditId returns 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentUpdate"}}}}
       responses: {"200":{"description":"Updated or normalized no-op","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"INVALID_STOCK_DOCUMENT_TRANSITION or CONCURRENT_STOCK_DOCUMENT_UPDATE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
@@ -133,6 +202,7 @@ paths:
     post:
       tags: ["Inventory"]
       operationId: "addStockDocumentItem"
+      description: "Manual DRAFT only; generated stockAuditId document rejects with 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentAddItem"}}}}
       responses: {"200":{"description":"Updated document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"DUPLICATE_STOCK_DOCUMENT_ITEM or lifecycle/concurrency conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
@@ -140,19 +210,21 @@ paths:
     patch:
       tags: ["Inventory"]
       operationId: "updateStockDocumentItem"
+      description: "Manual DRAFT only; generated stockAuditId document rejects with 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"},{"$ref":"#/components/parameters/StockDocumentItemId"}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentUpdateItem"}}}}
       responses: {"200":{"description":"Updated document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}}}
     delete:
       tags: ["Inventory"]
       operationId: "deleteStockDocumentItem"
+      description: "Manual DRAFT only; generated stockAuditId document rejects with 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"},{"$ref":"#/components/parameters/StockDocumentItemId"},{"name":"expectedVersion","in":"query","required":true,"schema":{"type":"integer","format":"int64","minimum":0}}]
       responses: {"204":{"description":"Item removed"},"409":{"description":"Lifecycle or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
   "/api/v1/inventory/stock-documents/{documentId}/confirm":
     post:
       tags: ["Inventory"]
       operationId: "confirmStockDocument"
-      description: "Atomically posts every line, rejects negative stock and appends immutable ledger rows. RECEIPT also updates tracked INGREDIENT.costPrice using MOVING_WEIGHTED_AVERAGE: (pre-receipt physical quantity across ALL tenant warehouses * previous cost + received quantity * receipt unitCost) / final total quantity, rounded HALF_UP to 2 decimals. Zero previous quantity uses receipt unitCost; unitCost omitted/zero still means zero and participates in averaging. Restaurant and ordered ingredient locks prevent concurrent repricing; price, versions, stock, ledger and audit roll back together. ISSUE/ADJUSTMENT and drafts do not reprice. Ledger retains actual receipt unitCost. No sale price, menu-item cost or historical snapshot updates. INGREDIENT_COST_RECALCULATED audit only when cost changes; confirmed replay is a no-op, including no repricing. Existing INVENTORY_RECEIVE permission is sufficient for this derived receipt effect. Refresh ingredient detail/version and recipe cost-estimate after confirmation."
+      description: "Atomically posts every line, rejects negative stock and appends immutable ledger rows. Generated stockAuditId document returns 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT BEFORE confirmed replay. RECEIPT also updates tracked INGREDIENT.costPrice using MOVING_WEIGHTED_AVERAGE: (pre-receipt physical quantity across ALL tenant warehouses * previous cost + received quantity * receipt unitCost) / final total quantity, rounded HALF_UP to 2 decimals. Zero previous quantity uses receipt unitCost; unitCost omitted/zero still means zero and participates in averaging. Restaurant and ordered ingredient locks prevent concurrent repricing; price, versions, stock, ledger and audit roll back together. ISSUE/ADJUSTMENT and drafts do not reprice. Ledger retains actual receipt unitCost. No sale price, menu-item cost or historical snapshot updates. INGREDIENT_COST_RECALCULATED audit only when cost changes; manual confirmed replay is a no-op, including no repricing. Existing INVENTORY_RECEIVE permission is sufficient for this derived receipt effect. Refresh ingredient detail/version and recipe cost-estimate after confirmation."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentTransition"}}}}
       responses: {"200":{"description":"Confirmed or replayed document. ISSUE/ADJUSTMENT decrease must leave physical quantity >= reservedQuantity; receipt/increase preserve reservedQuantity. Weighted average uses physical quantity, never availableQuantity.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}},"409":{"description":"STOCK_DOCUMENT_EMPTY, INSUFFICIENT_AVAILABLE_STOCK, INVALID_INVENTORY_COST_DATA, invalid transition or concurrent conflict","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
@@ -160,7 +232,7 @@ paths:
     post:
       tags: ["Inventory"]
       operationId: "cancelStockDocument"
-      description: "Cancels DRAFT without posting inventory. Cancelled replay is a no-op."
+      description: "Cancels manual DRAFT without posting inventory. Manual cancelled replay is a no-op. Generated stockAuditId document returns 409 STOCK_DOCUMENT_MANAGED_BY_AUDIT before replay."
       parameters: [{"$ref":"#/components/parameters/StockDocumentId"}]
       requestBody: {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentTransition"}}}}
       responses: {"200":{"description":"Cancelled or replayed document","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockDocumentDetail"}}}}}
@@ -2100,6 +2172,60 @@ components:
       required: true
       schema: {type: "string", format: "uuid"}
   schemas:
+    StockAuditCreate: {"type":"object","additionalProperties":false,"required":["warehouseId"],"properties":{"warehouseId":{"type":"string","format":"uuid"},"note":{"type":"string","maxLength":2000,"nullable":true}}}
+    StockAuditTransition: {"type":"object","additionalProperties":false,"required":["expectedVersion"],"properties":{"expectedVersion":{"type":"integer","format":"int64","minimum":0}}}
+    StockAuditNote: {"type":"object","additionalProperties":false,"required":["expectedVersion"],"properties":{"expectedVersion":{"type":"integer","format":"int64","minimum":0},"note":{"type":"string","maxLength":2000,"nullable":true}}}
+    StockAuditCountLine: {"type":"object","additionalProperties":false,"required":["auditItemId","countedQuantity"],"properties":{"auditItemId":{"type":"string","format":"uuid"},"countedQuantity":{"type":"number","minimum":0,"maximum":99999999999.999,"multipleOf":0.001},"note":{"type":"string","maxLength":1000,"nullable":true}}}
+    StockAuditCounts: {"type":"object","additionalProperties":false,"required":["expectedVersion","items"],"properties":{"expectedVersion":{"type":"integer","format":"int64","minimum":0},"items":{"type":"array","minItems":1,"maxItems":100,"items":{"$ref":"#/components/schemas/StockAuditCountLine"}}}}
+    StockAuditSummary: {"type":"object","additionalProperties":false,"required":["id","auditCode","warehouseId","warehouseCode","warehouseName","status","note","itemCount","countedItemCount","changedItemCount","adjustmentDocumentId","adjustmentDocumentCode","version","createdAt","startedAt","updatedAt"],"properties":{"id":{"type":"string","format":"uuid"},"auditCode":{"type":"string"},"warehouseId":{"type":"string","format":"uuid"},"warehouseCode":{"type":"string"},"warehouseName":{"type":"string"},"status":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]},"note":{"type":"string","nullable":true},"itemCount":{"type":"integer","format":"int64","minimum":0},"countedItemCount":{"type":"integer","format":"int64","minimum":0},"changedItemCount":{"type":"integer","format":"int64","minimum":0},"adjustmentDocumentId":{"type":"string","format":"uuid","nullable":true},"adjustmentDocumentCode":{"type":"string","nullable":true},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"startedAt":{"type":"string","format":"date-time","nullable":true},"updatedAt":{"type":"string","format":"date-time"}}}
+    StockAuditDetail: {"type":"object","additionalProperties":false,"required":["id","auditCode","warehouseId","warehouseCode","warehouseName","status","note","itemCount","countedItemCount","changedItemCount","adjustmentDocumentId","adjustmentDocumentCode","version","createdAt","startedAt","updatedAt","createdBy","startedBy","confirmedBy","cancelledBy","confirmedAt","cancelledAt"],"properties":{"id":{"type":"string","format":"uuid"},"auditCode":{"type":"string"},"warehouseId":{"type":"string","format":"uuid"},"warehouseCode":{"type":"string"},"warehouseName":{"type":"string"},"status":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]},"note":{"type":"string","nullable":true},"itemCount":{"type":"integer","format":"int64","minimum":0},"countedItemCount":{"type":"integer","format":"int64","minimum":0},"changedItemCount":{"type":"integer","format":"int64","minimum":0},"adjustmentDocumentId":{"type":"string","format":"uuid","nullable":true},"adjustmentDocumentCode":{"type":"string","nullable":true},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"startedAt":{"type":"string","format":"date-time","nullable":true},"updatedAt":{"type":"string","format":"date-time"},"createdBy":{"type":"string","format":"uuid"},"startedBy":{"type":"string","format":"uuid","nullable":true},"confirmedBy":{"type":"string","format":"uuid","nullable":true},"cancelledBy":{"type":"string","format":"uuid","nullable":true},"confirmedAt":{"type":"string","format":"date-time","nullable":true},"cancelledAt":{"type":"string","format":"date-time","nullable":true}}}
+    StockAuditItem: {"type":"object","additionalProperties":false,"required":["id","ingredientId","sku","name","unit","systemQuantity","countedQuantity","differenceQuantity","referenceUnitCostSnapshot","note"],"properties":{"id":{"type":"string","format":"uuid"},"ingredientId":{"type":"string","format":"uuid"},"sku":{"type":"string","nullable":true},"name":{"type":"string"},"unit":{"type":"string"},"systemQuantity":{"type":"number"},"countedQuantity":{"type":"number","nullable":true},"differenceQuantity":{"type":"number","nullable":true},"referenceUnitCostSnapshot":{"type":"number","minimum":0,"description":"Start-time reference cost, not actual COGS. Zero is valid."},"note":{"type":"string","nullable":true}}}
+    StockAuditPage: {"type":"object","additionalProperties":false,"required":["content","page","size","totalElements","totalPages"],"properties":{"content":{"type":"array","items":{"$ref":"#/components/schemas/StockAuditSummary"}},"page":{"type":"integer","format":"int64","minimum":0},"size":{"type":"integer","minimum":1,"maximum":100},"totalElements":{"type":"integer","format":"int64","minimum":0},"totalPages":{"type":"integer","format":"int64","minimum":0}}}
+    StockAuditItemPage: {"type":"object","additionalProperties":false,"required":["content","page","size","totalElements","totalPages"],"properties":{"content":{"type":"array","items":{"$ref":"#/components/schemas/StockAuditItem"}},"page":{"type":"integer","format":"int64","minimum":0},"size":{"type":"integer","minimum":1,"maximum":100},"totalElements":{"type":"integer","format":"int64","minimum":0},"totalPages":{"type":"integer","format":"int64","minimum":0}}}
+    LowStockAlertAcknowledge:
+      type: "object"
+      additionalProperties: false
+      required: ["expectedVersion"]
+      properties:
+        expectedVersion: {type: "integer", format: "int64", minimum: 0}
+    LowStockAlertPage:
+      type: "object"
+      required: ["content", "page", "size", "totalElements", "totalPages"]
+      properties:
+        content: {type: "array", items: {$ref: "#/components/schemas/LowStockAlert"}}
+        page: {type: "integer"}
+        size: {type: "integer"}
+        totalElements: {type: "integer", format: "int64"}
+        totalPages: {type: "integer"}
+    LowStockAlert:
+      type: "object"
+      additionalProperties: false
+      description: "Trigger fields are immutable. Low means minQuantity>0 and physical quantity<=minQuantity, not available stock. Inactive tracked ingredients are included. Live metrics are null for ineligible/missing sources or a changed unit. A change to live stock does not increment this episode's version. V34 baseline triggeredAt means upgrade-time detection, not historical crossing time."
+      required: ["id", "warehouseId", "warehouseCode", "warehouseName", "ingredientId", "ingredientName", "unit", "status", "quantityAtTrigger", "thresholdQuantity", "triggeredAt", "version", "createdAt", "updatedAt"]
+      properties:
+        id: {type: "string", format: "uuid", readOnly: true}
+        warehouseId: {type: "string", format: "uuid", readOnly: true}
+        warehouseCode: {type: "string", readOnly: true}
+        warehouseName: {type: "string", readOnly: true}
+        ingredientId: {type: "string", format: "uuid", readOnly: true}
+        ingredientSku: {type: "string", nullable: true, readOnly: true}
+        ingredientName: {type: "string", readOnly: true}
+        unit: {type: "string", readOnly: true}
+        status: {type: "string", enum: ["OPEN", "ACKNOWLEDGED", "RESOLVED"], readOnly: true}
+        quantityAtTrigger: {type: "number", minimum: 0, readOnly: true}
+        thresholdQuantity: {type: "number", exclusiveMinimum: true, minimum: 0, readOnly: true}
+        currentQuantity: {type: "number", nullable: true, readOnly: true}
+        reservedQuantity: {type: "number", nullable: true, readOnly: true}
+        availableQuantity: {type: "number", nullable: true, readOnly: true}
+        currentMinQuantity: {type: "number", nullable: true, readOnly: true}
+        triggeredAt: {type: "string", format: "date-time", readOnly: true}
+        acknowledgedBy: {type: "string", format: "uuid", nullable: true, readOnly: true}
+        acknowledgedAt: {type: "string", format: "date-time", nullable: true, readOnly: true}
+        resolvedAt: {type: "string", format: "date-time", nullable: true, readOnly: true}
+        resolutionReason: {type: "string", nullable: true, enum: ["STOCK_RECOVERED", "THRESHOLD_DISABLED", "WAREHOUSE_INACTIVE", "WAREHOUSE_DELETED", "INGREDIENT_UNTRACKED", "INGREDIENT_DELETED", "INGREDIENT_UNIT_CHANGED"], readOnly: true}
+        version: {type: "integer", format: "int64", minimum: 0, readOnly: true}
+        createdAt: {type: "string", format: "date-time", readOnly: true}
+        updatedAt: {type: "string", format: "date-time", readOnly: true}
     Warehouse:
       type: "object"
       additionalProperties: false
@@ -2259,7 +2385,7 @@ components:
       type: "object"
       additionalProperties: false
       required: ["id","documentCode","documentType","status","warehouseId","warehouseCode","warehouseName","lineCount","totalQuantity","totalCost","createdBy","version","createdAt","updatedAt"]
-      properties: {id: {type: "string", format: "uuid"}, documentCode: {type: "string"}, documentType: {"$ref":"#/components/schemas/StockDocumentType"}, status: {"$ref":"#/components/schemas/StockDocumentStatus"}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, warehouseName: {type: "string"}, note: {type: "string", nullable: true}, lineCount: {type: "integer", minimum: 0}, totalQuantity: {type: "number"}, totalCost: {type: "number"}, createdBy: {type: "string", format: "uuid"}, version: {type: "integer", format: "int64", minimum: 0}, createdAt: {type: "string", format: "date-time"}, updatedAt: {type: "string", format: "date-time"}}
+      properties: {id: {type: "string", format: "uuid"}, documentCode: {type: "string"}, documentType: {"$ref":"#/components/schemas/StockDocumentType"}, status: {"$ref":"#/components/schemas/StockDocumentStatus"}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, warehouseName: {type: "string"}, note: {type: "string", nullable: true}, lineCount: {type: "integer", minimum: 0}, totalQuantity: {type: "number"}, totalCost: {type: "number"}, createdBy: {type: "string", format: "uuid"}, version: {type: "integer", format: "int64", minimum: 0}, createdAt: {type: "string", format: "date-time"}, updatedAt: {type: "string", format: "date-time"}, stockAuditId: {type: "string", format: "uuid", nullable: true, description: "Server-owned stock audit source; non-null documents reject every public mutation with STOCK_DOCUMENT_MANAGED_BY_AUDIT"}}
     StockDocumentDetail:
       allOf:
         - {"$ref":"#/components/schemas/StockDocumentSummary"}

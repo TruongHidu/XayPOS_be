@@ -7,6 +7,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class StockDocumentLifecyclePolicy {
+    public void requireManual(StockDocument document) {
+        if (document.getStockAuditId() != null)
+            throw new ConflictException("STOCK_DOCUMENT_MANAGED_BY_AUDIT", "Generated document is managed by its stock audit");
+    }
     public void requireVersion(StockDocument document, long expectedVersion) {
         if (document.getVersion() != expectedVersion)
             throw new ConflictException("CONCURRENT_STOCK_DOCUMENT_UPDATE", "Stock document changed concurrently");

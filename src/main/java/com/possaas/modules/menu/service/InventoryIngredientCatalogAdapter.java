@@ -18,6 +18,12 @@ public class InventoryIngredientCatalogAdapter implements TrackedIngredientCatal
     private final ItemRepository items;
 
     @Override
+    public java.util.List<TrackedIngredientSnapshot> findAllTracked(UUID restaurantId) {
+        return items.findAllTrackedIngredients(restaurantId).stream().map(value -> new TrackedIngredientSnapshot(
+            value.getId(),value.getSku(),value.getName(),value.getBaseUnit(),value.isActive(),true,false)).toList();
+    }
+
+    @Override
     public TrackedIngredientSnapshot requireTracked(UUID restaurantId, UUID ingredientId) {
         var item = items.findByIdAndRestaurantIdAndItemType(ingredientId, restaurantId, ItemType.INGREDIENT)
                 .filter(value -> value.getDeletedAt() == null && value.isTrackInventory())
