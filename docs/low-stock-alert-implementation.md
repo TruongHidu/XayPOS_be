@@ -145,10 +145,11 @@ tests như test failure; kết quả lấy từ Maven exit code và Surefire XML
 
 ## Giới hạn
 
-Đây là persisted inbox, không phải kênh gửi thông báo realtime. Không WebSocket,
-email/push/outbox/scheduler, unit conversion, available-based alerts, tự đặt mua,
-kiểm kê, FIFO hoặc actual order COGS. Thao tác SQL ngoài application mutation không
-tự reconcile; không cung cấp public API sửa hoặc rebuild lịch sử.
+Persistent inbox lưu lịch sử; [WebSocket/STOMP](inventory-alert-realtime.md) bổ sung
+kênh gửi thay đổi sau commit tới client foreground. Không email/push hệ điều hành,
+outbox/replay, unit conversion, available-based alerts, tự đặt mua, kiểm kê, FIFO
+hoặc actual order COGS. Thao tác SQL ngoài application mutation không tự reconcile;
+không cung cấp public API sửa hoặc rebuild lịch sử.
 
 API/Postman: [low-stock-alert-api.md](low-stock-alert-api.md).
 FE: [low-stock-alert-fe-sync.md](low-stock-alert-fe-sync.md).

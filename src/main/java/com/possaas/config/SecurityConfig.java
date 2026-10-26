@@ -40,6 +40,8 @@ public class SecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
+                // JWT authentication for this handshake is performed by STOMP CONNECT.
+                .requestMatchers(HttpMethod.GET, "/ws").permitAll()
                 .requestMatchers(PublicMenuRequests.GET_ENDPOINTS).permitAll()
                 .requestMatchers(PublicQrOrderRequests.ENDPOINTS).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register-restaurant", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()

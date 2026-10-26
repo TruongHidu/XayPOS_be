@@ -304,7 +304,8 @@ chính: `STOCK_DOCUMENT_NOT_FOUND`, `STOCK_DOCUMENT_ITEM_NOT_FOUND`,
 
 Chưa có transfer, kiểm kê, supplier, unit conversion, full inventory valuation,
 hoàn tác chứng từ confirmed hay sửa/xóa ledger. Giai đoạn 6 đã bổ sung persistent
-low-stock alert; chưa có realtime notification delivery.
+low-stock alert; [WebSocket/STOMP](inventory-alert-realtime.md) bổ sung thông báo
+thay đổi cảnh báo sau commit cho client đang kết nối, không có offline replay.
 
 V32 bổ sung [snapshot công thức tại lúc gửi món](order-recipe-snapshot-api.md) ở
 module ORDER. V33 dùng tracked usages đã chốt để reserve ở kho default, consume

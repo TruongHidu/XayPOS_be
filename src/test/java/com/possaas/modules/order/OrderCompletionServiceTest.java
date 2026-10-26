@@ -66,7 +66,7 @@ class OrderCompletionServiceTest {
         access = mock(OrderAccessService.class); orders = mock(OrderRepository.class);
         items = mock(OrderItemRepository.class); closure = mock(OrderSessionClosureCommand.class);
         audit = mock(OrderAudit.class); mapper = mock(OrderResponseMapper.class);
-        service = new OrderCompletionService(access, orders, items, new OrderLifecyclePolicy(),
+        service = new OrderCompletionService(access, mock(com.possaas.modules.order.service.OrderEventPublisher.class), orders, items, new OrderLifecyclePolicy(),
             new OrderCompletionPolicy(), closure, audit, mapper, Clock.fixed(NOW, ZoneOffset.UTC), mock(OrderInventoryAllocationOperation.class));
         order = new Order(); order.initialize(tenant, NOW.minusSeconds(60)); order.setId(orderId);
         order.setServiceType(ServiceType.DINE_IN); order.setTableSessionId(sessionId);

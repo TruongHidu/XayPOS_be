@@ -1,5 +1,6 @@
 package com.possaas.modules.qrorder.service;
 
+import com.possaas.modules.qrorder.event.QrOrderRequestChanged.Change;
 import com.possaas.common.exception.ConflictException;
 import com.possaas.modules.order.service.chain.OrderChain;
 import com.possaas.modules.qrorder.dto.*;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @RequiredArgsConstructor
 public class QrStaffDecisionService {
     private final QrStaffAccessService access;
+    private final QrRequestEventPublisher events;
     private final QrOrderRequestRepository requests;
     private final QrOrderRequestItemRepository items;
     private final QrApprovalReplayHandler replay;
@@ -48,6 +50,7 @@ public class QrStaffDecisionService {
         request.setStatus(QrRequestStatus.REJECTED); request.setRejectedBy(locked.actor().userId()); request.setRejectedAt(now);
         request.setRejectionReason(body.reason().trim()); request.setUpdatedAt(now); requests.saveAndFlush(request);
         audit.record(request, locked.actor().userId(), "QR_ORDER_REQUEST_REJECTED", before, ip); requests.flush();
+        events.publish(request,Change.REJECTED);
         return mapper.summary(request, lines, now);
     }
 }

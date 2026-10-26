@@ -80,7 +80,8 @@ class MenuIntegrationTest {
     AuditService audit;
     private final List<UUID> tenants = new ArrayList<>();
     private User owner;
-    private static final Set<String> ALL = Set.of("MENU_VIEW", "MENU_CREATE", "MENU_UPDATE", "MENU_DELETE");
+    private static final Set<String> ALL = Set.of("MENU_VIEW", "MENU_CREATE", "MENU_UPDATE", "MENU_DELETE",
+            "MENU_AVAILABILITY_UPDATE");
 
     @BeforeEach
     void setup() {
@@ -242,6 +243,135 @@ class MenuIntegrationTest {
         jdbc.update("update restaurant_subscriptions set status='CANCELLED' where restaurant_id=?",
                 owner.getRestaurantId());
         call(get("/api/v1/menu/items")).error(403, "SUBSCRIPTION_NOT_ACTIVE");
+    }
+
+    @Test
+    void menuUpdateAloneCannotChangeAvailabilityButKeepsProfileStatusAndGroupAccess() throws Exception {
+        var item = createItem(null, null);
+        Set<String> updateOnly = Set.of("MENU_UPDATE");
+        bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}"), updateOnly)
+                .error(403, "FORBIDDEN");
+        assertThat(items.findById(item.id()).orElseThrow().getVersion()).isZero();
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isZero();
+        bearer(patch(path(item)).content("{\"name\":\"Edited\",\"salePrice\":40000,\"expectedVersion\":0}"), updateOnly)
+                .expect(200);
+        bearer(put(path(item) + "/group").content("{\"groupId\":null,\"expectedVersion\":1}"), updateOnly).expect(200);
+        bearer(patch(path(item) + "/status").content("{\"active\":false,\"expectedVersion\":1}"), updateOnly).expect(200);
+    }
+
+    @Test
+    void availabilityPermissionAloneCanMarkOutOfStockAndAvailableButCannotEditOtherFields() throws Exception {
+        var group = createGroup("Availability group");
+        var item = createItem(group.id(), null);
+        Set<String> availabilityOnly = Set.of("MENU_AVAILABILITY_UPDATE");
+        var changed = bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}"), availabilityOnly);
+        changed.expect(200);
+        assertThat(changed.body.path("availabilityStatus").asText()).isEqualTo("OUT_OF_STOCK");
+        assertThat(changed.body.path("sellable").asBoolean()).isFalse();
+        assertThat(changed.body.path("version").asLong()).isEqualTo(1);
+        bearer(patch(path(item)).content("{\"name\":\"Denied\",\"salePrice\":1,\"expectedVersion\":1}"), availabilityOnly)
+                .error(403, "FORBIDDEN");
+        bearer(patch(path(item) + "/status").content("{\"active\":false,\"expectedVersion\":1}"), availabilityOnly)
+                .error(403, "FORBIDDEN");
+        bearer(put(path(item) + "/group").content("{\"groupId\":null,\"expectedVersion\":1}"), availabilityOnly)
+                .error(403, "FORBIDDEN");
+        bearer(delete(path(item)).param("expectedVersion", "1"), availabilityOnly).error(403, "FORBIDDEN");
+        bearer(patch(groupPath(group)).content("{\"name\":\"Denied\",\"expectedVersion\":0}"), availabilityOnly)
+                .error(403, "FORBIDDEN");
+        var restored = bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"AVAILABLE\",\"expectedVersion\":1}"), availabilityOnly);
+        restored.expect(200);
+        assertThat(restored.body.path("sellable").asBoolean()).isTrue();
+        assertThat(restored.body.path("name").asText()).isEqualTo("Coffee");
+        assertThat(restored.body.path("salePrice").decimalValue()).isEqualByComparingTo("35000");
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isEqualTo(2);
+    }
+
+    @Test
+    void availabilityStillRequiresAuthenticationAndMenuEntitlement() throws Exception {
+        var item = createItem(null, null);
+        String body = "{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}";
+        assertThat(mvc.perform(patch(path(item) + "/availability").contentType(MediaType.APPLICATION_JSON)
+                .content(body)).andReturn().getResponse().getStatus()).isEqualTo(401);
+        bearer(patch(path(item) + "/availability").content(body), Set.of("MENU_VIEW")).error(403, "FORBIDDEN");
+        jdbc.update("update restaurant_subscriptions set feature_snapshot=jsonb_set(feature_snapshot,'{features}','[]'::jsonb) where restaurant_id=?",
+                owner.getRestaurantId());
+        bearer(patch(path(item) + "/availability").content(body), Set.of("MENU_AVAILABILITY_UPDATE"))
+                .error(403, "FEATURE_NOT_ENTITLED");
+        jdbc.update("update restaurant_subscriptions set status='CANCELLED' where restaurant_id=?", owner.getRestaurantId());
+        bearer(patch(path(item) + "/availability").content(body), Set.of("MENU_AVAILABILITY_UPDATE"))
+                .error(403, "SUBSCRIPTION_NOT_ACTIVE");
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isZero();
+    }
+
+    @Test
+    void availabilityKeepsNoOpVersionTenantAndLifecycleRules() throws Exception {
+        var item = createItem(null, null);
+        Set<String> availabilityOnly = Set.of("MENU_AVAILABILITY_UPDATE");
+        String body = "{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}";
+        bearer(patch(path(item) + "/availability").content(body), availabilityOnly).expect(200);
+        var replay = bearer(patch(path(item) + "/availability").content(body), availabilityOnly);
+        replay.expect(200);
+        assertThat(replay.body.path("version").asLong()).isEqualTo(1);
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isEqualTo(1);
+        bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"AVAILABLE\",\"expectedVersion\":0}"), availabilityOnly)
+                .error(409, "CONCURRENT_MENU_UPDATE");
+        var other = fixture();
+        call(patch(path(item) + "/availability").content(body), other, availabilityOnly)
+                .error(404, "MENU_ITEM_NOT_FOUND");
+        call(patch(path(item) + "/status").content("{\"active\":false,\"expectedVersion\":1}")).expect(200);
+        bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"AVAILABLE\",\"expectedVersion\":2}"), availabilityOnly)
+                .error(409, "INVALID_MENU_ITEM_TRANSITION");
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isEqualTo(1);
+    }
+
+    @Test
+    void ownerCanFindAndGrantAvailabilityPermissionToKitchenWithoutMenuUpdate() throws Exception {
+        var item = createItem(null, null);
+        jdbc.update("update restaurant_subscriptions set feature_snapshot=?::jsonb where restaurant_id=?",
+                json.writeValueAsString(new SubscriptionFeatureSnapshot(1, "PRO", List.of(
+                        new SubscriptionFeatureSnapshot.FeatureGrant("MENU_MANAGEMENT", Map.of()),
+                        new SubscriptionFeatureSnapshot.FeatureGrant("STAFF_MANAGEMENT", Map.of()),
+                        new SubscriptionFeatureSnapshot.FeatureGrant("STAFF_PERMISSION", Map.of())), clock.instant()).toMap()),
+                owner.getRestaurantId());
+        var staff = new User();
+        staff.setRestaurantId(owner.getRestaurantId());
+        staff.setRoleId(roles.findByCodeAndRestaurantIdIsNull("KITCHEN").orElseThrow().getId());
+        staff.setName("Kitchen"); staff.setEmail(UUID.randomUUID() + "@availability.test");
+        staff.setPasswordHash("fixture-only"); staff = users.saveAndFlush(staff);
+        var defaults = permissions.getEffectivePermissionCodes(staff.getId());
+        assertThat(defaults).doesNotContain("MENU_AVAILABILITY_UPDATE", "MENU_UPDATE");
+        Set<String> permissionManagement = Set.of("STAFF_PERMISSION_MANAGE");
+        var catalog = call(get("/api/v1/staff/permissions"), owner, permissionManagement);
+        catalog.expect(200);
+        assertThat(catalog.body.findValuesAsText("code")).contains("MENU_AVAILABILITY_UPDATE");
+        var assigned = call(put("/api/v1/staff/" + staff.getId() + "/permissions")
+                .content("{\"grants\":[\"MENU_AVAILABILITY_UPDATE\",\"MENU_VIEW\"],\"denies\":[]}"), owner, permissionManagement);
+        assigned.expect(200);
+        var granted = permissions.getEffectivePermissionCodes(staff.getId());
+        assertThat(granted).contains("MENU_AVAILABILITY_UPDATE", "MENU_VIEW").doesNotContain("MENU_UPDATE");
+        String token = tokens.createAccessToken(new CurrentUser(staff.getId(), staff.getRestaurantId(), staff.getEmail(), "KITCHEN", granted));
+        var response = mvc.perform(patch(path(item) + "/availability").contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + token)
+                .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}")).andReturn().getResponse();
+        assertThat(response.getStatus()).describedAs(response.getContentAsString()).isEqualTo(200);
+    }
+
+    @Test
+    void explicitDenyOfAvailabilityIsRespectedInFreshJwtDespiteMenuUpdate() throws Exception {
+        var item = createItem(null, null);
+        jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'DENY',? from permissions where code='MENU_AVAILABILITY_UPDATE'",
+                owner.getId(), owner.getId());
+        var denied = permissions.getEffectivePermissionCodes(owner.getId());
+        assertThat(denied).contains("MENU_UPDATE").doesNotContain("MENU_AVAILABILITY_UPDATE");
+        bearer(patch(path(item) + "/availability")
+                .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}"), denied)
+                .error(403, "FORBIDDEN");
+        assertThat(events("MENU_ITEM_AVAILABILITY_CHANGED")).isZero();
     }
 
     @Test

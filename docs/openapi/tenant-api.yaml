@@ -936,7 +936,7 @@ paths:
     "patch":
       "tags": ["Menu"]
       "operationId": "setAvailabilityMenuItem"
-      "description": "Requires MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Only active, non-deleted items may change availability. Active item with unchanged availability is a no-op."
+      "description": "Requires MENU_AVAILABILITY_UPDATE. MENU_UPDATE alone is insufficient; availability permission does not authorize profile, active status, group or delete operations. MENU_VIEW is required separately for menu GET endpoints. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Permission comes from effective grants, not a fixed role. Only active, non-deleted items may change availability. Active item with unchanged availability is a no-op. V36 grants the new permission only to global system OWNER/SUPER_ADMIN; staff require an explicit grant. Existing JWTs require refresh/login to receive it."
       "parameters": [{"name":"itemId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
       "requestBody":
         "required": true

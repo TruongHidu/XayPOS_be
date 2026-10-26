@@ -1,5 +1,6 @@
 package com.possaas.modules.qrorder.service;
 
+import com.possaas.modules.qrorder.event.QrOrderRequestChanged.Change;
 import com.possaas.common.exception.*;
 import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.order.application.port.QrOrderCheckoutQuery;
@@ -25,6 +26,7 @@ public class QrGuestSubmissionService {
     private final RestaurantRepository restaurants;
     private final QrOrderSeatingQuery seating;
     private final QrOrderCheckoutQuery checkout;
+    private final QrRequestEventPublisher events;
     private final QrOrderRequestRepository requests;
     private final QrOrderRequestItemRepository items;
     private final QrQuoteService quotes;
@@ -38,11 +40,11 @@ public class QrGuestSubmissionService {
     public QrGuestSubmissionService(QrGuestAccessService access,QrScopePolicy scopes,RestaurantRepository restaurants,
             QrOrderSeatingQuery seating,QrOrderCheckoutQuery checkout,QrOrderRequestRepository requests,
             QrOrderRequestItemRepository items,QrQuoteService quotes,QrHashes hashes,QrRequestMapper mapper,
-            QrRateLimiter limiter,AuditService audit,Clock clock,@Value("${app.qr-order.request-ttl-minutes:15}") long minutes) {
+            QrRateLimiter limiter,AuditService audit,Clock clock,QrRequestEventPublisher events,@Value("${app.qr-order.request-ttl-minutes:15}") long minutes) {
         if(minutes<1 || minutes>60) throw new IllegalArgumentException("QR request TTL must be between 1 and 60 minutes");
         this.access=access; this.scopes=scopes; this.restaurants=restaurants; this.seating=seating; this.checkout=checkout;
         this.requests=requests; this.items=items; this.quotes=quotes; this.hashes=hashes; this.mapper=mapper;
-        this.limiter=limiter; this.audit=audit; this.clock=clock; ttl=Duration.ofMinutes(minutes);
+        this.limiter=limiter; this.audit=audit; this.clock=clock; this.events=events; ttl=Duration.ofMinutes(minutes);
         chain=new OrderChain<>(List.of(this::scope,this::normalize,this::replay,this::entryGuards,this::quote,this::persist),
                 context->{throw new IllegalStateException("QR submission chain did not persist a result");});
     }
@@ -109,6 +111,8 @@ public class QrGuestSubmissionService {
         items.saveAllAndFlush(c.lines);
         audit.record(request.getRestaurantId(),null,"QR_ORDER_REQUEST_CREATED","qr_order_requests",request.getId(),null,
                 Map.of("requestId",request.getId(),"guestId",request.getGuestId(),"entryType",request.getEntryType().name(),"sourceChannel",request.getEntryType().sourceChannel().name(),"status",request.getStatus().name()),c.ip);
+        requests.flush();
+        events.publish(request,Change.CREATED);
         return next.complete(new Result(mapper.publicResponse(request,c.lines),false));
     }
     @Transactional(readOnly=true)

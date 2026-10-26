@@ -46,6 +46,14 @@ class MenuOpenApiTest {
             assertThat(assignment.path("required").toString()).contains("groupId", "expectedVersion");
             assertThat(assignment.at("/properties/groupId/nullable").asBoolean()).isTrue();
             verifyRecipeCostEstimateContract(root);
+            var availability = root.path("paths").path("/api/v1/menu/items/{itemId}/availability").path("patch");
+            assertThat(availability.path("description").asText())
+                .startsWith("Requires MENU_AVAILABILITY_UPDATE.")
+                .contains("MENU_MANAGEMENT", "MENU_UPDATE alone is insufficient");
+            assertThat(root.path("paths").path("/api/v1/menu/items/{itemId}").path("patch").path("description").asText())
+                .startsWith("Requires MENU_UPDATE.");
+            assertThat(root.path("paths").path("/api/v1/menu/items/{itemId}/status").path("patch").path("description").asText())
+                .startsWith("Requires MENU_UPDATE.");
         }
     }
 

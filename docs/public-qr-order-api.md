@@ -1,5 +1,8 @@
 # QR gọi món: bàn và mang đi, có bước nhân viên duyệt
 
+Nhân viên có thể nghe [QR/ORDER realtime](order-realtime-api.md) để tải lại backlog
+và hàng đợi bếp sau approval. Guest WebSocket chưa được hỗ trợ; guest REST giữ nguyên.
+
 Backend-only MVP. [OpenAPI](openapi/public-qr-order-api.yaml) · [Hướng dẫn đồng bộ FE](qr-order-fe-sync.md).
 
 V32 chốt [recipe snapshot](order-recipe-snapshot-api.md) tại approve, không ở guest

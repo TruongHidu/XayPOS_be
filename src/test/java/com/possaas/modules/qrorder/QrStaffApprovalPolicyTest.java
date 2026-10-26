@@ -161,7 +161,7 @@ class QrStaffApprovalPolicyTest {
         when(access.lockReject()).thenReturn(new OrderAccessService.Locked(staff, restaurant()));
         when(access.request(tenant, request.getId())).thenReturn(request);
         when(items.findAllByRestaurantIdAndRequestIdOrderByLineNumberAsc(tenant, request.getId())).thenReturn(List.of());
-        var service = new QrStaffDecisionService(access, requests, items, null, null, null, null, audit, new QrStaffResponseMapper(), Clock.fixed(now, ZoneOffset.UTC));
+        var service = new QrStaffDecisionService(access, mock(com.possaas.modules.qrorder.service.QrRequestEventPublisher.class), requests, items, null, null, null, null, audit, new QrStaffResponseMapper(), Clock.fixed(now, ZoneOffset.UTC));
         var result = service.reject(request.getId(), new QrStaffRequests.Reject(999L, "Different reason"), null);
         assertThat(result.rejectionReason()).isEqualTo("Original reason"); assertThat(result.rejectedAt()).isEqualTo(now.minusSeconds(10));
         verifyNoInteractions(requests, audit);

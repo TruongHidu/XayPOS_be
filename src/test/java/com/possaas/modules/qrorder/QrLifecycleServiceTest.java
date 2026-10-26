@@ -22,7 +22,7 @@ class QrLifecycleServiceTest {
     private final RestaurantTableRepository tables=mock(RestaurantTableRepository.class);
     private final TableSessionRepository sessions=mock(TableSessionRepository.class);
     private final AuditService audit=mock(AuditService.class);
-    private final QrLifecycleService lifecycle=new QrLifecycleService(access,grants,requests,tables,sessions,audit);
+    private final QrLifecycleService lifecycle=new QrLifecycleService(access,grants,mock(com.possaas.modules.qrorder.service.QrRequestEventPublisher.class),requests,tables,sessions,audit);
 
     @Test void tableInvalidationBumpsSeparateEpochRevokesAccessAndCancelsPendingWithoutChangingPhysicalTable() {
         var epoch=new QrTableAccess(); epoch.setRestaurantId(tenant); epoch.setTableId(tableId); epoch.setEpoch(4);

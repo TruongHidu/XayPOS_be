@@ -94,7 +94,7 @@ import org.springframework.transaction.IllegalTransactionStateException;
 @SpringBootTest(properties = {"spring.jpa.show-sql=false", "app.jobs.subscription-expiration.enabled=false",
     "app.bootstrap.super-admin.enabled=false", "logging.level.root=WARN"})
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
-@Import(OrderCompletionSessionIntegrationTest.FixedTime.class)
+@Import({OrderCompletionSessionIntegrationTest.FixedTime.class,com.possaas.support.CommittedRealtimeEvents.Config.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OrderCompletionSessionIntegrationTest {
     private static final String SCHEMA = "it_order_completion_" + UUID.randomUUID().toString().replace("-", "");
@@ -142,6 +142,7 @@ class OrderCompletionSessionIntegrationTest {
     @MockitoSpyBean OrderSessionClosureCommand closure;
     @MockitoSpyBean AuditService audit;
     private Fixture f;
+    @Autowired com.possaas.support.CommittedRealtimeEvents realtime;
 
     private record Fixture(Restaurant restaurant, User user, RestaurantSubscription subscription,
                            Item item, RestaurantTable table, TableSession session) {}
@@ -159,6 +160,7 @@ class OrderCompletionSessionIntegrationTest {
     void setup() {
         assertThat(jdbc.queryForObject("select current_schema()", String.class)).isEqualTo(SCHEMA);
         f = fixture();
+        realtime.clear();
     }
 
     @AfterEach
@@ -432,19 +434,23 @@ class OrderCompletionSessionIntegrationTest {
     void auditFailureAfterWritingRollsBackBothEntitiesAndAllAudits(String event) throws Exception {
         var order = prepared(true, OrderItemStatus.SERVED);
         var before = state(order);
+        realtime.clear();
         doAnswer(invocation -> { invocation.callRealMethod(); throw new IllegalStateException("audit unavailable after write"); })
             .when(audit).record(eq(f.restaurant.getId()), any(), eq(event), any(), any(), any(), any(), any());
         complete(order).error(500, "INTERNAL_ERROR");
         assertUnchanged(order, before);
+        assertThat(realtime.orders).isEmpty(); assertThat(realtime.qr).isEmpty();
     }
 
     @Test
     void sessionPersistenceFailureAfterOrderFlushRollsBackCompletion() throws Exception {
         var order = prepared(true, OrderItemStatus.SERVED);
         var before = state(order);
+        realtime.clear();
         doThrow(new IllegalStateException("session writer unavailable")).when(sessions).saveAndFlush(any());
         complete(order).error(500, "INTERNAL_ERROR");
         assertUnchanged(order, before);
+        assertThat(realtime.orders).isEmpty(); assertThat(realtime.qr).isEmpty();
     }
 
     @Test

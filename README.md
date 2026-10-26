@@ -1,5 +1,10 @@
 # POS SaaS Backend
 
+Staff realtime dùng chung native STOMP `/ws` cho kho, yêu cầu QR, đơn hàng và KDS.
+Mutation vẫn qua REST; gửi đơn `SUBMIT` vẫn tạo và xác nhận trong một lần.
+Xem [kết nối và quyền](docs/realtime-api.md), [ORDER/QR và đồng bộ FE](docs/order-realtime-api.md)
+và [publication boundaries](docs/order-realtime-implementation.md). Không cần migration mới.
+
 ## Inventory
 
 V30 triển khai Inventory Phase 1: warehouse/default warehouse, sparse current
@@ -111,6 +116,11 @@ cho các lần capture snapshot sau migration, giữ nguyên feature rows/lịch
 Xem quy tắc chuyển tiếp và ví dụ request trong docs/admin-api.md.
 V14 triển khai API nhóm món và món bán với Strategy tạo item, soft delete, version và audit.
 Xem mục Menu trong docs/tenant-api.md và docs/openapi/tenant-api.yaml.
+V36 tách `MENU_AVAILABILITY_UPDATE` cho `PATCH /api/v1/menu/items/{itemId}/availability`;
+`MENU_UPDATE` không còn đủ cho thao tác này. OWNER/SUPER_ADMIN có mặc định; staff
+cần được cấp riêng, không tự mở quyền sửa giá/tên món. Feature `MENU_MANAGEMENT`,
+body/response và nghiệp vụ không đổi. Sau migrate cần refresh/login để JWT nhận
+quyền mới; xem hướng dẫn rollout trong [Tenant API](docs/tenant-api.md).
 V28 bổ sung danh mục nguyên liệu trên cùng bảng `items` (`item_type=INGREDIENT`),
 Strategy riêng, soft delete/version/audit và permission INGREDIENT_*; truy cập cần
 RECIPE_MANAGEMENT hoặc INVENTORY_MANAGEMENT trong snapshot. Đây chưa phải module kho:

@@ -1,5 +1,8 @@
 package com.possaas.modules.order.service;
 
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.common.exception.ResourceNotFoundException;
 import com.possaas.common.security.CurrentTenantProvider;
 import com.possaas.common.security.CurrentUserProvider;
@@ -23,6 +26,7 @@ public class OrderItemTransitionService {
     private final CurrentUserProvider users;
     private final RestaurantRepository restaurants;
     private final FeatureAccessChecker features;
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderItemTransitionPolicy policy;
@@ -63,6 +67,7 @@ public class OrderItemTransitionService {
         history.transitioned(order,line,actor.userId(),source,now);
         audit.record(actor,"ORDER_ITEM_"+target.name(),order,before,lines,ip);
         orders.flush();
+        events.publish(order,Set.of(Change.ITEM_STATUS_CHANGED),List.of(line),List.of());
         return mapper.detail(order,lines);
     }
 }

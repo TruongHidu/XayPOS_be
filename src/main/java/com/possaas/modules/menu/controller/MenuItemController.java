@@ -62,7 +62,7 @@ public class MenuItemController {
     }
 
     @PatchMapping("/{id}/availability")
-    @PreAuthorize("hasAuthority('MENU_UPDATE')")
+    @PreAuthorize("hasAuthority('MENU_AVAILABILITY_UPDATE')")
     public MenuItemResponse availability(@PathVariable UUID id, @Valid @RequestBody MenuRequests.Availability request,
             HttpServletRequest http) {
         return command.availability(id, request, http.getRemoteAddr());

@@ -1,5 +1,6 @@
 package com.possaas.modules.qrorder.service.chain;
 
+import com.possaas.modules.qrorder.event.QrOrderRequestChanged.Change;
 import com.possaas.modules.order.application.port.QrApprovedOrderCommand;
 import com.possaas.modules.order.service.chain.*;
 import com.possaas.modules.qrorder.dto.QrApprovalResponse;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 @Component @RequiredArgsConstructor
 public class QrApprovalPersistHandler implements OrderHandler<QrApprovalContext,QrApprovalResponse> {
     private final QrApprovedOrderCommand orders;
+    private final QrRequestEventPublisher events;
     private final QrOrderRequestRepository requests;
     private final QrOrderRequestItemRepository items;
     private final QrRequestAudit audit;
@@ -29,6 +31,7 @@ public class QrApprovalPersistHandler implements OrderHandler<QrApprovalContext,
         r.setApprovedAt(c.getNow()); r.setApprovedAmount(c.getReview().quote().amount());
         r.setApprovedOrderCode(approved.order().orderCode()); r.setUpdatedAt(c.getNow()); requests.saveAndFlush(r);
         audit.record(r, c.getLocked().actor().userId(), "QR_ORDER_REQUEST_APPROVED", before, c.getIp()); requests.flush();
+        events.publish(r,Change.APPROVED);
         c.setPersisted(true);
         return next.complete(mapper.approved(r, c.getItems(), approved.order(), false));
     }

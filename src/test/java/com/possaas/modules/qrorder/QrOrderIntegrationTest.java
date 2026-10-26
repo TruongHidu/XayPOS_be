@@ -42,10 +42,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.*;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-@SpringBootTest(properties={"spring.jpa.show-sql=false", "app.jobs.subscription-expiration.enabled=false",
+@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT, properties={"spring.jpa.show-sql=false", "app.jobs.subscription-expiration.enabled=false",
     "app.bootstrap.super-admin.enabled=false", "logging.level.root=WARN"})
 @AutoConfigureMockMvc(print=MockMvcPrint.NONE)
-@Import(QrOrderIntegrationTest.FixedTime.class)
+@Import({QrOrderIntegrationTest.FixedTime.class,com.possaas.support.CommittedRealtimeEvents.Config.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class QrOrderIntegrationTest {
     static final Instant NOW=Instant.parse("2026-10-14T00:00:00Z");
@@ -63,6 +63,11 @@ class QrOrderIntegrationTest {
         p.add("spring.datasource.url",()->url); p.add("spring.flyway.schemas",()->SCHEMA);
         p.add("spring.flyway.default-schema",()->SCHEMA); p.add("spring.jpa.properties.hibernate.default_schema",()->SCHEMA);
     }
+    @Autowired com.possaas.support.CommittedRealtimeEvents realtime;
+    @org.springframework.boot.test.web.server.LocalServerPort int realtimePort;
+    @Autowired com.possaas.infrastructure.security.JwtTokenService jwt;
+    @Autowired com.possaas.infrastructure.realtime.RealtimeSessions realtimeSessions;
+    @Autowired org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler realtimeBroker;
     @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired JdbcTemplate jdbc;
     @Autowired RestaurantRepository restaurants; @Autowired UserRepository users; @Autowired RoleRepository roles;
     @Autowired PackagePlanRepository packages; @Autowired RestaurantSubscriptionRepository subscriptions;
@@ -90,7 +95,7 @@ class QrOrderIntegrationTest {
         subscription=subscriptions.saveAndFlush(subscription);
         item=new Item(); item.initialize(restaurant.getId(),NOW); item.setItemType(ItemType.MENU_ITEM); item.setName("Pho");
         item.setBaseUnit("bowl"); item.setSalePrice(new BigDecimal("50000")); item.setCostPrice(new BigDecimal("10000")); item=items.saveAndFlush(item);
-        table=freeTable();
+        table=freeTable(); realtime.clear();
     }
     @AfterEach void clearFailures() { reset(audit); }
     @AfterAll void cleanup() { if(!SCHEMA.matches("it_qr_order_[0-9a-f]{32}")) throw new IllegalStateException(); jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE"); }
@@ -296,6 +301,9 @@ class QrOrderIntegrationTest {
         var r=submitted.getFirst(); var d=review(r); var approvals=race(()->approve(r,d,null,ALL),()->approve(r,d,null,ALL));
         assertThat(approvals).extracting(Reply::status).containsExactly(200,200); assertThat(approvals.get(0).orderId()).isEqualTo(approvals.get(1).orderId());
         assertThat(count("orders")).isEqualTo(1); assertThat(count("table_sessions")).isEqualTo(1); assertThat(events("QR_ORDER_REQUEST_APPROVED")).isEqualTo(1);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(approvals.getFirst().orderVersion());
+        assertThat(realtime.qr).hasSize(2).extracting(e -> e.changeKind().name()).containsExactly("CREATED","APPROVED");
     }
     @Test void crossTenantStaffCannotReviewOrRejectRequest() throws Exception {
         var r=submit(mint(false),"a",payload()); setup();
@@ -452,7 +460,9 @@ class QrOrderIntegrationTest {
         var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);qrRecipe(1,"100");
         var request=submit(mint(true),"snapshot-failure",payload());request.expect(201);var reviewed=review(request);
         doThrow(new IllegalStateException("forced snapshot audit failure")).when(audit).recordAll(anyList());
+        realtime.clear();
         approve(request,reviewed,null,ALL).expect(500);
+        assertThat(realtime.orders).isEmpty(); assertThat(realtime.qr).isEmpty();
         assertThat(status(request)).isEqualTo("PENDING");
         for(String name:List.of("orders","order_items","table_sessions","order_item_recipe_snapshots","order_item_recipe_usages"))assertThat(count(name)).as(name).isZero();
         assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isZero();reset(audit);
@@ -464,7 +474,9 @@ class QrOrderIntegrationTest {
         UUID session=UUID.fromString(a.body.path("approvedSessionId").asText());
         var more=submit(guest,"snapshot-more",payload());var reviewed=review(more);
         doThrow(new IllegalStateException("forced append snapshot audit failure")).when(audit).recordAll(anyList());
+        realtime.clear();
         approve(more,reviewed,session,ALL).expect(500);reset(audit);
+        assertThat(realtime.orders).isEmpty(); assertThat(realtime.qr).isEmpty();
         assertThat(status(more)).isEqualTo("PENDING");assertThat(count("order_items")).isEqualTo(1);assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);
         assertThat(jdbc.queryForObject("select version from orders where id=?",Long.class,a.orderId())).isEqualTo(a.orderVersion());
         approve(more,reviewed,session,ALL).expect(200);assertThat(count("order_item_recipe_snapshots")).isEqualTo(2);
@@ -504,7 +516,9 @@ class QrOrderIntegrationTest {
     }
     @Test void inventoryQrShortageRollsBackNewSessionOrderAndSnapshotButCanBeApprovedAfterReceipt() throws Exception {
         UUID source=inventoryFixture("50");var request=submit(mint(true),"inventory-short",payload());request.expect(201);var reviewed=review(request);reviewed.expect(200);
+        realtime.clear();
         long audits=count("audit_logs");approve(request,reviewed,null,ALL).error(409,"INSUFFICIENT_AVAILABLE_STOCK");assertThat(status(request)).isEqualTo("PENDING");
+        assertThat(realtime.orders).isEmpty(); assertThat(realtime.qr).isEmpty();
         for(String name:List.of("orders","order_items","table_sessions","order_item_recipe_snapshots","order_item_recipe_usages","order_item_inventory_allocations","inventory_reservations"))assertThat(count(name)).as(name).isZero();
         assertThat(count("audit_logs")).isEqualTo(audits);inventoryReceipt(source,"100");approve(request,review(request),null,ALL).expect(200);
         assertThat(count("orders")).isEqualTo(1);assertThat(count("inventory_reservations")).isEqualTo(1);assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isEqualTo(1);
@@ -528,6 +542,137 @@ class QrOrderIntegrationTest {
         ingredient.setBaseUnit("g");ingredient.setTrackInventory(true);ingredient.setSalePrice(BigDecimal.ZERO);ingredient=items.saveAndFlush(ingredient);
         Recipe recipe=new Recipe();recipe.initialize(restaurant.getId(),item.getId(),version,BigDecimal.ONE,item.getBaseUnit(),NOW);recipe=recipes.saveAndFlush(recipe);
         RecipeItem line=new RecipeItem();line.initialize(restaurant.getId(),recipe.getId(),ingredient,new BigDecimal(quantity),BigDecimal.ZERO,NOW);recipeItems.saveAndFlush(line);return recipe;
+    }
+
+
+    @Test void realtimeQrPendingReplayApprovalAndAdditionalRoundHaveIndependentFinalFacts() throws Exception {
+        String guest=mint(true); var request=submit(guest,"rt-first",payload()); request.expect(201);
+        submit(guest,"rt-first",payload()).expect(200);
+        assertThat(realtime.qr).hasSize(1);
+        assertThat(realtime.qr.getFirst().status()).isEqualTo(com.possaas.modules.qrorder.entity.QrRequestStatus.PENDING);
+        assertThat(realtime.orders).isEmpty();
+        var reviewed=review(request); realtime.clear();
+        var approved=approve(request,reviewed,null,ALL); approved.expect(200);
+        assertThat(realtime.qr).hasSize(1); assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(approved.orderVersion());
+        assertThat(realtime.orders.getFirst().newKitchenItemIds()).hasSize(1);
+        assertThat(realtime.qr.getFirst().version()).isEqualTo(jdbc.queryForObject("select version from qr_order_requests where id=?",Long.class,request.requestId()));
+        approve(request,reviewed,null,ALL).expect(200);
+        assertThat(realtime.qr).hasSize(1); assertThat(realtime.orders).hasSize(1);
+        var second=submit(guest,"rt-second",payload()); var secondReview=review(second); realtime.clear();
+        var appended=approve(second,secondReview,UUID.fromString(approved.body.path("order").path("tableSessionId").asText()),ALL); appended.expect(200);
+        assertThat(appended.orderId()).isEqualTo(approved.orderId());
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().changes()).containsExactly(com.possaas.modules.order.event.OrderChanged.Change.ITEMS_ADDED);
+        assertThat(realtime.orders.getFirst().newKitchenItemIds()).hasSize(1)
+            .doesNotContain(UUID.fromString(approved.body.path("order").path("items").get(0).path("id").asText()));
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(appended.orderVersion());
+    }
+
+    @Test void realtimeRejectAndLifecycleCancelEmitOnlyCommittedChanges() throws Exception {
+        String guest=mint(true); var request=submit(guest,"rt-reject",payload()); realtime.clear();
+        staff(post(STAFF+"/"+request.requestId()+"/reject"),Map.of("expectedRequestVersion",0,"reason","Unavailable"),ALL).expect(200);
+        staff(post(STAFF+"/"+request.requestId()+"/reject"),Map.of("expectedRequestVersion",0,"reason","Unavailable"),ALL).expect(200);
+        assertThat(realtime.qr).hasSize(1); assertThat(realtime.orders).isEmpty();
+        var pending=submit(guest,"rt-pending",payload()); realtime.clear();
+        staff(post("/api/v1/tables/"+table.getId()+"/qr/rotate"),Map.of("expectedVersion",table.getVersion()),ALL).expect(200);
+        assertThat(realtime.qr).hasSize(1);
+        assertThat(realtime.qr.getFirst().requestId()).isEqualTo(pending.requestId());
+        assertThat(realtime.qr.getFirst().changeKind()).isEqualTo(com.possaas.modules.qrorder.event.QrOrderRequestChanged.Change.CANCELLED);
+        assertThat(realtime.qr.getFirst().version()).isEqualTo(jdbc.queryForObject("select version from qr_order_requests where id=?",Long.class,pending.requestId()));
+        assertThat(realtime.orders).isEmpty();
+    }
+
+    @Test void realtimeFailedApprovalHasNoCommittedQrOrOrderEvent() throws Exception {
+        var request=submit(mint(true),"rt-rollback",payload()); var reviewed=review(request); realtime.clear();
+        doThrow(new IllegalStateException("audit rollback")).when(audit).record(any(),any(),eq("QR_ORDER_REQUEST_APPROVED"),any(),any(),any(),any(),any());
+        approve(request,reviewed,null,ALL).expect(500);
+        assertThat(realtime.qr).isEmpty(); assertThat(realtime.orders).isEmpty();
+        assertThat(status(request)).isEqualTo("PENDING");
+        assertThat(count("orders")).isZero(); assertThat(count("table_sessions")).isZero();
+    }
+
+    @Test void nativeSocketReceivesCommittedQrAndKitchenFactsWithLiveDatabaseAuthorization() throws Exception {
+        var enabled=new ArrayList<>(FEATURES); enabled.add("KITCHEN_DISPLAY");
+        subscription.setFeatureSnapshot(snapshot(enabled)); subscription=subscriptions.saveAndFlush(subscription);
+        String token=jwt.createAccessToken(new CurrentUser(user.getId(),restaurant.getId(),user.getEmail(),"OWNER",ALL));
+        try(var socket=new com.possaas.support.RealtimeSocketProbe(realtimePort,token)) {
+            socket.subscribe("qr","/user/queue/qr-order-requests");
+            socket.subscribe("orders","/user/queue/orders");
+            socket.subscribe("kitchen","/user/queue/kitchen-orders");
+            awaitSocketSubscription("qr","qr-order-requests"); awaitSocketSubscription("orders","orders"); awaitSocketSubscription("kitchen","kitchen-orders");
+            String guest=mint(true); var request=submit(guest,"native-first",payload()); request.expect(201);
+            var pending=socket.next(); assertThat(pending.command()).isEqualTo("MESSAGE");
+            assertThat(pending.headers()).containsEntry("subscription","qr");
+            assertThat(json.readTree(pending.body()).path("payload").path("status").asText()).isEqualTo("PENDING");
+            socket.noFrame();
+            var approved=approve(request,review(request),null,ALL); approved.expect(200);
+            List<com.possaas.support.RealtimeSocketProbe.Frame> frames=List.of(socket.next(),socket.next(),socket.next());
+            assertThat(frames).extracting(f -> f.headers().get("subscription")).containsExactlyInAnyOrder("qr","orders","kitchen");
+            var orderFrames=frames.stream().filter(f -> !f.headers().get("subscription").equals("qr")).toList();
+            assertThat(json.readTree(orderFrames.get(0).body()).path("eventId")).isEqualTo(json.readTree(orderFrames.get(1).body()).path("eventId"));
+            assertThat(json.readTree(orderFrames.get(0).body()).path("resourceVersion").asLong()).isEqualTo(approved.orderVersion());
+            socket.noFrame();
+            // Revoking a kitchen feature fences that subscription without killing ORDER or QR.
+            subscription.setFeatureSnapshot(snapshot(FEATURES)); subscription=subscriptions.saveAndFlush(subscription);
+            var second=submit(guest,"native-next",payload()); socket.next();
+            var next=approve(second,review(second),UUID.fromString(approved.body.path("order").path("tableSessionId").asText()),ALL); next.expect(200);
+            frames=List.of(socket.next(),socket.next());
+            assertThat(frames).extracting(f -> f.headers().get("subscription")).containsExactlyInAnyOrder("qr","orders"); socket.noFrame();
+            // A final audit rollback must not leak either the early ORDER event or the QR event.
+            var third=submit(guest,"native-rollback",payload()); socket.next();
+            doThrow(new IllegalStateException("forced rollback")).when(audit).record(any(),any(),eq("QR_ORDER_REQUEST_APPROVED"),any(),any(),any(),any(),any());
+            approve(third,review(third),UUID.fromString(approved.body.path("order").path("tableSessionId").asText()),ALL).expect(500);
+            socket.noFrame(); reset(audit);
+            // Disabling the real DB account stops the next delivery even though its JWT is still valid.
+            user.setActive(false); users.saveAndFlush(user);
+            submit(guest,"native-disabled",payload()).expect(201);
+            org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> realtimeSessions.subscribers(restaurant.getId()).isEmpty());
+            socket.noFrame();
+        }
+    }
+
+    void awaitSocketSubscription(String subscriptionId,String queue) {
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> {
+            for(var p:realtimeSessions.subscribers(restaurant.getId())) {
+                var h=org.springframework.messaging.simp.SimpMessageHeaderAccessor.create(org.springframework.messaging.simp.SimpMessageType.MESSAGE);
+                h.setDestination("/queue/"+queue+"-user"+p.sessionId());
+                var matches=realtimeBroker.getSubscriptionRegistry().findSubscriptions(org.springframework.messaging.support.MessageBuilder.createMessage(new byte[0],h.getMessageHeaders()));
+                if(matches.getOrDefault(p.sessionId(),List.of()).contains(subscriptionId)) return true;
+            }
+            return false;
+        });
+    }
+
+    @Test void nativeCashierConnectsWithoutInventoryAndLivePermissionDenyStopsDelivery() throws Exception {
+        user.setRoleId(roles.findByCodeAndRestaurantIdIsNull("CASHIER").orElseThrow().getId()); user=users.saveAndFlush(user);
+        String token=jwt.createAccessToken(new CurrentUser(user.getId(),restaurant.getId(),user.getEmail(),"CASHIER",Set.of("ORDER_VIEW")));
+        try(var socket=new com.possaas.support.RealtimeSocketProbe(realtimePort,token)) {
+            socket.subscribe("qr","/user/queue/qr-order-requests"); awaitSocketSubscription("qr","qr-order-requests");
+            String guest=mint(false); submit(guest,"before-deny",payload()).expect(201);
+            assertThat(socket.next().headers()).containsEntry("subscription","qr");
+            jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'DENY',? from permissions where code='ORDER_VIEW'",user.getId(),user.getId());
+            submit(guest,"after-deny",payload()).expect(201);
+            org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> realtimeSessions.subscribers(restaurant.getId()).isEmpty());
+            socket.noFrame();
+        }
+    }
+
+    @Test void nativeKitchenOnlyReadsKdsWithoutOrderOrInventoryEntitlement() throws Exception {
+        var pending=submit(mint(false),"kitchen-only",payload()); var approved=approve(pending,review(pending),null,ALL); approved.expect(200);
+        features(List.of("KITCHEN_DISPLAY"));
+        user.setRoleId(roles.findByCodeAndRestaurantIdIsNull("KITCHEN").orElseThrow().getId()); user=users.saveAndFlush(user);
+        jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'DENY',? from permissions where code in ('ORDER_VIEW','INVENTORY_VIEW')",user.getId(),user.getId());
+        String token=jwt.createAccessToken(new CurrentUser(user.getId(),restaurant.getId(),user.getEmail(),"KITCHEN",Set.of("KITCHEN_VIEW")));
+        try(var socket=new com.possaas.support.RealtimeSocketProbe(realtimePort,token)) {
+            socket.subscribe("kitchen","/user/queue/kitchen-orders"); awaitSocketSubscription("kitchen","kitchen-orders");
+            var codes=new HashSet<>(ALL); codes.add("KITCHEN_START_COOKING");
+            var cooking=staff(post("/api/v1/orders/"+approved.orderId()+"/items/"+approved.body.path("order").path("items").get(0).path("id").asText()+"/start-cooking"),
+                Map.of("expectedOrderVersion",approved.orderVersion()),codes); cooking.expect(200);
+            var frame=socket.next(); assertThat(frame.headers()).containsEntry("subscription","kitchen");
+            assertThat(json.readTree(frame.body()).path("resourceVersion").asLong()).isEqualTo(cooking.body.path("version").asLong());
+            socket.noFrame();
+        }
     }
 
     String mint(boolean dine) throws Exception {

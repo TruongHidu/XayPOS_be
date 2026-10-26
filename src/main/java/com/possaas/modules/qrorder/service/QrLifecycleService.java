@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class QrLifecycleService implements QrRequestLifecycle {
     private final QrTableAccessRepository access;
     private final QrGuestAuthorizationRepository grants;
+    private final QrRequestEventPublisher events;
     private final QrOrderRequestRepository requests;
     private final RestaurantTableRepository tables;
     private final TableSessionRepository sessions;
@@ -56,14 +57,17 @@ public class QrLifecycleService implements QrRequestLifecycle {
     }
 
     private void cancel(List<QrOrderRequest> pending, String reason, UUID actor, Instant now, String ip) {
+        var changed = new ArrayList<QrOrderRequest>();
         for (var request : pending) {
             if (request.getStatus() != QrRequestStatus.PENDING) continue;
+            changed.add(request);
             request.setStatus(QrRequestStatus.CANCELLED); request.setCancelledAt(now);
             request.setCancellationReason(reason); request.setUpdatedAt(now);
             audit.record(request.getRestaurantId(), actor, "QR_ORDER_REQUEST_CANCELLED", "qr_order_requests", request.getId(),
                 Map.of("status", "PENDING"), Map.of("status", "CANCELLED", "reason", reason), ip);
         }
         requests.saveAll(pending); requests.flush(); grants.flush();
+        events.cancelled(changed);
     }
     private static String digest(String token) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8))); }

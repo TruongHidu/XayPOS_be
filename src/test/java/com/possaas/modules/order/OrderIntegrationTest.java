@@ -54,7 +54,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties={"spring.jpa.show-sql=false","app.jobs.subscription-expiration.enabled=false","app.bootstrap.super-admin.enabled=false","logging.level.root=WARN","app.cors.allowed-origins=http://localhost:3000"})
 @AutoConfigureMockMvc(print=MockMvcPrint.NONE)
-@Import(OrderIntegrationTest.FixedTime.class)
+@Import({OrderIntegrationTest.FixedTime.class,com.possaas.support.CommittedRealtimeEvents.Config.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @ExtendWith(OutputCaptureExtension.class)
 class OrderIntegrationTest {
@@ -86,6 +86,7 @@ class OrderIntegrationTest {
     @MockitoSpyBean OrderCodeGenerator codes; @Autowired PermissionService permissions; @Autowired JwtTokenService jwt;
     @Autowired EntityManagerFactory emf;
     private Fixture f;
+    @Autowired com.possaas.support.CommittedRealtimeEvents realtime;
     private record Fixture(Restaurant restaurant,User user,RestaurantSubscription subscription,ItemGroup group,Item item,RestaurantTable table,TableSession session) {}
     private record Result(int status,JsonNode body,String replay) {
         UUID id() { return UUID.fromString(body.path("id").asText()); }
@@ -94,7 +95,7 @@ class OrderIntegrationTest {
         void expect(int expected) { assertThat(status).as(body.toString()).isEqualTo(expected); }
         void error(int expected,String code) { expect(expected); assertThat(body.path("code").asText()).isEqualTo(code); }
     }
-    @BeforeEach void setup() { assertThat(jdbc.queryForObject("select current_schema()",String.class)).isEqualTo(SCHEMA); f=fixture(true); }
+    @BeforeEach void setup() { assertThat(jdbc.queryForObject("select current_schema()",String.class)).isEqualTo(SCHEMA); f=fixture(true); realtime.clear(); }
     @AfterAll void dropOwnSchema() {
         if(!SCHEMA.matches("it_order_[0-9a-f]{32}")) throw new IllegalStateException("Not a test schema");
         jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");
@@ -1371,6 +1372,102 @@ class OrderIntegrationTest {
         assertThat(cashier.hasPermission("TABLE_CLOSE")).isTrue();
         bearer(post("/api/v1/table-sessions/"+f.session.getId()+"/close"),Map.of("expectedVersion",0),cashier)
             .error(409,"TABLE_SESSION_NOT_READY_TO_CLOSE");
+    }
+
+
+    @Test void realtimeDraftEditsAndAppendRemainStaffOnlyThenSubmitPublishesFinalVersionOnce() throws Exception {
+        var draft=create(false); draft.expect(201);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().kitchenRelevant()).isFalse();
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(draft.version());
+        var header=call(patch(path(draft)),Map.of("expectedVersion",draft.version(),"note","edited")); header.expect(200);
+        var edited=call(patch(path(draft)+"/items/"+draft.lineId()),Map.of("expectedVersion",header.version(),"quantity",3)); edited.expect(200);
+        var appended=call(post(path(draft)+"/items"),Map.of("expectedVersion",edited.version(),"items",List.of(lineRequest(f.item.getId(),"1",null)))); appended.expect(200);
+        assertThat(realtime.orders).hasSize(4).allMatch(e -> !e.kitchenRelevant() && e.newKitchenItemIds().isEmpty());
+        realtime.clear();
+        var submitted=call(post(path(draft)+"/confirm"),Map.of("expectedVersion",appended.version())); submitted.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        var event=realtime.orders.getFirst();
+        assertThat(event.version()).isEqualTo(submitted.version());
+        assertThat(event.changes()).containsExactly(com.possaas.modules.order.event.OrderChanged.Change.SUBMITTED);
+        assertThat(event.newKitchenItemIds()).hasSize(2);
+        call(post(path(draft)+"/confirm"),Map.of("expectedVersion",0)).expect(200);
+        assertThat(realtime.orders).hasSize(1);
+    }
+
+    @Test void realtimeSubmitAppendReplayTransitionsAndCompletionHaveOneCanonicalEventPerMutation() throws Exception {
+        var request=body(true); request.put("submissionMode","SUBMIT"); var key=key();
+        var created=postCreate(request,key); created.expect(201); postCreate(request,key).expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        var event=realtime.orders.getFirst();
+        assertThat(event.changes()).containsExactlyInAnyOrder(com.possaas.modules.order.event.OrderChanged.Change.CREATED,com.possaas.modules.order.event.OrderChanged.Change.SUBMITTED);
+        assertThat(event.version()).isEqualTo(created.version());
+        assertThat(event.newKitchenItemIds()).containsExactly(created.lineId());
+        realtime.clear(); var appendKey=key();
+        var body=Map.of("expectedVersion",created.version(),"submissionMode","SUBMIT","items",List.of(lineRequest(f.item.getId(),"1",null)));
+        var appended=call(post(path(created)+"/items").header("Idempotency-Key",appendKey),body); appended.expect(200);
+        call(post(path(created)+"/items").header("Idempotency-Key",appendKey),body).expect(200);
+        assertThat(appended.body.path("status").asText()).isEqualTo("CONFIRMED");
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(appended.version());
+        assertThat(realtime.orders.getFirst().newKitchenItemIds()).hasSize(1).doesNotContain(created.lineId());
+        realtime.clear();
+        var cooking=kitchen(appended,"start-cooking"); cooking.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().changedOrderItemIds()).containsExactly(created.lineId());
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(cooking.version());
+        realtime.clear();
+        var served=call(post(path(created)+"/mark-served"),Map.of("expectedOrderVersion",cooking.version())); served.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().changedOrderItemIds()).hasSize(2);
+        assertThat(realtime.orders.getFirst().newKitchenItemIds()).isEmpty();
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(served.version());
+        call(post(path(created)+"/mark-served"),Map.of("expectedOrderVersion",0)).expect(200);
+        assertThat(realtime.orders).hasSize(1); realtime.clear();
+        pay(served,"CASH",served.body.path("totalAmount").decimalValue(),null,key()).expect(201);
+        var paid=detail(created);
+        var complete=call(post(path(created)+"/complete"),Map.of("expectedVersion",paid.version())); complete.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(complete.version());
+        assertThat(realtime.orders.getFirst().status()).isEqualTo(OrderStatus.COMPLETED);
+        assertThat(sessions.findById(f.session.getId()).orElseThrow().getStatus()).isEqualTo(TableSessionStatus.CLOSED);
+        call(post(path(created)+"/complete"),Map.of("expectedVersion",0)).expect(200);
+        assertThat(realtime.orders).hasSize(1);
+    }
+
+    @Test void realtimeAuditRollbackAndConcurrentReplayDoNotProduceGhostOrDuplicateEvents() throws Exception {
+        var request=body(false); request.put("submissionMode","SUBMIT");
+        doThrow(new IllegalStateException("test rollback")).when(audit).record(any(),any(),eq("ORDER_CONFIRMED"),any(),any(),any(),any(),any());
+        postCreate(request,key()).expect(500);
+        assertThat(realtime.orders).isEmpty(); reset(audit);
+        var idempotencyKey=key(); var results=race(()->postCreate(request,idempotencyKey),()->postCreate(request,idempotencyKey));
+        assertThat(results).extracting(Result::status).containsExactlyInAnyOrder(201,200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(results.getFirst().version());
+        realtime.clear();
+        var order=results.getFirst();
+        var cancelled=call(post(path(order)+"/items/"+order.lineId()+"/cancel"),Map.of("expectedVersion",order.version(),"reason","cancel")); cancelled.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().changes()).containsExactlyInAnyOrder(com.possaas.modules.order.event.OrderChanged.Change.ITEM_CANCELLED,com.possaas.modules.order.event.OrderChanged.Change.CANCELLED);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(cancelled.version());
+    }
+
+    @Test void realtimeBulkReadyAndWholeOrderCancelEmitOneEventAndNoopDoesNotEmit() throws Exception {
+        var created=submit(false); var cooking=kitchen(created,"start-cooking"); cooking.expect(200); realtime.clear();
+        var ready=call(post(path(created)+"/mark-ready"),Map.of("expectedOrderVersion",cooking.version())); ready.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(ready.version());
+        assertThat(realtime.orders.getFirst().changedOrderItemIds()).containsExactly(created.lineId());
+        assertThat(realtime.orders.getFirst().newKitchenItemIds()).isEmpty();
+        call(post(path(created)+"/mark-ready"),Map.of("expectedOrderVersion",0)).expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        var another=submit(false); realtime.clear();
+        var cancelled=call(post(path(another)+"/cancel"),Map.of("expectedVersion",another.version(),"reason","left")); cancelled.expect(200);
+        assertThat(realtime.orders).hasSize(1);
+        assertThat(realtime.orders.getFirst().changes()).containsExactly(com.possaas.modules.order.event.OrderChanged.Change.CANCELLED);
+        assertThat(realtime.orders.getFirst().version()).isEqualTo(cancelled.version());
+        call(post(path(another)+"/cancel"),Map.of("expectedVersion",0,"reason","left")).expect(200);
+        assertThat(realtime.orders).hasSize(1);
     }
 
     private Result kitchen(Result order,String action) throws Exception {

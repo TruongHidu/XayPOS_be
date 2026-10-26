@@ -153,7 +153,7 @@ class OrderChainTest {
             Order saved=invocation.getArgument(0); assertThat(saved.getTableSessionId()).isEqualTo(session); saved.setId(UUID.randomUUID()); return saved;
         });
         var items=mock(OrderItemRepository.class); var history=mock(OrderHistory.class); var audit=mock(OrderAudit.class); var confirmation=mock(OrderConfirmationOperation.class);
-        var handler=new CreateOrderPersistHandler(orders,items,history,audit,confirmation,seating);
+        var handler=new CreateOrderPersistHandler(mock(OrderEventPublisher.class),orders,items,history,audit,confirmation,seating);
         var chain=new OrderChain<CreateOrderContext,OrderCreationService.Result>(List.of(handler),context->{
             context.requirePersisted(); return new OrderCreationService.Result(new OrderResponseMapper().detail(order,List.of(line)),false);
         });

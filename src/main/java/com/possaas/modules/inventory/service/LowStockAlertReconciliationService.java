@@ -22,6 +22,7 @@ public class LowStockAlertReconciliationService {
     private final LowStockAlertPolicy policy;
     private final LowStockAlertPersistence persistence;
     private final LowStockAlertAudit audit;
+    private final LowStockAlertEventPublisher realtime;
     private final EntityManager entityManager;
     private final Clock clock;
 
@@ -71,6 +72,9 @@ public class LowStockAlertReconciliationService {
         // Release the partial unique slot before opening a new-unit episode.
         persistence.save(resolved);persistence.save(created);
         List<LowStockAlert> changed=new ArrayList<>(resolved);changed.addAll(created);
-        if (!changed.isEmpty()) audit.transitions(actor.userId(),changed,before,ip);
+        if (!changed.isEmpty()) {
+            audit.transitions(actor.userId(),changed,before,ip);
+            realtime.publish(changed);
+        }
     }
 }

@@ -1,5 +1,8 @@
 package com.possaas.modules.order.service;
 
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.modules.order.dto.OrderResponse;
 import com.possaas.modules.order.entity.OrderStatus;
 import com.possaas.modules.order.entity.ServiceType;
@@ -17,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @RequiredArgsConstructor
 public class OrderCompletionService {
     private final OrderAccessService access;
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderLifecyclePolicy lifecycle;
@@ -60,6 +64,7 @@ public class OrderCompletionService {
         if(dineIn) sessionClosure.close(actor.restaurantId(),order.getTableSessionId(),now,ip);
         audit.record(actor,"ORDER_COMPLETED",order,before,lines,ip);
         orders.flush();
+        events.publish(order,Set.of(Change.COMPLETED),List.of(),List.of());
         return mapper.detail(order,lines);
     }
 }

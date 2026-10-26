@@ -1,4 +1,7 @@
 package com.possaas.modules.order.service.chain.update;
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.modules.order.dto.OrderResponse;
 import com.possaas.modules.order.repository.*;
 import com.possaas.modules.order.service.*;
@@ -7,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 @Component @RequiredArgsConstructor
 public class UpdateOrderItemPersistHandler implements OrderHandler<UpdateOrderItemContext,OrderResponse> {
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderMoneyCalculator money;
@@ -17,6 +21,7 @@ public class UpdateOrderItemPersistHandler implements OrderHandler<UpdateOrderIt
         money.apply(l.order(),p.totals()); l.order().changed(now);
         items.saveAll(l.lines()); orders.saveAndFlush(l.order());
         audit.record(actor,"ORDER_ITEM_UPDATED",l.order(),p.before(),l.lines(),c.facts().ip()); orders.flush();
+        events.publish(l.order(), Set.of(Change.ITEM_UPDATED), List.of(l.line()), List.of());
         c.persisted(); return next.proceed(c);
     }
 }

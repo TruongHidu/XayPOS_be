@@ -1,5 +1,8 @@
 package com.possaas.modules.order.service;
 
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.common.exception.*;
 import com.possaas.common.security.CurrentUser;
 import com.possaas.modules.order.dto.*;
@@ -17,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @RequiredArgsConstructor @Transactional
 public class OrderCommandService {
     private final OrderAccessService access;
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderAppendService append;
@@ -40,7 +44,10 @@ public class OrderCommandService {
         if(request.note()!=null && !Objects.equals(order.getNote(),OrderRequestNormalizer.text(request.note()))) { order.setNote(OrderRequestNormalizer.text(request.note())); changed=true; }
         if(request.customerName()!=null && !Objects.equals(order.getCustomerName(),OrderRequestNormalizer.text(request.customerName()))) { order.setCustomerName(OrderRequestNormalizer.text(request.customerName())); changed=true; }
         if(request.customerPhone()!=null && !Objects.equals(order.getCustomerPhone(),OrderRequestNormalizer.text(request.customerPhone()))) { order.setCustomerPhone(OrderRequestNormalizer.text(request.customerPhone())); changed=true; }
-        if(changed) finish(actor,order,lines,before,"ORDER_UPDATED",now(),ip);
+        if(changed) {
+            finish(actor,order,lines,before,"ORDER_UPDATED",now(),ip);
+            events.publish(order,Set.of(Change.UPDATED),List.of(),List.of());
+        }
         return mapper.detail(order,lines);
     }
 
@@ -59,7 +66,10 @@ public class OrderCommandService {
             return mapper.detail(order,lines);
         }
         lifecycle.requireEditable(order); lifecycle.requireVersion(order,request.expectedVersion());
-        confirmation.confirm(order,lines,actor,now(),ip); return mapper.detail(order,lines);
+        var newKitchenIds = OrderEventPublisher.unsent(lines);
+        confirmation.confirm(order,lines,actor,now(),ip);
+        events.publish(order,Set.of(Change.SUBMITTED),lines.stream().filter(l -> newKitchenIds.contains(l.getId())).toList(),newKitchenIds);
+        return mapper.detail(order,lines);
     }
 
     public OrderResponse cancelItem(UUID id,UUID lineId,OrderRequests.Cancel request,String ip) {
@@ -75,7 +85,9 @@ public class OrderCommandService {
         else order.setStatus(servingStatus.aggregate(order,lines));
         finish(actor,order,lines,before,"ORDER_ITEM_CANCELLED",now,ip); history.cancelled(order,List.of(line),actor.userId(),reason,now);
         if(cancelledOrder) audit.record(actor,"ORDER_CANCELLED",order,before,lines,ip);
-        orders.flush(); return mapper.detail(order,lines);
+        orders.flush();
+        events.publish(order,cancelledOrder ? Set.of(Change.ITEM_CANCELLED,Change.CANCELLED) : Set.of(Change.ITEM_CANCELLED),List.of(line),List.of());
+        return mapper.detail(order,lines);
     }
 
     public OrderResponse cancel(UUID id,OrderRequests.Cancel request,String ip) {
@@ -88,7 +100,9 @@ public class OrderCommandService {
         inventory.release(order,changed,actor,now,ip);
         changed.forEach(l->cancelLine(l,reason,now));
         cancelRoot(order,reason,now); finish(actor,order,lines,before,"ORDER_CANCELLED",now,ip);
-        history.cancelled(order,changed,actor.userId(),reason,now); orders.flush(); return mapper.detail(order,lines);
+        history.cancelled(order,changed,actor.userId(),reason,now); orders.flush();
+        events.publish(order,Set.of(Change.CANCELLED),changed,List.of());
+        return mapper.detail(order,lines);
     }
 
     private void finish(CurrentUser actor,Order order,List<OrderItem> lines,Map<String,Object> before,String action,Instant now,String ip) {

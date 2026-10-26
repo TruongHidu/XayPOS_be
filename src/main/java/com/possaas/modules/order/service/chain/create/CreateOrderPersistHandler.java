@@ -1,4 +1,7 @@
 package com.possaas.modules.order.service.chain.create;
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.modules.order.entity.OrderSubmissionMode;
 import com.possaas.modules.order.repository.*;
 import com.possaas.modules.order.service.*;
@@ -9,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 @Component @RequiredArgsConstructor
 public class CreateOrderPersistHandler implements OrderHandler<CreateOrderContext,OrderCreationService.Result> {
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderHistory history;
@@ -25,7 +29,12 @@ public class CreateOrderPersistHandler implements OrderHandler<CreateOrderContex
         audit.record(actor,"ORDER_CREATED",p.order(),null,p.lines(),c.facts().ip()); orders.flush();
         if(c.normalized().request().effectiveMode()==OrderSubmissionMode.SUBMIT)
             confirmation.confirm(p.order(),p.lines(),actor,now,c.facts().ip());
-        orders.flush(); c.persisted();
+        orders.flush();
+        boolean submitted = c.normalized().request().effectiveMode() == OrderSubmissionMode.SUBMIT;
+        events.publish(p.order(), submitted ? Set.of(Change.CREATED, Change.SUBMITTED) : Set.of(Change.CREATED),
+                p.lines(), submitted ? p.lines().stream().filter(l -> l.getSentToKitchenAt() != null)
+                        .map(com.possaas.modules.order.entity.OrderItem::getId).toList() : List.of());
+        c.persisted();
         return next.proceed(c);
     }
 }

@@ -195,8 +195,10 @@ thiếu thật trong quá khứ. Không backfill lịch sử, audit người dù
 
 GET `/inventory/low-stock` vẫn là balance đang thấp, không có acknowledge/lịch sử.
 GET `/inventory/alerts` là các episode đã lưu, gồm cả đã resolved. Không có endpoint
-tạo/resolve/delete alert thủ công. Chưa WebSocket/push/email/scheduler/outbox;
-không tự đặt mua, nhập kho, chuyển kho, kiểm kê hoặc sửa giá vốn.
+tạo/resolve/delete alert thủ công. WebSocket/STOMP `/ws` phát thay đổi sau commit
+cho client đang kết nối và đủ quyền; xem [realtime](inventory-alert-realtime.md).
+Không có push hệ điều hành/email/outbox/replay; không tự đặt mua, nhập kho,
+chuyển kho, kiểm kê hoặc sửa giá vốn.
 
 Thiết kế: [implementation](low-stock-alert-implementation.md).
 Đồng bộ UI: [FE sync](low-stock-alert-fe-sync.md).

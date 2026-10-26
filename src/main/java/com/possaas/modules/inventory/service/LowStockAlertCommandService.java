@@ -16,6 +16,7 @@ public class LowStockAlertCommandService {
     private final LowStockAlertPolicy policy;
     private final LowStockAlertPersistence persistence;
     private final LowStockAlertAudit audit;
+    private final LowStockAlertEventPublisher realtime;
     private final Clock clock;
 
     public LowStockAlertResponse acknowledge(UUID id,LowStockAlertRequests.Acknowledge request,String ip) {
@@ -24,6 +25,7 @@ public class LowStockAlertCommandService {
         if (policy.requireAcknowledge(alert,request.expectedVersion())) {
             var before=audit.snapshot(alert);alert.acknowledge(actor.userId(),clock.instant());
             persistence.save(List.of(alert));audit.transitions(actor.userId(),List.of(alert),Map.of(id,before),ip);
+            realtime.publish(List.of(alert));
         }
         return queries.find(actor.restaurantId(),id).orElseThrow(LowStockAlertQueryService::notFound);
     }

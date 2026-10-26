@@ -1,5 +1,8 @@
 package com.possaas.modules.order.service;
 
+import com.possaas.modules.order.event.OrderChanged.Change;
+import java.util.Set;
+import java.util.List;
 import com.possaas.common.exception.ConflictException;
 import com.possaas.modules.order.application.port.QrApprovedOrderCommand;
 import com.possaas.modules.order.application.port.QrOrderCheckoutQuery;
@@ -9,7 +12,6 @@ import com.possaas.modules.order.service.strategy.OrderCreationContext;
 import com.possaas.modules.order.service.strategy.OrderCreationPlan;
 import com.possaas.modules.table.application.port.OrderSeatingCommand;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class OrderQrApprovalOperation implements QrApprovedOrderCommand {
     private final OrderLineFactory lineFactory;
     private final OrderMoneyCalculator money;
     private final OrderConfirmationOperation confirmation;
+    private final OrderEventPublisher events;
     private final OrderRepository orders;
     private final OrderItemRepository items;
     private final OrderHistory history;
@@ -104,6 +107,8 @@ public class OrderQrApprovalOperation implements QrApprovedOrderCommand {
             audit.record(c.actor(), "ORDER_ITEMS_ADDED", root, p.before(), p.combined(), c.ip());
         }
         orders.flush();
+        events.publish(root,p.create() ? Set.of(Change.CREATED,Change.SUBMITTED) : Set.of(Change.ITEMS_ADDED),
+                p.added(),p.added().stream().map(OrderItem::getId).toList());
         return new Result(mapper.detail(root, p.combined()), p.added().stream().map(OrderItem::getId).toList());
     }
 

@@ -30,7 +30,10 @@ backend không tự quy đổi giá trị số.
 audit trùng; RESOLVED không ACK được. 403 feature/permission: không cố gọi API bằng
 cách chỉ ẩn thông báo lỗi. Không cache/chia sẻ dữ liệu giữa các tenant/user.
 
-Chưa có notification delivery: refresh khi vào màn hình, quay lại từ chứng từ hoặc
-pull-to-refresh. Nếu cần polling, chỉ khi màn cảnh báo đang mở, dừng khi rời màn
-hình/background/logout. Không triển khai polling toàn app và không suy ra endpoint
-WebSocket chưa có. Không tự tạo/resolve cảnh báo phía frontend.
+Backend đã hỗ trợ native WebSocket/STOMP `/ws`, xác thực bằng Bearer trong CONNECT,
+subscribe `/user/queue/inventory-alerts`; xem [contract realtime](inventory-alert-realtime.md).
+Sự kiện `INVENTORY_LOW_STOCK_ALERT_CHANGED` chỉ gửi sau commit và trong đúng tenant.
+OPEN mới có thể hiện thông báo trong app; ACKNOWLEDGED/RESOLVED chỉ đồng bộ lại UI.
+Vẫn dùng REST để đọc danh sách/chi tiết và tải lại sau kết nối lại vì không replay.
+Dừng socket khi tắt cập nhật, background, logout hoặc mất quyền. Không cần polling
+định kỳ để nhận sự kiện. Không tự tạo/resolve cảnh báo phía frontend.

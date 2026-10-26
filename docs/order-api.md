@@ -1,5 +1,8 @@
 # ORDER MVP API
 
+Thông báo sau commit cho staff/order/KDS: [ORDER realtime](order-realtime-api.md).
+REST request/response, submissionMode và quyền mutation không thay đổi.
+
 Chuyển bàn thuộc TABLE: [API chuyển phiên](table-session-transfer-api.md).
 Transfer giữ nguyên orderId/tableSessionId, order version, trạng thái và mọi dòng món;
 session.tableId là bàn hiện tại/cuối cùng, không phải snapshot nơi tạo order lịch sử.

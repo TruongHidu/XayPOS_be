@@ -180,9 +180,27 @@ overrides. Access is permission-based, not restricted to OWNER/MANAGER roles.
 | POST /api/v1/menu/items | MENU_CREATE | 201 item |
 | PATCH /api/v1/menu/items/{itemId} | MENU_UPDATE | 200 item |
 | PATCH /api/v1/menu/items/{itemId}/status | MENU_UPDATE | 200 item |
-| PATCH /api/v1/menu/items/{itemId}/availability | MENU_UPDATE | 200 item |
+| PATCH /api/v1/menu/items/{itemId}/availability | MENU_AVAILABILITY_UPDATE | 200 item |
 | PUT /api/v1/menu/items/{itemId}/group | MENU_UPDATE | 200 item |
 | DELETE /api/v1/menu/items/{itemId}?expectedVersion=0 | MENU_DELETE | 204 |
+
+Availability uses the independent `MENU_AVAILABILITY_UPDATE` permission (V36).
+`MENU_UPDATE` alone no longer authorizes `/availability`; conversely availability
+permission does not authorize changing name/price, active status, group or deletion.
+The endpoint still requires `MENU_MANAGEMENT` and keeps its URL/body/response,
+version checks, lifecycle rules, audit and desired-state no-op behavior unchanged.
+`MENU_VIEW` is still required separately for menu GET endpoints.
+
+V36 seeds the MENU permission when missing and grants it only to global system
+OWNER/SUPER_ADMIN roles. CASHIER/KITCHEN/MANAGER/WAITER receive no automatic grant;
+an authorized owner may assign it through the existing staff permission catalog/API.
+For the app's menu list and availability button, grant `MENU_VIEW` plus
+`MENU_AVAILABILITY_UPDATE`, not the broader `MENU_UPDATE` solely for this action.
+Existing role/user `MENU_UPDATE` GRANT/DENY assignments are not copied or changed;
+the two permissions are independent, including DENY semantics. Review intended
+availability access when rolling out. Existing JWTs do not gain the new authority:
+use refresh when still usable or login again (staff permission changes revoke
+refresh tokens). Calling `/auth/me` alone does not replace the bearer token.
 
 Headers: `Authorization: Bearer <accessToken>`, `Content-Type: application/json`
 for JSON bodies. POST examples:
