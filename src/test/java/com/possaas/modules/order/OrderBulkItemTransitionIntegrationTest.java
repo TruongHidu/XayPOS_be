@@ -749,7 +749,7 @@ class OrderBulkItemTransitionIntegrationTest {
         group = groups.saveAndFlush(group);
         var item = new Item(); item.initialize(restaurant.getId(), NOW); item.setGroupId(group.getId());
         item.setName("Pho"); item.setItemType(ItemType.MENU_ITEM); item.setBaseUnit("bowl");
-        item.setSalePrice(new BigDecimal("50000.00")); item.setCostPrice(new BigDecimal("12000.00"));
+        item.setSalePrice(new BigDecimal("50000.00")); item.setCostPrice(new BigDecimal("12000.00"));item.setCostConfigured(true);
         item = menuItems.saveAndFlush(item);
         var table = new RestaurantTable(); table.initialize(restaurant.getId(), NOW); table.setCode("B01");
         table.setName("Table 1"); table.setQrToken("t" + UUID.randomUUID().toString().replace("-", "") + "a".repeat(10));

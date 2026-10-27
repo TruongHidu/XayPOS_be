@@ -139,7 +139,7 @@ class StockAuditIntegrationTest {
         movement("RECEIPT","10",null);var added=ingredient("Extra","EXTRA");var same=ingredient("Same","SAME");threshold("9");
         var audit=start(create()).expect(200);var beef=row(audit,ingredient.getId());
         audit=call(patch(URL+"/"+audit.id()+"/items"),Map.of("expectedVersion",audit.version(),"items",List.of(line(beef,"8"),line(row(audit,added.getId()),"2.125"),line(row(audit,same.getId()),"0"))),ALL).expect(200);
-        ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(new BigDecimal("99"));ingredient.setName("Changed");ingredient.setSku("CHANGED");items.saveAndFlush(ingredient);
+        ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(new BigDecimal("99"));ingredient.setCostConfigured(true);ingredient.setName("Changed");ingredient.setSku("CHANGED");items.saveAndFlush(ingredient);
         var confirmed=confirm(audit).expect(200);UUID document=UUID.fromString(confirmed.body.path("adjustmentDocumentId").asText());
         assertThat(count("stock_documents")).isEqualTo(2);assertThat(count("inventory_transactions")).isEqualTo(3);assertThat(count("low_stock_alerts")).isEqualTo(1);
         assertThat(jdbc.queryForObject("select quantity from inventory_balances where warehouse_id=? and item_id=?",BigDecimal.class,warehouse,ingredient.getId())).isEqualByComparingTo("8");
@@ -183,7 +183,7 @@ class StockAuditIntegrationTest {
     @Test void thresholdAndCostChangesAndOutsideScopeMovementsDoNotMakeStale()throws Exception {
         movement("RECEIPT","10",null);var audit=countAll(start(create()).expect(200),"10");threshold("5");
         var later=ingredient("Later","LATER");var original=ingredient;ingredient=later;movement("RECEIPT","4",null);ingredient=original;
-        ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(BigDecimal.ZERO);ingredient.setName("Renamed");items.saveAndFlush(ingredient);
+        ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(BigDecimal.ZERO);ingredient.setCostConfigured(true);ingredient.setName("Renamed");items.saveAndFlush(ingredient);
         confirm(audit).expect(200);assertThat(row(audit,ingredient.getId()).path("referenceUnitCostSnapshot").decimalValue()).isEqualByComparingTo("10");
     }
     @Test void concurrentConfirmsProduceOneDocumentLedgerAndAudit()throws Exception {
@@ -234,8 +234,8 @@ class StockAuditIntegrationTest {
         assertThat(count("stock_documents")).isEqualTo(1);assertThat(count("stock_document_items")).isEqualTo(105);assertThat(count("inventory_transactions")).isEqualTo(105);
     }
     @Test void overflowFailsBeforeWritingDocumentAndCostZeroIsValid()throws Exception {
-        ingredient.setCostPrice(new BigDecimal("999999999999.99"));items.saveAndFlush(ingredient);var audit=countAll(start(create()).expect(200),"99999999999.999");confirm(audit).error(409,"STOCK_AUDIT_ADJUSTMENT_OUT_OF_RANGE");assertThat(count("stock_documents")).isZero();
-        cancel(audit).expect(200);ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(BigDecimal.ZERO);items.saveAndFlush(ingredient);confirm(countAll(start(create()).expect(200),"0.001")).expect(200);
+        ingredient.setCostPrice(new BigDecimal("999999999999.99"));ingredient.setCostConfigured(true);items.saveAndFlush(ingredient);var audit=countAll(start(create()).expect(200),"99999999999.999");confirm(audit).error(409,"STOCK_AUDIT_ADJUSTMENT_OUT_OF_RANGE");assertThat(count("stock_documents")).isZero();
+        cancel(audit).expect(200);ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setCostPrice(BigDecimal.ZERO);ingredient.setCostConfigured(true);items.saveAndFlush(ingredient);confirm(countAll(start(create()).expect(200),"0.001")).expect(200);
         assertThat(jdbc.queryForObject("select total_cost from stock_documents where restaurant_id=?",BigDecimal.class,user.getRestaurantId())).isZero();
     }
     @Test void reservedNamespaceAndServerOwnedSourceAreRejectedOnPublicCreate()throws Exception {
@@ -272,7 +272,7 @@ class StockAuditIntegrationTest {
     }
 
     void features(Set<String> codes){subscription.setFeatureSnapshot(new SubscriptionFeatureSnapshot(1,"TEST",codes.stream().map(c->new SubscriptionFeatureSnapshot.FeatureGrant(c,Map.of())).toList(),NOW).toMap());subscription=subscriptions.saveAndFlush(subscription);}
-    Item ingredient(String name,String sku){var value=new Item();value.initialize(user.getRestaurantId(),NOW);value.setItemType(ItemType.INGREDIENT);value.setName(name);value.setSku(sku);value.setBaseUnit("g");value.setTrackInventory(true);value.setSalePrice(BigDecimal.ZERO);value.setCostPrice(BigDecimal.TEN);return items.saveAndFlush(value);}
+    Item ingredient(String name,String sku){var value=new Item();value.initialize(user.getRestaurantId(),NOW);value.setItemType(ItemType.INGREDIENT);value.setName(name);value.setSku(sku);value.setBaseUnit("g");value.setTrackInventory(true);value.setSalePrice(BigDecimal.ZERO);value.setCostPrice(BigDecimal.TEN);value.setCostConfigured(true);return items.saveAndFlush(value);}
     Reply create()throws Exception{return call(post(URL).header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("warehouseId",warehouse),ALL).expect(201);}
     Reply start(Reply audit)throws Exception{return call(post(URL+"/"+audit.id()+"/start"),Map.of("expectedVersion",audit.version()),ALL);}
     Reply confirm(Reply audit)throws Exception{return call(post(URL+"/"+audit.id()+"/confirm"),Map.of("expectedVersion",audit.version()),ALL);}

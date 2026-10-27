@@ -30,6 +30,9 @@ public class MenuAudit {
         m.put("description", i.getDescription());
         m.put("imageUrl", i.getImageUrl());
         m.put("salePrice", i.getSalePrice());
+        m.put("costPrice", i.getCostPrice());
+        m.put("costConfigured", i.isCostConfigured());
+        m.put("recipeEnabled", i.isRecipeEnabled());
         m.put("active", i.isActive());
         m.put("availabilityStatus", i.getAvailabilityStatus());
         m.put("deletedAt", i.getDeletedAt() == null ? null : i.getDeletedAt().toString());

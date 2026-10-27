@@ -382,7 +382,7 @@ class PublicQrMenuIntegrationTest {
     private Item item(String name, UUID groupId) {
         var value = new Item(); value.initialize(restaurant.getId(), NOW); value.setName(name); value.setGroupId(groupId);
         value.setItemType(ItemType.MENU_ITEM); value.setBaseUnit("portion"); value.setSalePrice(new BigDecimal("50000.00"));
-        value.setCostPrice(new BigDecimal("12000.00")); value.setSku(UUID.randomUUID().toString());
+        value.setCostPrice(new BigDecimal("12000.00"));value.setCostConfigured(true); value.setSku(UUID.randomUUID().toString());
         value.setMetadata(Map.of("private", "not public")); return items.saveAndFlush(value);
     }
     private String path() { return BASE + table.getQrToken(); }

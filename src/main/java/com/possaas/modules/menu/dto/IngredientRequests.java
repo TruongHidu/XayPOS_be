@@ -19,7 +19,7 @@ public final class IngredientRequests {
             @Size(max = 10000) String description,
             @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal costPrice,
             Boolean trackInventory,
-            Boolean active) {
+            Boolean active, Boolean costConfigured) {
     }
 
     public record Update(
@@ -29,7 +29,7 @@ public final class IngredientRequests {
             @Size(max = 10000) String description,
             @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal costPrice,
             Boolean trackInventory,
-            @NotNull @Min(0) Long expectedVersion) {
+            @NotNull @Min(0) Long expectedVersion, Boolean costConfigured) {
     }
 
     public record Status(@NotNull Boolean active, @NotNull @Min(0) Long expectedVersion) {

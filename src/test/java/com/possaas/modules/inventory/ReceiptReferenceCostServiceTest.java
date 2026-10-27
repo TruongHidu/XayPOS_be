@@ -28,7 +28,7 @@ class ReceiptReferenceCostServiceTest {
     private final InventoryBalanceRepository balances = mock(InventoryBalanceRepository.class);
     private final IngredientReferenceCostWriter costs = mock(IngredientReferenceCostWriter.class);
     private final ReceiptReferenceCostService service = new ReceiptReferenceCostService(
-            balances, costs, new WeightedAverageCostPolicy());
+            balances, costs, new WeightedAverageCostPolicy(), mock(com.possaas.modules.audit.service.AuditService.class));
     private final CurrentUser actor = new CurrentUser(UUID.randomUUID(), UUID.randomUUID(),
             "owner@example.com", "OWNER", Set.of("INVENTORY_RECEIVE"));
     private final Instant now = Instant.parse("2026-10-19T08:00:00Z");
@@ -40,14 +40,14 @@ class ReceiptReferenceCostServiceTest {
         var quantity = mock(InventoryBalanceRepository.IngredientTotalQuantity.class);
         when(quantity.getItemId()).thenReturn(id);
         when(quantity.getQuantity()).thenReturn(new BigDecimal("10"));
-        when(costs.lockReferenceCosts(actor.restaurantId(), List.of(id)))
-                .thenReturn(Map.of(id, new BigDecimal("100")));
+        when(costs.lockReferenceCostStates(actor.restaurantId(), List.of(id)))
+                .thenReturn(Map.of(id, new IngredientReferenceCostWriter.ReferenceCost(new BigDecimal("100"), true)));
         when(balances.findTotalQuantities(actor.restaurantId(), List.of(id))).thenReturn(List.of(quantity));
 
         service.recalculate(actor, document, List.of(line(id)), now, "127.0.0.1");
 
         var order = inOrder(costs, balances);
-        order.verify(costs).lockReferenceCosts(actor.restaurantId(), List.of(id));
+        order.verify(costs).lockReferenceCostStates(actor.restaurantId(), List.of(id));
         order.verify(balances).findTotalQuantities(actor.restaurantId(), List.of(id));
         order.verify(costs).updateReferenceCosts(actor, document.getId(),
                 Map.of(id, new BigDecimal("110.00")), now, "127.0.0.1");
@@ -56,8 +56,8 @@ class ReceiptReferenceCostServiceTest {
     @Test
     void missingSparseBalanceMeansZeroQuantityNotPreviousReferenceCostWeight() {
         UUID id = UUID.randomUUID();
-        when(costs.lockReferenceCosts(actor.restaurantId(), List.of(id)))
-                .thenReturn(Map.of(id, new BigDecimal("999")));
+        when(costs.lockReferenceCostStates(actor.restaurantId(), List.of(id)))
+                .thenReturn(Map.of(id, new IngredientReferenceCostWriter.ReferenceCost(new BigDecimal("999"), true)));
         when(balances.findTotalQuantities(actor.restaurantId(), List.of(id))).thenReturn(List.of());
         StockDocument document = document(StockDocumentType.RECEIPT);
         service.recalculate(actor, document, List.of(line(id)), now, null);

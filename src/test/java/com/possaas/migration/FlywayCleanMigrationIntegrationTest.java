@@ -62,7 +62,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("36");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("37");
             assertThat(countTables(schema)).isEqualTo(41);
             assertThat(tableExists(schema, "stock_audits")).isTrue();
             assertThat(tableExists(schema, "stock_audit_items")).isTrue();
@@ -947,7 +947,7 @@ class FlywayCleanMigrationIntegrationTest {
                     before.put(table,tableSnapshot(s,p,table));
             }
             var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load();upgraded.migrate();upgraded.validate();
+                .locations("classpath:db/migration").target("34").load();upgraded.migrate();upgraded.validate();
             try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
                 for(var entry:before.entrySet())assertThat(tableSnapshot(s,p,entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
                 try(ResultSet r=s.executeQuery("SELECT count(*),bool_and(status='OPEN' AND acknowledged_by IS NULL AND quantity_at_trigger=10 AND threshold_quantity=20 AND triggered_at=created_at) FROM "+p+"low_stock_alerts")) {
@@ -971,7 +971,7 @@ class FlywayCleanMigrationIntegrationTest {
                 for(String table:java.util.List.of("items","warehouses","stock_documents","stock_document_items","inventory_balances",
                     "inventory_transactions","inventory_reservations","low_stock_alerts","audit_logs","features","packages","package_features","restaurant_subscriptions"))before.put(table,tableSnapshot(s,p,table));
             }
-            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();upgraded.migrate();upgraded.validate();
+            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("35").load();upgraded.migrate();upgraded.validate();
             try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
                 for(var entry:before.entrySet()) {
                     if(entry.getKey().equals("stock_documents")){
@@ -995,6 +995,120 @@ class FlywayCleanMigrationIntegrationTest {
             assertThat(tableExists(schema,"stock_audits")).isFalse();
             try(Connection c=dataSource.getConnection();Statement s=c.createStatement();ResultSet r=s.executeQuery("select idempotency_key from "+p+"stock_documents")){r.next();assertThat(r.getString(1)).isEqualTo(" sys_stock_audit:reserved ");}
         }finally{dropTestSchema(schema);}
+    }
+
+    @Test
+    void v37ClassifiesCurrentCatalogAndPreservesImmutableHistoryAndLegacyReservations() throws Exception {
+        String schema=TEST_SCHEMA_PREFIX+UUID.randomUUID().toString().replace("-","");
+        String p="\""+schema+"\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("36").load().migrate();
+            String tenant=UUID.randomUUID().toString(), owner=UUID.randomUUID().toString();
+            String menu=UUID.randomUUID().toString(), ingredient=UUID.randomUUID().toString(), recipe=UUID.randomUUID().toString();
+            String order=UUID.randomUUID().toString(), draftOrder=UUID.randomUUID().toString();
+            String capturedLine=UUID.randomUUID().toString(), legacyLine=UUID.randomUUID().toString();
+            String draftLine=UUID.randomUUID().toString(), cancelledDraft=UUID.randomUUID().toString();
+            String snapshot=UUID.randomUUID().toString(), warehouse=UUID.randomUUID().toString();
+            String document=UUID.randomUUID().toString(), documentItem=UUID.randomUUID().toString();
+            Map<String,String> before = new java.util.LinkedHashMap<>();
+            try (Connection connection=dataSource.getConnection(); Statement s=connection.createStatement()) {
+                // CAPTURED header and its immutable usage must be inserted in one transaction.
+                // Trigger queries must resolve this fixture schema, not the Spring context schema.
+                String previousSchema = connection.getSchema();
+                connection.setSchema(schema);
+                connection.setAutoCommit(false);
+                s.execute("INSERT INTO "+p+"restaurants(id,code,name,status) VALUES('"+tenant+"','V33_KEEP','Keep physical stock','ACTIVE')");
+                s.execute("INSERT INTO "+p+"users(id,restaurant_id,role_id,email,password_hash,name) SELECT '"+owner+"','"+tenant+"',id,'v33@example.test','fixture','Owner' FROM "+p+"roles WHERE restaurant_id IS NULL AND code='OWNER'");
+                s.execute("INSERT INTO "+p+"items(id,restaurant_id,name,item_type,base_unit,sale_price,cost_price,track_inventory,availability_status,created_at,updated_at) VALUES "
+                        +"('"+menu+"','"+tenant+"','Food','MENU_ITEM','portion',100,0,false,'AVAILABLE',now(),now()),"
+                        +"('"+ingredient+"','"+tenant+"','Ingredient','INGREDIENT','g',0,2,true,'AVAILABLE',now(),now())");
+                s.execute("INSERT INTO "+p+"recipes(id,restaurant_id,menu_item_id,recipe_version,yield_quantity,yield_unit,is_active,created_at,updated_at) VALUES('"+recipe+"','"+tenant+"','"+menu+"',1,10,'portion',true,now(),now())");
+                for(String id:java.util.List.of(order,draftOrder)) {
+                    boolean submitted=id.equals(order);
+                    s.execute("INSERT INTO "+p+"orders(id,restaurant_id,order_code,service_type,source_channel,status,currency_code,version,idempotency_key,request_hash,confirmed_at,created_at,updated_at) VALUES('"+id+"','"+tenant+"','"+id+"','TAKEAWAY','CASHIER','"+(submitted?"CONFIRMED":"OPEN")+"','VND',9,'"+id+"',repeat('a',64),"+(submitted?"now()":"NULL")+",now(),now())");
+                }
+                int lineNumber=0;
+                for(String id:java.util.List.of(capturedLine,legacyLine,draftLine,cancelledDraft)) {
+                    boolean sent=id.equals(capturedLine)||id.equals(legacyLine);
+                    boolean cancelled=id.equals(cancelledDraft);
+                    s.execute("INSERT INTO "+p+"order_items(id,restaurant_id,order_id,item_id,item_name,unit,quantity,unit_price,line_total,status,cancel_reason,line_number,sent_to_kitchen_at,created_at,updated_at) VALUES('"+id+"','"+tenant+"','"+(sent?order:draftOrder)+"','"+menu+"','Food','portion',3,100,300,'"+(cancelled?"CANCELLED":"PENDING")+"',"+(cancelled?"'never submitted'":"NULL")+","+(++lineNumber)+","+(sent?"now()":"NULL")+",now(),now())");
+                }
+                s.execute("INSERT INTO "+p+"order_item_recipe_snapshots(id,restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,recipe_id,recipe_version,yield_quantity,yield_unit,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) VALUES('"+snapshot+"','"+tenant+"','"+capturedLine+"','"+menu+"','CAPTURED','"+recipe+"',1,10,'portion',3,'portion',now(),now())");
+                s.execute("INSERT INTO "+p+"order_item_recipe_usages(restaurant_id,recipe_snapshot_id,ingredient_id,ingredient_name_snapshot,ingredient_unit_snapshot,recipe_quantity_snapshot,waste_percent_snapshot,track_inventory_snapshot,required_quantity,created_at) VALUES('"+tenant+"','"+snapshot+"','"+ingredient+"','Ingredient','g',1000,5,true,315,now())");
+                s.execute("INSERT INTO "+p+"warehouses(id,restaurant_id,code,name,is_default,is_active,created_at,updated_at) VALUES('"+warehouse+"','"+tenant+"','MAIN','Main',true,true,now(),now())");
+                s.execute("INSERT INTO "+p+"inventory_balances(restaurant_id,warehouse_id,item_id,quantity,min_quantity,created_at,updated_at) VALUES('"+tenant+"','"+warehouse+"','"+ingredient+"',1000,10,now(),now())");
+                s.execute("INSERT INTO "+p+"stock_documents(id,restaurant_id,warehouse_id,document_code,document_type,status,idempotency_key,creation_request_hash,created_by,confirmed_by,confirmed_at,line_count,total_quantity,total_cost,created_at,updated_at) VALUES('"+document+"','"+tenant+"','"+warehouse+"','OLD_RECEIPT','RECEIPT','CONFIRMED','old-key',repeat('b',64),'"+owner+"','"+owner+"',now(),1,1000,2000,now(),now())");
+                s.execute("INSERT INTO "+p+"stock_document_items(id,restaurant_id,stock_document_id,ingredient_id,ingredient_sku,ingredient_name,unit,quantity,unit_cost,total_cost,created_at,updated_at) VALUES('"+documentItem+"','"+tenant+"','"+document+"','"+ingredient+"','OLD','Old historical name','g',1000,2,2000,now(),now())");
+                s.execute("INSERT INTO "+p+"inventory_transactions(restaurant_id,warehouse_id,item_id,transaction_type,stock_document_id,stock_document_item_id,quantity_change,before_quantity,after_quantity,unit,unit_cost,idempotency_key,created_by,created_at) VALUES('"+tenant+"','"+warehouse+"','"+ingredient+"','RECEIPT','"+document+"','"+documentItem+"',1000,0,1000,'g',2,'old-ledger-key','"+owner+"',now())");
+                // Two pre-V37 CAPTURED decisions: one consumed, one still reserved.
+                String secondSnapshot=UUID.randomUUID().toString();
+                s.execute("INSERT INTO "+p+"order_item_recipe_snapshots(id,restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,recipe_id,recipe_version,yield_quantity,yield_unit,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) VALUES('"+secondSnapshot+"','"+tenant+"','"+legacyLine+"','"+menu+"','CAPTURED','"+recipe+"',1,10,'portion',3,'portion',now(),now())");
+                s.execute("INSERT INTO "+p+"order_item_recipe_usages(restaurant_id,recipe_snapshot_id,ingredient_id,ingredient_name_snapshot,ingredient_unit_snapshot,recipe_quantity_snapshot,waste_percent_snapshot,track_inventory_snapshot,required_quantity,created_at) VALUES('"+tenant+"','"+secondSnapshot+"','"+ingredient+"','Ingredient','g',1000,5,true,315,now())");
+                for(String line:java.util.List.of(capturedLine,legacyLine)) {
+                    String header=line.equals(capturedLine)?snapshot:secondSnapshot;
+                    String allocation=UUID.randomUUID().toString();
+                    s.execute("INSERT INTO "+p+"order_item_inventory_allocations(id,restaurant_id,order_id,order_item_id,recipe_snapshot_id,status,warehouse_id,order_quantity_snapshot,order_unit_snapshot,reserved_at,created_at,updated_at) VALUES('"+allocation+"','"+tenant+"','"+order+"','"+line+"','"+header+"','RESERVED','"+warehouse+"',3,'portion',now(),now(),now())");
+                    s.execute("INSERT INTO "+p+"inventory_reservations(restaurant_id,allocation_id,recipe_snapshot_id,recipe_usage_id,warehouse_id,ingredient_id,quantity,ingredient_name_snapshot,ingredient_unit_snapshot,created_at) SELECT '"+tenant+"','"+allocation+"','"+header+"',id,'"+warehouse+"','"+ingredient+"',315,'Ingredient','g',now() FROM "+p+"order_item_recipe_usages WHERE recipe_snapshot_id='"+header+"'");
+                    if(line.equals(capturedLine)) {
+                        s.execute("INSERT INTO "+p+"inventory_transactions(restaurant_id,warehouse_id,item_id,transaction_type,source_type,order_id,order_item_id,reservation_id,recipe_usage_id,quantity_change,before_quantity,after_quantity,unit,unit_cost,idempotency_key,created_by,created_at) SELECT '"+tenant+"','"+warehouse+"','"+ingredient+"','RECIPE_USE','ORDER_ITEM','"+order+"','"+line+"',id,recipe_usage_id,-315,1000,685,'g',NULL,'old-recipe-use','"+owner+"',now() FROM "+p+"inventory_reservations WHERE allocation_id='"+allocation+"'");
+                        s.execute("UPDATE "+p+"order_item_inventory_allocations SET status='CONSUMED',consumed_at=now() WHERE id='"+allocation+"'");
+                    }
+                }
+                s.execute("UPDATE "+p+"inventory_balances SET quantity=685,reserved_quantity=315");
+                connection.commit();
+                connection.setAutoCommit(true);
+                for(String table:java.util.List.of("orders","order_items","items","recipes","order_item_recipe_snapshots",
+                        "order_item_recipe_usages","inventory_reservations","order_item_inventory_allocations","stock_documents","stock_document_items","inventory_balances","inventory_transactions","audit_logs"))
+                    before.put(table,tableSnapshot(s,p,table));
+                connection.setSchema(previousSchema);
+            }
+            var upgrade=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("37").load();
+            upgrade.migrate();upgrade.validate();
+            try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+                c.setSchema(schema);
+                for(var entry:before.entrySet()) {
+                    String table=entry.getKey();
+                    if(table.equals("items")||table.equals("order_item_recipe_snapshots")) {
+                        String columns=table.equals("items")?"'recipe_enabled','cost_configured'":"'recipe_enabled_snapshot','cost_source_snapshot'";
+                        try(ResultSet r=s.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(t)-ARRAY["+columns+"]::text[] ORDER BY (to_jsonb(t)-ARRAY["+columns+"]::text[])::text),'[]'::jsonb)::text FROM "+p+table+" t")) {
+                            r.next();assertThat(r.getString(1)).as(table).isEqualTo(entry.getValue());
+                        }
+                    } else assertThat(tableSnapshot(s,p,table)).as(table).isEqualTo(entry.getValue());
+                }
+                try(ResultSet r=s.executeQuery("SELECT recipe_enabled,cost_configured,cost_price FROM "+p+"items WHERE id='"+menu+"'")) {
+                    r.next();assertThat(r.getBoolean(1)).isTrue();assertThat(r.getBoolean(2)).isFalse();assertThat(r.getBigDecimal(3)).isZero();
+                }
+                try(ResultSet r=s.executeQuery("SELECT recipe_enabled,cost_configured,cost_price FROM "+p+"items WHERE id='"+ingredient+"'")) {
+                    r.next();assertThat(r.getBoolean(1)).isFalse();assertThat(r.getBoolean(2)).isTrue();assertThat(r.getBigDecimal(3)).isEqualByComparingTo("2");
+                }
+                try(ResultSet r=s.executeQuery("SELECT bool_and(recipe_enabled_snapshot IS NULL AND cost_source_snapshot IS NULL) FROM "+p+"order_item_recipe_snapshots")) {r.next();assertThat(r.getBoolean(1)).isTrue();}
+                assertThatThrownBy(()->s.execute("UPDATE "+p+"items SET recipe_enabled=true WHERE id='"+ingredient+"'" )).hasMessageContaining("ck_item_recipe_application");
+                assertThatThrownBy(()->s.execute("UPDATE "+p+"items SET cost_configured=false WHERE id='"+ingredient+"'" )).hasMessageContaining("ck_item_reference_cost_configuration");
+                assertThatThrownBy(()->s.execute("UPDATE "+p+"order_item_recipe_snapshots SET cost_source_snapshot='MANUAL'" )).hasMessageContaining("immutable");
+                assertThatThrownBy(()->s.execute("DELETE FROM "+p+"order_item_recipe_usages" )).hasMessageContaining("immutable");
+                assertThatThrownBy(()->s.execute("UPDATE "+p+"inventory_transactions SET unit_cost=10" )).hasMessageContaining("append-only");
+                // RECIPE_DISABLED accepts a source decision but never recipe details or unknown enum values.
+                String base="INSERT INTO "+p+"order_item_recipe_snapshots(restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at,recipe_enabled_snapshot,cost_source_snapshot) VALUES('"+tenant+"','"+draftLine+"','"+menu+"',";
+                assertThatThrownBy(()->s.execute(base+"'RECIPE_DISABLED',3,'portion',now(),now(),true,'RECIPE')")).hasMessageContaining("ck_order_recipe_application_decision");
+                assertThatThrownBy(()->s.execute(base+"'BOGUS',3,'portion',now(),now(),false,'MANUAL')")).hasMessageContaining("ck_order_recipe_application_decision");
+                s.execute(base+"'RECIPE_DISABLED',3,'portion',now(),now(),false,'MANUAL')");
+                String skipped="INSERT INTO "+p+"order_item_inventory_allocations(restaurant_id,order_id,order_item_id,recipe_snapshot_id,status,skip_reason,order_quantity_snapshot,order_unit_snapshot,created_at,updated_at) SELECT '"+tenant+"','"+draftOrder+"','"+draftLine+"',id,'SKIPPED',";
+                String suffix=",3,'portion',now(),now() FROM "+p+"order_item_recipe_snapshots WHERE order_item_id='"+draftLine+"'";
+                assertThatThrownBy(()->s.execute(skipped+"'BOGUS'"+suffix)).hasMessageContaining("ck_order_inventory_skip_reason");
+                s.execute(skipped+"'SNAPSHOT_RECIPE_DISABLED'"+suffix);
+                // Consume the still-reserved pre-V37 header even after switching today's menu off.
+                s.execute("UPDATE "+p+"items SET recipe_enabled=false WHERE id='"+menu+"'");
+                c.setAutoCommit(false);
+                s.execute("INSERT INTO "+p+"inventory_transactions(restaurant_id,warehouse_id,item_id,transaction_type,source_type,order_id,order_item_id,reservation_id,recipe_usage_id,quantity_change,before_quantity,after_quantity,unit,unit_cost,idempotency_key,created_by,created_at) SELECT '"+tenant+"','"+warehouse+"','"+ingredient+"','RECIPE_USE','ORDER_ITEM','"+order+"','"+legacyLine+"',r.id,r.recipe_usage_id,-315,685,370,'g',NULL,'post-upgrade-consume','"+owner+"',now() FROM "+p+"inventory_reservations r JOIN "+p+"order_item_inventory_allocations a ON a.id=r.allocation_id WHERE a.order_item_id='"+legacyLine+"'");
+                s.execute("UPDATE "+p+"order_item_inventory_allocations SET status='CONSUMED',consumed_at=now() WHERE order_item_id='"+legacyLine+"'");
+                s.execute("UPDATE "+p+"inventory_balances SET quantity=370,reserved_quantity=0");
+                c.commit();c.setAutoCommit(true);
+                try(ResultSet r=s.executeQuery("SELECT count(*),bool_and(unit_cost IS NULL) FROM "+p+"inventory_transactions WHERE transaction_type='RECIPE_USE'")) {r.next();assertThat(r.getInt(1)).isEqualTo(2);assertThat(r.getBoolean(2)).isTrue();}
+            }
+        } finally {dropTestSchema(schema);}
     }
 
     private void v35DocumentFixture(String schema,String key)throws Exception {

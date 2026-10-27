@@ -27,6 +27,19 @@ class OrderRecipeSnapshotServiceTest {
     final Instant now=Instant.parse("2026-10-20T08:00:00Z");
     final UUID tenant=UUID.randomUUID(),orderId=UUID.randomUUID();
     final CurrentUser actor=new CurrentUser(UUID.randomUUID(),tenant,"test@example.com","WAITER",Set.of("ORDER_CREATE","ORDER_UPDATE"));
+    @Test void repeatedDisabledMenuLinesUseOneDistinctConfigurationBatchAndNoDefinitionQueries() {
+        var first=line();var second=line();second.setItemId(first.getItemId());
+        var entitlement=mock(com.possaas.modules.subscription.domain.CurrentEntitlement.class);
+        when(entitlements.getForRestaurant(tenant)).thenReturn(entitlement);
+        when(entitlement.hasFeature("RECIPE_MANAGEMENT")).thenReturn(true);
+        when(recipes.findRecipeSettings(tenant,List.of(first.getItemId()))).thenReturn(Map.of(first.getItemId(),false));
+        service.capture(order(),List.of(first,second),actor,now,null);
+        verify(recipes,times(1)).findRecipeSettings(tenant,List.of(first.getItemId()));
+        verify(recipes,never()).findActive(any(),anyCollection());verifyNoInteractions(usages);
+        verify(snapshots).saveAllAndFlush(argThat((List<OrderItemRecipeSnapshot> rows)->rows.size()==2
+            && rows.stream().allMatch(row->row.getSnapshotStatus()==RecipeSnapshotStatus.RECIPE_DISABLED
+                && !row.getRecipeEnabledSnapshot() && row.getCostSourceSnapshot()==OrderCostSource.MANUAL)));
+    }
     @Test void recordedNoRecipeDecisionIsNeverRebuiltFromCurrentRecipesOrFeatures() {
         var line=line();var header=new OrderItemRecipeSnapshot(line,RecipeSnapshotStatus.NO_RECIPE,null,null,null,null,now);
         when(snapshots.findAllByRestaurantIdAndOrderItemIdIn(eq(tenant),anyCollection())).thenReturn(List.of(header));

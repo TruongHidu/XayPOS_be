@@ -21,6 +21,7 @@ public class IngredientAudit {
         snapshot.put("baseUnit", ingredient.getBaseUnit());
         snapshot.put("description", ingredient.getDescription());
         snapshot.put("costPrice", ingredient.getCostPrice());
+        snapshot.put("costConfigured", ingredient.isCostConfigured());
         snapshot.put("trackInventory", ingredient.isTrackInventory());
         snapshot.put("active", ingredient.isActive());
         snapshot.put("deletedAt", ingredient.getDeletedAt() == null ? null : ingredient.getDeletedAt().toString());

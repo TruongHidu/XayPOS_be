@@ -35,7 +35,7 @@ public class OrderRecipeSnapshotQueryService {
         if (snapshot == null) {
             if (line.getSentToKitchenAt() != null) throw policy.conflict();
             return new OrderRecipeSnapshotResponse(orderId, lineId, RecipeSnapshotStatus.NOT_SUBMITTED,
-                    null, null, null, null, line.getQuantity(), line.getUnit(), null, List.of());
+                    null, null, null, null, line.getQuantity(), line.getUnit(), null, List.of(), null, null);
         }
         policy.requireMatches(snapshot, line);
         var details = snapshot.getSnapshotStatus() == RecipeSnapshotStatus.CAPTURED
@@ -47,6 +47,6 @@ public class OrderRecipeSnapshotQueryService {
                 : List.<OrderRecipeSnapshotResponse.Ingredient>of();
         return new OrderRecipeSnapshotResponse(orderId, lineId, snapshot.getSnapshotStatus(), snapshot.getRecipeId(),
                 snapshot.getRecipeVersion(), snapshot.getYieldQuantity(), snapshot.getYieldUnit(),
-                snapshot.getOrderQuantitySnapshot(), snapshot.getOrderUnitSnapshot(), snapshot.getCapturedAt(), details);
+                snapshot.getOrderQuantitySnapshot(), snapshot.getOrderUnitSnapshot(), snapshot.getCapturedAt(), details, snapshot.getRecipeEnabledSnapshot(), snapshot.getCostSourceSnapshot());
     }
 }

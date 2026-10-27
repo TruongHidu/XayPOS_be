@@ -23,6 +23,8 @@ public class MenuItemCommandService {
     private final ItemRepository items;
     private final MenuItemFactory factory;
     private final MenuItemValidationPolicy validation;
+    private final ReferenceCostConfigurationPolicy costs;
+    private final RecipeApplicationPolicy recipeApplication;
     private final MenuItemLifecyclePolicy lifecycle;
     private final RecipeDependencyPolicy recipeDependencies;
     private final MenuResponseMapper mapper;
@@ -32,11 +34,12 @@ public class MenuItemCommandService {
     public MenuItemResponse create(MenuRequests.CreateItem r, String ip) {
         var actor = access.require(true);
         access.assignableGroup(actor.restaurantId(), r.groupId());
+        recipeApplication.requireNewDisabled(actor.restaurantId(), r.recipeEnabled());
+        var cost = costs.create(r.costPrice(), r.costConfigured());
         var context = new ItemCreationContext(actor.restaurantId(), r.groupId(), validation.sku(r.sku()),
                 validation.required(r.name(), 150), validation.required(r.baseUnit(), 30),
                 validation.optional(r.description()), validation.image(r.imageUrl()), validation.price(r.salePrice()),
-                validation.price(r.costPrice() == null ? BigDecimal.ZERO : r.costPrice()),
-                false, r.active() == null || r.active(), clock.instant());
+                cost.price(), false, r.active() == null || r.active(), clock.instant(), cost.configured());
         var item = factory.create(ItemType.MENU_ITEM, context);
         items.saveAndFlush(item);
         audit.record(actor, "MENU_ITEM_CREATED", item, null, audit.snapshot(item), ip);
@@ -47,7 +50,8 @@ public class MenuItemCommandService {
         var actor = access.require(true);
         var item = access.item(actor.restaurantId(), id, false);
         if (r.name() == null && r.sku() == null && r.baseUnit() == null && r.description() == null
-                && r.imageUrl() == null && r.salePrice() == null && r.costPrice() == null)
+                && r.imageUrl() == null && r.salePrice() == null && r.costPrice() == null
+                && r.costConfigured() == null && r.recipeEnabled() == null)
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EMPTY_UPDATE_REQUEST", "No fields provided");
         lifecycle.requireVersion(item, r.expectedVersion());
         var before = audit.snapshot(item);
@@ -67,8 +71,12 @@ public class MenuItemCommandService {
             item.setImageUrl(validation.image(r.imageUrl()));
         if (r.salePrice() != null)
             item.setSalePrice(validation.price(r.salePrice()));
-        if (r.costPrice() != null) {
-            item.setCostPrice(validation.price(r.costPrice()));
+        var cost = costs.update(item.getCostPrice(), item.isCostConfigured(), r.costPrice(), r.costConfigured());
+        item.setCostPrice(cost.price());
+        item.setCostConfigured(cost.configured());
+        if (r.recipeEnabled() != null) {
+            if (r.recipeEnabled() && !item.isRecipeEnabled()) recipeApplication.requireCanEnable(item);
+            item.setRecipeEnabled(r.recipeEnabled());
         }
         if (!before.equals(audit.snapshot(item)))
             persist(actor, item, "MENU_ITEM_UPDATED", before, ip);

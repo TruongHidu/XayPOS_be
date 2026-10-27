@@ -1,5 +1,7 @@
 # Triển khai Giai đoạn 5 — allocation nguyên liệu
 
+> Phase 1 update (V37): V37 adds SNAPSHOT_RECIPE_DISABLED to the existing enum/CHECK. Catalogue changes do not rebuild allocations. Reservations, deferred history guards, append-only ledger and null RECIPE_USE unit costs retain their existing contracts. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 ORDER sở hữu lifecycle và recipe snapshot. INVENTORY sở hữu allocation,
 reservation, balance và ledger. MENU sở hữu ingredient. Module trao đổi qua
 application port với immutable record; ORDER không truy cập entity/repository

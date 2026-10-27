@@ -31,6 +31,10 @@ public class Item extends MenuRecord {
     private BigDecimal salePrice;
     @Column(name = "cost_price", nullable = false, precision = 14, scale = 2)
     private BigDecimal costPrice = BigDecimal.ZERO;
+    @Column(name = "cost_configured", nullable = false)
+    private boolean costConfigured;
+    @Column(name = "recipe_enabled", nullable = false)
+    private boolean recipeEnabled;
     @Column(name = "track_inventory", nullable = false)
     private boolean trackInventory;
     @Enumerated(EnumType.STRING)

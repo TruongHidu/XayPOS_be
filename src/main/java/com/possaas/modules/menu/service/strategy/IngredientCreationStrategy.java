@@ -35,6 +35,8 @@ public class IngredientCreationStrategy implements ItemCreationStrategy {
         ingredient.setImageUrl(null);
         ingredient.setSalePrice(BigDecimal.ZERO.setScale(2));
         ingredient.setCostPrice(validation.price(context.costPrice()));
+        ingredient.setCostConfigured(context.costConfigured());
+        ingredient.setRecipeEnabled(false);
         ingredient.setTrackInventory(context.trackInventory());
         ingredient.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);
         ingredient.setActive(context.active());

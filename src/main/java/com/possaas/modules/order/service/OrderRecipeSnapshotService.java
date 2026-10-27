@@ -49,14 +49,21 @@ public class OrderRecipeSnapshotService {
         }
         if (fresh.isEmpty()) return;
         boolean enabled = entitlements.getForRestaurant(actor.restaurantId()).hasFeature("RECIPE_MANAGEMENT");
-        var current = enabled ? recipes.findActive(actor.restaurantId(),
-                fresh.stream().map(OrderItem::getItemId).distinct().toList()) : Map.<UUID, RecipeDefinition>of();
+        var menuIds = fresh.stream().map(OrderItem::getItemId).distinct().toList();
+        var settings = recipes.findRecipeSettings(actor.restaurantId(), menuIds);
+        if (!settings.keySet().containsAll(menuIds)) throw policy.conflict();
+        var appliedIds = menuIds.stream().filter(id -> Boolean.TRUE.equals(settings.get(id))).toList();
+        var current = enabled && !appliedIds.isEmpty() ? recipes.findActive(actor.restaurantId(), appliedIds)
+                : Map.<UUID, RecipeDefinition>of();
         List<OrderItemRecipeSnapshot> headers = new ArrayList<>();
         Map<UUID, List<Usage>> prepared = new HashMap<>();
         for (OrderItem line : fresh) {
             RecipeDefinition recipe = current.get(line.getItemId());
-            var status = !enabled ? RecipeSnapshotStatus.FEATURE_DISABLED
-                    : recipe == null ? RecipeSnapshotStatus.NO_RECIPE : RecipeSnapshotStatus.CAPTURED;
+            boolean requested = settings.get(line.getItemId());
+            if (requested && enabled && recipe == null)
+                throw new ConflictException("ACTIVE_RECIPE_REQUIRED", "An enabled menu item requires an active recipe");
+            var status = !requested ? RecipeSnapshotStatus.RECIPE_DISABLED
+                    : !enabled ? RecipeSnapshotStatus.FEATURE_DISABLED : RecipeSnapshotStatus.CAPTURED;
             if (recipe != null) {
                 requireRecipe(recipe, line);
                 var seen = new HashSet<UUID>();
@@ -70,7 +77,7 @@ public class OrderRecipeSnapshotService {
             }
             headers.add(new OrderItemRecipeSnapshot(line, status, recipe == null ? null : recipe.id(),
                     recipe == null ? null : recipe.version(), recipe == null ? null : recipe.yieldQuantity(),
-                    recipe == null ? null : recipe.yieldUnit(), now));
+                    recipe == null ? null : recipe.yieldUnit(), now, requested));
         }
         snapshots.saveAllAndFlush(headers);
         List<OrderItemRecipeUsage> details = new ArrayList<>();
@@ -85,6 +92,8 @@ public class OrderRecipeSnapshotService {
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("orderId", order.getId()); after.put("orderItemId", header.getOrderItemId());
             after.put("snapshotStatus", header.getSnapshotStatus());
+            after.put("recipeEnabledSnapshot", header.getRecipeEnabledSnapshot());
+            after.put("costSourceSnapshot", header.getCostSourceSnapshot());
             after.put("recipeId", header.getRecipeId()); after.put("recipeVersion", header.getRecipeVersion());
             events.add(new AuditRecordCommand(actor.restaurantId(), actor.userId(), "ORDER_ITEM_RECIPE_SNAPSHOTTED",
                     "order_item_recipe_snapshots", header.getId(), null, after, ip));

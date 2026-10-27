@@ -137,11 +137,11 @@ class OrderRecipeSnapshotIntegrationTest {
         assertThat(current.body.at("/ingredients/0/requiredQuantity").decimalValue()).isEqualByComparingTo("420");
     }
     @Test void noRecipeIsDurableEvenIfRecipeAppearsLater() throws Exception {
-        recipe.deactivate(NOW);recipes.saveAndFlush(recipe);
+        recipe.deactivate(NOW);recipes.saveAndFlush(recipe);menu=items.findById(menu.getId()).orElseThrow();menu.setRecipeEnabled(false);menu=items.saveAndFlush(menu);
         var order=create(true,"3");order.expect(201);
-        assertThat(read(order).body.path("snapshotStatus").asText()).isEqualTo("NO_RECIPE");
+        assertThat(read(order).body.path("snapshotStatus").asText()).isEqualTo("RECIPE_DISABLED");
         recipe(menu,ingredient,2,"2000","0");
-        assertThat(read(order).body.path("snapshotStatus").asText()).isEqualTo("NO_RECIPE");
+        assertThat(read(order).body.path("snapshotStatus").asText()).isEqualTo("RECIPE_DISABLED");
         assertThat(count("order_item_recipe_usages")).isZero();
     }
     @Test void featureDisabledDoesNotBlockSaleAndCannotRetroactivelyAcquireRecipe() throws Exception {
@@ -317,7 +317,7 @@ class OrderRecipeSnapshotIntegrationTest {
         assertThatThrownBy(()->jdbc.update("update order_item_recipe_usages set required_quantity=1 where recipe_snapshot_id=?",snapshot)).hasMessageContaining("immutable");
         assertThatThrownBy(()->jdbc.update("delete from order_item_recipe_usages where recipe_snapshot_id=?",snapshot)).hasMessageContaining("immutable");
         assertThatThrownBy(()->jdbc.update("insert into order_item_recipe_usages (restaurant_id,recipe_snapshot_id,ingredient_id,ingredient_name_snapshot,ingredient_unit_snapshot,recipe_quantity_snapshot,waste_percent_snapshot,track_inventory_snapshot,required_quantity,created_at) values (?,?,?,'extra','g',1,0,true,1,now())",restaurant.getId(),snapshot,ingredient.getId())).hasMessageContaining("immutable");
-        assertThatThrownBy(()->jdbc.update("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,snapshot_status,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) values (?,?,'NO_RECIPE',3,'portion',now(),now())",restaurant.getId(),order.line())).hasMessageContaining("uq_order_recipe_snapshot_line");
+        assertThatThrownBy(()->jdbc.update("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,snapshot_status,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at,recipe_enabled_snapshot,cost_source_snapshot) values (?,?,'NO_RECIPE',3,'portion',now(),now(),true,'RECIPE')",restaurant.getId(),order.line())).hasMessageContaining("uq_order_recipe_snapshot_line");
     }
     @Test void databaseRequiresCapturedUsagesAndEnforcesUsageUniquenessInCreatingTransaction() throws Exception {
         var draft=create(false,"3");draft.expect(201);var tx=new TransactionTemplate(transactions);
@@ -329,15 +329,15 @@ class OrderRecipeSnapshotIntegrationTest {
     @Test void databaseTenantForeignKeysRejectForeignLineAndIngredient() throws Exception {
         var draft=create(false,"3");draft.expect(201);Restaurant other=new Restaurant();other.setCode("FK"+UUID.randomUUID());other.setName("FK");other=restaurants.saveAndFlush(other);
         UUID otherId=other.getId();
-        assertThatThrownBy(()->jdbc.update("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,snapshot_status,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) values (?,?,'NO_RECIPE',3,'portion',now(),now())",otherId,draft.line())).hasMessageContaining("fk_order_recipe_snapshot_line");
+        assertThatThrownBy(()->jdbc.update("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,snapshot_status,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at,recipe_enabled_snapshot,cost_source_snapshot) values (?,?,'NO_RECIPE',3,'portion',now(),now(),true,'RECIPE')",otherId,draft.line())).hasMessageContaining("fk_order_recipe_snapshot_line");
         Item foreign=new Item();foreign.initialize(otherId,NOW);foreign.setName("Foreign ingredient");foreign.setItemType(ItemType.INGREDIENT);foreign.setBaseUnit("g");foreign.setSalePrice(BigDecimal.ZERO);foreign=items.saveAndFlush(foreign);UUID foreignId=foreign.getId();
         assertThatThrownBy(()->new TransactionTemplate(transactions).executeWithoutResult(status->{UUID header=insertHeader(draft.line());insertUsage(header,foreignId);})).hasMessageContaining("fk_order_recipe_usage_ingredient");
     }
 
-    UUID insertHeader(UUID line) {return jdbc.queryForObject("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,recipe_id,recipe_version,yield_quantity,yield_unit,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at) values (?,?,?,'CAPTURED',?,1,10,'portion',3,'portion',now(),now()) returning id",UUID.class,restaurant.getId(),line,menu.getId(),recipe.getId());}
+    UUID insertHeader(UUID line) {return jdbc.queryForObject("insert into order_item_recipe_snapshots (restaurant_id,order_item_id,menu_item_id_snapshot,snapshot_status,recipe_id,recipe_version,yield_quantity,yield_unit,order_quantity_snapshot,order_unit_snapshot,captured_at,created_at,recipe_enabled_snapshot,cost_source_snapshot) values (?,?,?,'CAPTURED',?,1,10,'portion',3,'portion',now(),now(),true,'RECIPE') returning id",UUID.class,restaurant.getId(),line,menu.getId(),recipe.getId());}
     void insertUsage(UUID header,UUID ingredientId) {jdbc.update("insert into order_item_recipe_usages (restaurant_id,recipe_snapshot_id,ingredient_id,ingredient_name_snapshot,ingredient_unit_snapshot,recipe_quantity_snapshot,waste_percent_snapshot,track_inventory_snapshot,required_quantity,created_at) values (?,?,?,'Ingredient','g',1000,5,true,315,now())",restaurant.getId(),header,ingredientId);}
-    Item item(String name,ItemType type,String unit,boolean tracked) {var value=new Item();value.initialize(restaurant.getId(),NOW);value.setName(name);value.setItemType(type);value.setBaseUnit(unit);value.setTrackInventory(tracked);value.setSalePrice(type==ItemType.MENU_ITEM?new BigDecimal("50000"):BigDecimal.ZERO);value.setCostPrice(new BigDecimal("10"));return items.saveAndFlush(value);}
-    Recipe recipe(Item menuItem,Item source,int version,String quantity,String waste) {var value=new Recipe();value.initialize(restaurant.getId(),menuItem.getId(),version,new BigDecimal("10"),menuItem.getBaseUnit(),NOW);value=recipes.saveAndFlush(value);var part=new RecipeItem();part.initialize(restaurant.getId(),value.getId(),source,new BigDecimal(quantity),new BigDecimal(waste),NOW);recipeItems.saveAndFlush(part);return value;}
+    Item item(String name,ItemType type,String unit,boolean tracked) {var value=new Item();value.initialize(restaurant.getId(),NOW);value.setName(name);value.setItemType(type);value.setBaseUnit(unit);value.setTrackInventory(tracked);value.setSalePrice(type==ItemType.MENU_ITEM?new BigDecimal("50000"):BigDecimal.ZERO);value.setCostPrice(new BigDecimal("10"));value.setCostConfigured(true);return items.saveAndFlush(value);}
+    Recipe recipe(Item menuItem,Item source,int version,String quantity,String waste) {menuItem=items.findById(menuItem.getId()).orElseThrow();menuItem.setRecipeEnabled(true);menuItem=items.saveAndFlush(menuItem);if(menu.getId().equals(menuItem.getId()))menu=menuItem;var value=new Recipe();value.initialize(restaurant.getId(),menuItem.getId(),version,new BigDecimal("10"),menuItem.getBaseUnit(),NOW);value=recipes.saveAndFlush(value);var part=new RecipeItem();part.initialize(restaurant.getId(),value.getId(),source,new BigDecimal(quantity),new BigDecimal(waste),NOW);recipeItems.saveAndFlush(part);return value;}
     void replaceRecipe(String quantity) {recipe=recipes.findById(recipe.getId()).orElseThrow();recipe.deactivate(NOW);recipes.saveAndFlush(recipe);recipe=recipe(menu,ingredient,recipe.getRecipeVersion()+1,quantity,"5");}
     Map<String,Object> features(List<String> codes) {return new SubscriptionFeatureSnapshot(1,"PRO",codes.stream().map(code->new SubscriptionFeatureSnapshot.FeatureGrant(code,Map.of())).toList(),NOW).toMap();}
     void setFeatures(List<String> codes) {subscription.setFeatureSnapshot(features(codes));subscription=subscriptions.saveAndFlush(subscription);}

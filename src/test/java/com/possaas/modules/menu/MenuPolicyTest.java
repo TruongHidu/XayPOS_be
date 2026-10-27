@@ -17,7 +17,7 @@ class MenuPolicyTest {
     private ItemCreationContext context(boolean active) {
         return new ItemCreationContext(UUID.randomUUID(), null, " coffee ", " Coffee ", " cup ", null, null,
                 new BigDecimal("0"), new BigDecimal("0"), false, active,
-                Instant.parse("2026-01-01T00:00:00Z"));
+                Instant.parse("2026-01-01T00:00:00Z"), true);
     }
 
     @Test

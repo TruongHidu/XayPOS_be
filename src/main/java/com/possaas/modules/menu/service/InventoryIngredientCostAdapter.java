@@ -33,6 +33,12 @@ public class InventoryIngredientCostAdapter implements IngredientReferenceCostWr
     }
 
     @Override
+    public Map<UUID, ReferenceCost> lockReferenceCostStates(UUID restaurantId, Collection<UUID> ingredientIds) {
+        return requireIngredients(items.findIngredientsForUpdate(restaurantId, ingredientIds), ingredientIds)
+                .stream().collect(Collectors.toMap(Item::getId, item -> new ReferenceCost(item.getCostPrice(), item.isCostConfigured())));
+    }
+
+    @Override
     public void updateReferenceCosts(CurrentUser actor, UUID sourceDocumentId, Map<UUID, BigDecimal> costs,
             Instant timestamp, String ipAddress) {
         Map<UUID, Item> ingredients = requireIngredients(
@@ -40,10 +46,11 @@ public class InventoryIngredientCostAdapter implements IngredientReferenceCostWr
                 .stream().collect(Collectors.toMap(Item::getId, Function.identity()));
         for (var entry : costs.entrySet()) {
             Item ingredient = ingredients.get(entry.getKey());
-            if (ingredient.getCostPrice().compareTo(entry.getValue()) == 0) continue;
+            if (ingredient.getCostPrice().compareTo(entry.getValue()) == 0 && ingredient.isCostConfigured()) continue;
             var before = audit.snapshot(ingredient);
             before.put("sourceDocumentId", sourceDocumentId);
             ingredient.setCostPrice(entry.getValue());
+            ingredient.setCostConfigured(true);
             ingredient.setUpdatedAt(timestamp);
             var after = audit.snapshot(ingredient);
             after.put("sourceDocumentId", sourceDocumentId);

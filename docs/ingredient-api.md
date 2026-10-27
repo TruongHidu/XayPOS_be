@@ -1,5 +1,7 @@
 # Ingredient catalog API
 
+> Phase 1 update (V37): costConfigured distinguishes unknown numeric zero from explicitly configured zero. Explicit price on create/patch configures it; clearing the flag clears the price. Estimates reject unknown costs. Receipts with positive unknown opening stock preserve that unknown state and audit skipped repricing. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 Module này quản lý danh mục nguyên liệu của restaurant trên cùng bảng `items`, với
 `item_type=INGREDIENT`. Đây chưa phải module kho: `costPrice` chỉ là giá vốn tham
 chiếu và `trackInventory=true` không tự tạo số dư tồn.

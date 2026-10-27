@@ -19,6 +19,9 @@ public class OrderItemRecipeSnapshot {
     @Column(name = "menu_item_id_snapshot", updatable = false) private UUID menuItemIdSnapshot;
     @Enumerated(EnumType.STRING) @Column(name = "snapshot_status", nullable = false, length = 30, updatable = false)
     private RecipeSnapshotStatus snapshotStatus;
+    @Column(name = "recipe_enabled_snapshot", updatable = false) private Boolean recipeEnabledSnapshot;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cost_source_snapshot", length = 20, updatable = false) private OrderCostSource costSourceSnapshot;
     @Column(name = "recipe_id", updatable = false) private UUID recipeId;
     @Column(name = "recipe_version", updatable = false) private Integer recipeVersion;
     @Column(name = "yield_quantity", precision = 12, scale = 3, updatable = false) private BigDecimal yieldQuantity;
@@ -31,6 +34,14 @@ public class OrderItemRecipeSnapshot {
 
     public OrderItemRecipeSnapshot(OrderItem line, RecipeSnapshotStatus status, UUID recipeId,
             Integer recipeVersion, BigDecimal yieldQuantity, String yieldUnit, Instant now) {
+        this(line, status, recipeId, recipeVersion, yieldQuantity, yieldUnit, now,
+                status == RecipeSnapshotStatus.LEGACY_UNAVAILABLE ? null : status != RecipeSnapshotStatus.RECIPE_DISABLED);
+    }
+
+    public OrderItemRecipeSnapshot(OrderItem line, RecipeSnapshotStatus status, UUID recipeId,
+            Integer recipeVersion, BigDecimal yieldQuantity, String yieldUnit, Instant now, Boolean recipeEnabled) {
+        this.recipeEnabledSnapshot = recipeEnabled;
+        this.costSourceSnapshot = recipeEnabled == null ? null : recipeEnabled ? OrderCostSource.RECIPE : OrderCostSource.MANUAL;
         this.restaurantId = line.getRestaurantId(); this.orderItemId = line.getId();
         this.menuItemIdSnapshot = line.getItemId(); this.snapshotStatus = status;
         this.recipeId = recipeId; this.recipeVersion = recipeVersion;

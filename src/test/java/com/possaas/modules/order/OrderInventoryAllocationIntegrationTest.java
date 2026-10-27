@@ -46,7 +46,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @SpringBootTest(properties={"spring.jpa.show-sql=false","app.jobs.subscription-expiration.enabled=false",
     "app.bootstrap.super-admin.enabled=false","logging.level.root=WARN"})
 @AutoConfigureMockMvc(print=MockMvcPrint.NONE)
-@Import(OrderInventoryAllocationIntegrationTest.FixedTime.class)
+@Import({OrderInventoryAllocationIntegrationTest.FixedTime.class, com.possaas.support.CommittedRealtimeEvents.Config.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OrderInventoryAllocationIntegrationTest {
     static final Instant NOW=Instant.parse("2026-10-20T08:00:00Z");
@@ -55,10 +55,10 @@ class OrderInventoryAllocationIntegrationTest {
         "ORDER_MARK_SERVED","ORDER_COMPLETE","KITCHEN_VIEW","KITCHEN_MARK_READY","KITCHEN_START_COOKING",
         "TABLE_OPEN","TABLE_CLOSE","TABLE_TRANSFER","PAYMENT_CREATE","PAYMENT_CONFIRM");
     static final Set<String> ALL;
-    static {var p=new HashSet<>(ORDER);p.addAll(Set.of("RECIPE_VIEW","INVENTORY_VIEW","WAREHOUSE_CREATE",
+    static {var p=new HashSet<>(ORDER);p.addAll(Set.of("MENU_VIEW","MENU_UPDATE","MENU_CREATE","INGREDIENT_CREATE","INGREDIENT_VIEW","RECIPE_VIEW","INVENTORY_VIEW","WAREHOUSE_CREATE",
         "WAREHOUSE_UPDATE","WAREHOUSE_DELETE","INVENTORY_RECEIVE","INVENTORY_ISSUE","INVENTORY_ADJUST",
         "INVENTORY_THRESHOLD_UPDATE","INGREDIENT_UPDATE","INGREDIENT_DELETE"));ALL=Set.copyOf(p);}
-    static final List<String> FEATURES=List.of("ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT",
+    static final List<String> FEATURES=List.of("MENU_MANAGEMENT","ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT",
         "RECIPE_MANAGEMENT","INVENTORY_MANAGEMENT","KITCHEN_DISPLAY","PAYMENT_MANAGEMENT","LOW_STOCK_ALERT");
     @TestConfiguration static class FixedTime {@Bean @Primary Clock allocationClock(){return Clock.fixed(NOW,ZoneOffset.UTC);}}
     @DynamicPropertySource static void isolated(DynamicPropertyRegistry p) {
@@ -77,9 +77,11 @@ class OrderInventoryAllocationIntegrationTest {
     @MockitoSpyBean OrderItemInventoryAllocationRepository allocations;
     @MockitoSpyBean InventoryReservationRepository reservations;
     @MockitoSpyBean OrderItemSubmissionRepository submissions;
+    @Autowired com.possaas.support.CommittedRealtimeEvents committed;
     Restaurant restaurant;User user;RestaurantSubscription subscription;Item menu,ingredient;Recipe recipe;UUID warehouse;
 
     @BeforeEach void setup() {
+        committed.clear();
         assertThat(jdbc.queryForObject("select current_schema()",String.class)).isEqualTo(SCHEMA);
         restaurant=new Restaurant();restaurant.setCode("ALLOC"+UUID.randomUUID().toString().replace("-",""));restaurant.setName("Allocation test");restaurant=restaurants.saveAndFlush(restaurant);
         user=new User();user.setRestaurantId(restaurant.getId());user.setRoleId(roles.findByCodeAndRestaurantIdIsNull("OWNER").orElseThrow().getId());
@@ -93,6 +95,22 @@ class OrderInventoryAllocationIntegrationTest {
     @AfterEach void resetFailures(){reset(audit,ledger,submissions);}
     @AfterAll void cleanup(){if(!SCHEMA.matches("it_order_allocation_[0-9a-f]{32}"))throw new IllegalStateException();jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
 
+    @Test void disabledDecisionRollbackHasNoCommittedEventAndToggleDoesNotDirtyOrderVersion() throws Exception {
+        toggle(false).expect(200);
+        String key=UUID.randomUUID().toString();var request=body(true,"1");
+        doThrow(new IllegalStateException("forced decision audit failure")).when(audit).recordAll(anyList());
+        call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(500);
+        reset(audit);assertNoOrderArtifacts();assertThat(committed.orders).isEmpty();
+        var accepted=call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(201);
+        assertThat(committed.orders).hasSize(1);
+        assertThat(committed.orders.getFirst().version()).isEqualTo(accepted.version());
+        assertThat(Arrays.stream(committed.orders.getFirst().getClass().getRecordComponents())
+            .map(java.lang.reflect.RecordComponent::getName)).doesNotContain("costPrice","recipeEnabled","costSource","ingredientId");
+        toggle(true).expect(200);
+        assertThat(detail(accepted).version()).isEqualTo(accepted.version());assertThat(committed.orders).hasSize(1);
+        call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(200);
+        assertThat(committed.orders).hasSize(1);assertThat(decision(accepted,0).body.path("costSourceSnapshot").asText()).isEqualTo("MANUAL");
+    }
     @Test void draftCreationQuantityEditAndAppendNeverSnapshotOrReserveAndGetDoesNotWrite() throws Exception {
         var order=create(false,"3").expect(201);
         order=call(patch(path(order)+"/items/"+order.line(0)),Map.of("expectedVersion",order.version(),"quantity",4),ORDER).expect(200);
@@ -154,14 +172,14 @@ class OrderInventoryAllocationIntegrationTest {
     }
     @ParameterizedTest @ValueSource(strings={"inventory","recipe","no-recipe","untracked"})
     void durableSkippedDecisionsDoNotRequireWarehouseAndNeverAcquireStockLater(String reason) throws Exception {
-        String expected=switch(reason){case "inventory"->"INVENTORY_FEATURE_DISABLED";case "recipe"->"SNAPSHOT_FEATURE_DISABLED";case "no-recipe"->"SNAPSHOT_NO_RECIPE";default->"NO_TRACKED_INGREDIENTS";};
+        String expected=switch(reason){case "inventory"->"INVENTORY_FEATURE_DISABLED";case "recipe"->"SNAPSHOT_FEATURE_DISABLED";case "no-recipe"->"SNAPSHOT_RECIPE_DISABLED";default->"NO_TRACKED_INGREDIENTS";};
         if(reason.equals("inventory"))withoutFeature("INVENTORY_MANAGEMENT");
         if(reason.equals("recipe"))withoutFeature("RECIPE_MANAGEMENT");
-        if(reason.equals("no-recipe")){recipe.deactivate(NOW);recipes.saveAndFlush(recipe);}
+        if(reason.equals("no-recipe")){recipe.deactivate(NOW);recipes.saveAndFlush(recipe);menu=items.findById(menu.getId()).orElseThrow();menu.setRecipeEnabled(false);menu=items.saveAndFlush(menu);}
         if(reason.equals("untracked")){ingredient.setTrackInventory(false);ingredient=items.saveAndFlush(ingredient);}
         var order=create(true,"3").expect(201);assertThat(count("warehouses")).isZero();assertThat(count("inventory_reservations")).isZero();
         setFeatures(FEATURES);ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setTrackInventory(true);ingredient=items.saveAndFlush(ingredient);stock("1000");
-        if(reason.equals("no-recipe"))replaceRecipe("1000");
+        if(reason.equals("no-recipe")){replaceRecipe("1000");toggle(true).expect(200);}
         var view=allocation(order,0).expect(200);assertThat(view.body.path("status").asText()).isEqualTo("SKIPPED");assertThat(view.body.path("skipReason").asText()).isEqualTo(expected);assertThat(view.body.path("ingredients")).isEmpty();
         var cooking=single(order,0,"start-cooking").expect(200);balance(warehouse,"1000","0","1000");assertThat(recipeUses()).isZero();assertThat(events("ORDER_ITEM_INVENTORY_SKIPPED")).isEqualTo(1);
         var added=append(cooking,"1").expect(200);assertThat(allocation(added,1).expect(200).body.path("status").asText()).isEqualTo("RESERVED");balance(warehouse,"1000","105","895");assertInvariant();
@@ -199,7 +217,7 @@ class OrderInventoryAllocationIntegrationTest {
     }
     @Test void downgradeAndRecipeRenameNeverChangeReservedUsageOrBlockConsume() throws Exception {
         stock("1000");var order=create(true,"3").expect(201);var before=allocation(order,0).body;
-        replaceRecipe("2000");ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setName("Renamed");ingredient.setSku("NEW");ingredient.setCostPrice(new BigDecimal("99"));ingredient=items.saveAndFlush(ingredient);
+        replaceRecipe("2000");ingredient=items.findById(ingredient.getId()).orElseThrow();ingredient.setName("Renamed");ingredient.setSku("NEW");ingredient.setCostPrice(new BigDecimal("99"));ingredient.setCostConfigured(true);ingredient=items.saveAndFlush(ingredient);
         setFeatures(FEATURES.stream().filter(f->!Set.of("INVENTORY_MANAGEMENT","RECIPE_MANAGEMENT").contains(f)).toList());
         single(order,0,"start-cooking").expect(200);balanceDb(warehouse,"685","0");assertThat(recipeUses()).isEqualTo(1);
         setFeatures(FEATURES);var after=allocation(order,0).expect(200);assertThat(after.body.path("ingredients")).isEqualTo(before.path("ingredients"));assertInvariant();
@@ -444,8 +462,179 @@ class OrderInventoryAllocationIntegrationTest {
         call(patch("/api/v1/inventory/warehouses/"+warehouse+"/balances/"+ingredient.getId()+"/threshold"),Map.of("expectedVersion",version,"minQuantity",new BigDecimal(value)),ALL).expect(200);
     }
 
-    Item item(String name,ItemType type,String unit,boolean tracked){var value=new Item();value.initialize(restaurant.getId(),NOW);value.setName(name);value.setItemType(type);value.setBaseUnit(unit);value.setTrackInventory(tracked);value.setSalePrice(type==ItemType.MENU_ITEM?new BigDecimal("50000"):BigDecimal.ZERO);value.setCostPrice(new BigDecimal("10"));return items.saveAndFlush(value);}
-    Recipe recipe(Item food,Item source,String quantity,String waste){var value=new Recipe();value.initialize(restaurant.getId(),food.getId(),1,new BigDecimal("10"),food.getBaseUnit(),NOW);value=recipes.saveAndFlush(value);var part=new RecipeItem();part.initialize(restaurant.getId(),value.getId(),source,new BigDecimal(quantity),new BigDecimal(waste),NOW);recipeItems.saveAndFlush(part);return value;}
+
+    @ParameterizedTest @ValueSource(strings={"menu/items","menu/ingredients"})
+    void referenceCostApiDistinguishesUnknownExplicitZeroAndClearing(String resource)throws Exception {
+        var request=new LinkedHashMap<String,Object>();request.put("name","New cost");request.put("baseUnit","g");
+        if(resource.endsWith("items"))request.put("salePrice",50);
+        var created=call(post("/api/v1/"+resource),request,ALL).expect(201);
+        assertThat(created.body.path("costConfigured").asBoolean()).isFalse();
+        assertThat(created.body.path("costPrice").decimalValue()).isEqualByComparingTo("0");
+        if(resource.endsWith("items"))assertThat(created.body.path("recipeEnabled").asBoolean()).isFalse();
+        String url="/api/v1/"+resource+"/"+created.id();
+        var zero=call(patch(url),Map.of("costPrice",0,"expectedVersion",created.version()),ALL).expect(200);
+        assertThat(zero.body.path("costConfigured").asBoolean()).isTrue();assertThat(zero.version()).isGreaterThan(created.version());
+        long auditCount=count("audit_logs");
+        var same=call(patch(url),Map.of("costPrice",0,"expectedVersion",zero.version()),ALL).expect(200);
+        assertThat(same.version()).isEqualTo(zero.version());assertThat(count("audit_logs")).isEqualTo(auditCount);
+        var positive=call(patch(url),Map.of("costPrice",25,"expectedVersion",same.version()),ALL).expect(200);
+        assertThat(positive.body.path("costConfigured").asBoolean()).isTrue();
+        var kept=call(patch(url),Map.of("name","Other name","expectedVersion",positive.version()),ALL).expect(200);
+        assertThat(kept.body.path("costPrice").decimalValue()).isEqualByComparingTo("25");
+        var cleared=call(patch(url),Map.of("costConfigured",false,"expectedVersion",kept.version()),ALL).expect(200);
+        assertThat(cleared.body.path("costConfigured").asBoolean()).isFalse();
+        assertThat(cleared.body.path("costPrice").decimalValue()).isEqualByComparingTo("0");
+        var confirmed=call(patch(url),Map.of("costConfigured",true,"expectedVersion",cleared.version()),ALL).expect(200);
+        assertThat(confirmed.body.path("costConfigured").asBoolean()).isTrue();
+        call(patch(url),Map.of("costConfigured",false,"costPrice",7,"expectedVersion",confirmed.version()),ALL)
+            .error(400,"INVALID_COST_CONFIGURATION");
+        request.put("costConfigured",true);
+        call(post("/api/v1/"+resource),request,ALL).error(400,"COST_PRICE_REQUIRED");
+        request.remove("costConfigured");request.put("costPrice",0);
+        assertThat(call(post("/api/v1/"+resource),request,ALL).expect(201).body.path("costConfigured").asBoolean()).isTrue();
+    }
+
+    @Test void onlyManualCostUpdateUsesTheMenuAuditTimestampAndVersionPath()throws Exception {
+        long before=events("MENU_ITEM_UPDATED");long version=items.findById(menu.getId()).orElseThrow().getVersion();
+        var changed=call(patch("/api/v1/menu/items/"+menu.getId()),Map.of("costPrice",25,"expectedVersion",version),ALL).expect(200);
+        assertThat(changed.version()).isEqualTo(version+1);assertThat(events("MENU_ITEM_UPDATED")).isEqualTo(before+1);
+        String after=jdbc.queryForObject("select after_data::text from audit_logs where restaurant_id=? and action_code='MENU_ITEM_UPDATED' order by created_at desc limit 1",String.class,restaurant.getId());
+        assertThat(after).contains("costPrice","costConfigured","recipeEnabled");
+        assertThat(changed.body.path("salePrice").decimalValue()).isEqualByComparingTo("50000");
+    }
+
+    @Test void disabledRecipeIgnoresRetainedInvalidDefinitionAndNeedsNoWarehouse()throws Exception {
+        toggle(false).expect(200);
+        jdbc.update("update items set is_active=false where id=?",ingredient.getId());
+        var order=create(true,"3").expect(201);
+        var decision=decision(order,0).expect(200);
+        assertThat(decision.body.path("snapshotStatus").asText()).isEqualTo("RECIPE_DISABLED");
+        assertThat(decision.body.path("recipeEnabledSnapshot").asBoolean()).isFalse();
+        assertThat(decision.body.path("costSourceSnapshot").asText()).isEqualTo("MANUAL");
+        assertThat(decision.body.path("ingredients")).isEmpty();
+        var allocation=allocation(order,0).expect(200);
+        assertThat(allocation.body.path("skipReason").asText()).isEqualTo("SNAPSHOT_RECIPE_DISABLED");
+        assertThat(count("inventory_reservations")).isZero();assertThat(count("warehouses")).isZero();
+        toggle(true).error(409,"INGREDIENT_INACTIVE");
+    }
+
+    @Test void disabledAcceptedItemNeverAcquiresStockWhenRecipeIsEnabledBeforeCancel()throws Exception {
+        toggle(false).expect(200);var order=create(true,"3").expect(201);toggle(true).expect(200);
+        cancel(order).expect(200);
+        assertThat(count("inventory_reservations")).isZero();assertThat(recipeUses()).isZero();
+        assertThat(allocation(order,0).expect(200).body.path("status").asText()).isEqualTo("SKIPPED");
+        assertThat(decision(order,0).body.path("costSourceSnapshot").asText()).isEqualTo("MANUAL");
+    }
+
+    @Test void disabledAcceptedItemNeverAcquiresStockWhenRecipeIsEnabledBeforeCooking()throws Exception {
+        toggle(false).expect(200);var order=create(true,"3").expect(201);toggle(true).expect(200);
+        var cooked=single(order,0,"start-cooking").expect(200);
+        assertThat(cooked.body.path("status").asText()).isEqualTo("PREPARING");
+        assertThat(count("inventory_reservations")).isZero();assertThat(recipeUses()).isZero();
+        assertThat(allocation(order,0).expect(200).body.path("status").asText()).isEqualTo("SKIPPED");
+    }
+
+    @Test void acceptedRecipeStillReleasesItsOriginalReservationAfterToggleOff()throws Exception {
+        stock("1000");var order=create(true,"3").expect(201);toggle(false).expect(200);
+        cancel(order).expect(200);balance(warehouse,"1000","0","1000");assertThat(recipeUses()).isZero();
+        assertThat(allocation(order,0).expect(200).body.path("status").asText()).isEqualTo("RELEASED");
+        assertThat(decision(order,0).body.path("costSourceSnapshot").asText()).isEqualTo("RECIPE");
+    }
+
+    @Test void acceptedRecipeStillConsumesAfterToggleOffAndRecipeUsePriceRemainsNull()throws Exception {
+        stock("1000");var order=create(true,"3").expect(201);toggle(false).expect(200);
+        var served=bulk(order,"mark-served").expect(200);balance(warehouse,"685","0","685");
+        assertThat(recipeUses()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select bool_and(unit_cost is null) from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE'",Boolean.class,restaurant.getId())).isTrue();
+        bulk(served,"mark-served").expect(200);assertThat(recipeUses()).isEqualTo(1);
+        assertThat(served.body.toString()).doesNotContain("costConfigured","recipeEnabled","costSourceSnapshot");
+    }
+
+    @Test void appendAndDraftFreezeConfigurationOnlyAtAcceptanceAndReplayKeepsIt()throws Exception {
+        toggle(false).expect(200);String key=UUID.randomUUID().toString();var request=body(true,"3");
+        var order=call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(201);
+        stock("1000");toggle(true).expect(200);
+        call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(200);
+        var added=append(order,"1").expect(200);
+        assertThat(decision(added,0).body.path("costSourceSnapshot").asText()).isEqualTo("MANUAL");
+        assertThat(decision(added,1).body.path("costSourceSnapshot").asText()).isEqualTo("RECIPE");
+        balance(warehouse,"1000","105","895");
+        toggle(false).expect(200);var draft=create(false,"1").expect(201);toggle(true).expect(200);
+        var confirmed=confirm(draft).expect(200);
+        assertThat(decision(confirmed,0).body.path("snapshotStatus").asText()).isEqualTo("CAPTURED");
+    }
+
+    @Test void missingRecipeFeatureDoesNotBecomeManualAndSwitchOffStillWorks()throws Exception {
+        withoutFeature("RECIPE_MANAGEMENT");var order=create(true,"1").expect(201);
+        assertThat(jdbc.queryForObject("select snapshot_status from order_item_recipe_snapshots where order_item_id=?",String.class,order.line(0))).isEqualTo("FEATURE_DISABLED");
+        assertThat(jdbc.queryForObject("select cost_source_snapshot from order_item_recipe_snapshots where order_item_id=?",String.class,order.line(0))).isEqualTo("RECIPE");
+        toggle(false).expect(200);toggle(true).error(403,"FEATURE_NOT_ENTITLED");
+    }
+
+    @Test void enabledRecipeRequiresDefinitionAndCannotBeArchivedUntilApplicationIsDisabled()throws Exception {
+        long version=recipes.findById(recipe.getId()).orElseThrow().getVersion();
+        call(delete("/api/v1/menu/items/"+menu.getId()+"/recipes/"+recipe.getId()).param("expectedVersion",Long.toString(version)),null,Set.of("RECIPE_DELETE"))
+            .error(409,"RECIPE_APPLICATION_ENABLED");
+        recipe=recipes.findById(recipe.getId()).orElseThrow();recipe.deactivate(NOW);recipes.saveAndFlush(recipe);
+        long before=count("audit_logs");create(true,"1").error(409,"ACTIVE_RECIPE_REQUIRED");
+        assertNoOrderArtifacts();assertThat(count("audit_logs")).isEqualTo(before);
+        toggle(false).expect(200);toggle(true).error(409,"ACTIVE_RECIPE_REQUIRED");
+    }
+
+    @Test void invalidEnableRollsBackSimultaneousCostEditAndRequiresMenuPermission()throws Exception {
+        toggle(false).expect(200);long version=items.findById(menu.getId()).orElseThrow().getVersion();
+        long before=count("audit_logs");jdbc.update("update items set is_active=false where id=?",ingredient.getId());
+        call(patch("/api/v1/menu/items/"+menu.getId()),Map.of("recipeEnabled",true,"costPrice",99,"expectedVersion",version),ALL)
+            .error(409,"INGREDIENT_INACTIVE");
+        var unchanged=items.findById(menu.getId()).orElseThrow();assertThat(unchanged.getCostPrice()).isEqualByComparingTo("10");
+        assertThat(unchanged.getVersion()).isEqualTo(version);assertThat(count("audit_logs")).isEqualTo(before);
+        call(patch("/api/v1/menu/items/"+menu.getId()),Map.of("recipeEnabled",true,"expectedVersion",version),Set.of("MENU_VIEW")).expect(403);
+    }
+
+    @Test void unconfiguredOpeningStockDoesNotBecomeKnownByAWeightedReceipt()throws Exception {
+        stock("100");ingredient=items.findById(ingredient.getId()).orElseThrow();
+        call(patch("/api/v1/menu/ingredients/"+ingredient.getId()),Map.of("costConfigured",false,"expectedVersion",ingredient.getVersion()),ALL).expect(200);
+        receive(warehouse,ingredient,"100","20");
+        var unknown=items.findById(ingredient.getId()).orElseThrow();assertThat(unknown.isCostConfigured()).isFalse();
+        assertThat(unknown.getCostPrice()).isEqualByComparingTo("0");
+        assertThat(events("INGREDIENT_COST_RECALCULATION_SKIPPED")).isEqualTo(1);
+        call(get("/api/v1/menu/items/"+menu.getId()+"/recipes/"+recipe.getId()+"/cost-estimate"),null,ALL)
+            .error(409,"INGREDIENT_COST_NOT_CONFIGURED");
+        balance(warehouse,"200","0","200");
+    }
+
+    @Test void firstExplicitZeroReceiptConfiguresZeroEvenWithoutNumericPriceChange()throws Exception {
+        ingredient=items.findById(ingredient.getId()).orElseThrow();
+        call(patch("/api/v1/menu/ingredients/"+ingredient.getId()),Map.of("costConfigured",false,"expectedVersion",ingredient.getVersion()),ALL).expect(200);
+        warehouse=createWarehouse("ZERO").expect(201).id();long before=events("INGREDIENT_COST_RECALCULATED");
+        receive(warehouse,ingredient,"10","0");var zero=items.findById(ingredient.getId()).orElseThrow();
+        assertThat(zero.isCostConfigured()).isTrue();assertThat(zero.getCostPrice()).isEqualByComparingTo("0");
+        assertThat(events("INGREDIENT_COST_RECALCULATED")).isEqualTo(before+1);
+        var estimate=call(get("/api/v1/menu/items/"+menu.getId()+"/recipes/"+recipe.getId()+"/cost-estimate"),null,ALL).expect(200);
+        assertThat(estimate.body.path("totalBatchCost").decimalValue()).isEqualByComparingTo("0");
+        assertThat(estimate.body.path("warnings").get(0).path("code").asText()).isEqualTo("ZERO_INGREDIENT_REFERENCE_COST");
+    }
+
+    @Test void concurrentToggleAndSubmitUseOneCompleteDecision()throws Exception {
+        stock("1000");var result=race(()->toggle(false),()->create(true,"3"));
+        result.get(0).expect(200);var order=result.get(1).expect(201);
+        String status=decision(order,0).expect(200).body.path("snapshotStatus").asText();
+        assertThat(status).isIn("CAPTURED","RECIPE_DISABLED");
+        boolean captured=status.equals("CAPTURED");
+        assertThat(count("inventory_reservations")).isEqualTo(captured?1:0);
+        balance(warehouse,"1000",captured?"315":"0",captured?"685":"1000");assertInvariant();
+    }
+
+    Reply toggle(boolean enabled)throws Exception {
+        long version=items.findById(menu.getId()).orElseThrow().getVersion();
+        return call(patch("/api/v1/menu/items/"+menu.getId()),Map.of("recipeEnabled",enabled,"expectedVersion",version),ALL);
+    }
+    Reply decision(Reply order,int index)throws Exception {
+        return call(get("/api/v1/orders/"+order.id()+"/items/"+order.line(index)+"/recipe-snapshot"),null,ALL);
+    }
+
+    Item item(String name,ItemType type,String unit,boolean tracked){var value=new Item();value.initialize(restaurant.getId(),NOW);value.setName(name);value.setItemType(type);value.setBaseUnit(unit);value.setTrackInventory(tracked);value.setSalePrice(type==ItemType.MENU_ITEM?new BigDecimal("50000"):BigDecimal.ZERO);value.setCostPrice(new BigDecimal("10"));value.setCostConfigured(true);return items.saveAndFlush(value);}
+    Recipe recipe(Item food,Item source,String quantity,String waste){food=items.findById(food.getId()).orElseThrow();food.setRecipeEnabled(true);food=items.saveAndFlush(food);if(menu.getId().equals(food.getId()))menu=food;var value=new Recipe();value.initialize(restaurant.getId(),food.getId(),1,new BigDecimal("10"),food.getBaseUnit(),NOW);value=recipes.saveAndFlush(value);var part=new RecipeItem();part.initialize(restaurant.getId(),value.getId(),source,new BigDecimal(quantity),new BigDecimal(waste),NOW);recipeItems.saveAndFlush(part);return value;}
     void replaceRecipe(String quantity){recipe=recipes.findById(recipe.getId()).orElseThrow();int version=recipe.getRecipeVersion()+1;recipe.deactivate(NOW);recipes.saveAndFlush(recipe);var next=new Recipe();next.initialize(restaurant.getId(),menu.getId(),version,new BigDecimal("10"),menu.getBaseUnit(),NOW);recipe=recipes.saveAndFlush(next);var part=new RecipeItem();part.initialize(restaurant.getId(),recipe.getId(),ingredient,new BigDecimal(quantity),new BigDecimal("5"),NOW);recipeItems.saveAndFlush(part);}
     RestaurantTable table(){var value=new RestaurantTable();value.initialize(restaurant.getId(),NOW);value.setCode(UUID.randomUUID().toString());value.setName("Table");value.setQrToken(UUID.randomUUID().toString());return tables.saveAndFlush(value);}
     Map<String,Object> features(List<String> codes){return new SubscriptionFeatureSnapshot(1,"PRO",codes.stream().map(code->new SubscriptionFeatureSnapshot.FeatureGrant(code,Map.of())).toList(),NOW).toMap();}

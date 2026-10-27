@@ -279,3 +279,14 @@ dùng lại INVENTORY_MANAGEMENT + STOCK_AUDIT, không tự sửa package/subscr
 Xem [API/Postman](docs/stock-audit-api.md), [thiết kế và test](docs/stock-audit-implementation.md),
 [đồng bộ FE](docs/stock-audit-fe-sync.md). Full Maven test phải dùng DB/schema test riêng,
 không chạy migrate schema public của database đang làm việc.
+
+
+## Recipe application and reference cost — Phase 1
+
+V37 adds recipeEnabled/costConfigured to the private catalogue and freezes recipe/source
+decisions at order acceptance. Unknown reference cost is distinct from explicitly configured
+zero. Existing snapshots, reservations and ledger remain authoritative after catalogue changes.
+This phase does not add historical monetary costing or profit reports.
+See [API/Postman](docs/recipe-application-and-cost-config-api.md),
+[design and verification](docs/recipe-application-and-cost-config-implementation.md),
+and [FE integration](docs/recipe-application-and-cost-config-fe-sync.md).

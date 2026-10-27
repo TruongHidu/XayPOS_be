@@ -11,5 +11,9 @@ public interface IngredientCostProvider {
 
     Map<UUID, IngredientCost> findCosts(UUID restaurantId, Collection<UUID> ingredientIds);
 
-    record IngredientCost(UUID ingredientId, String baseUnit, BigDecimal unitCost) {}
+    record IngredientCost(UUID ingredientId, String baseUnit, BigDecimal unitCost, boolean configured) {
+        public IngredientCost(UUID ingredientId, String baseUnit, BigDecimal unitCost) {
+            this(ingredientId, baseUnit, unitCost, true);
+        }
+    }
 }

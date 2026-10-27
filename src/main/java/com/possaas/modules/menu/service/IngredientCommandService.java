@@ -28,6 +28,7 @@ public class IngredientCommandService {
     private final ItemRepository items;
     private final MenuItemFactory factory;
     private final MenuItemValidationPolicy validation;
+    private final ReferenceCostConfigurationPolicy costs;
     private final IngredientLifecyclePolicy lifecycle;
     private final RecipeDependencyPolicy recipeDependencies;
     private final InventoryStockUsageQuery inventoryStock;
@@ -38,12 +39,13 @@ public class IngredientCommandService {
 
     public IngredientResponse create(IngredientRequests.Create request, String ipAddress) {
         CurrentUser actor = access.require(true);
+        var cost = costs.create(request.costPrice(), request.costConfigured());
         var context = new ItemCreationContext(actor.restaurantId(), null, validation.sku(request.sku()),
                 validation.required(request.name(), 150), validation.required(request.baseUnit(), 30),
                 validation.optional(request.description()), null, BigDecimal.ZERO,
-                validation.price(request.costPrice() == null ? BigDecimal.ZERO : request.costPrice()),
+                cost.price(),
                 request.trackInventory() != null && request.trackInventory(),
-                request.active() == null || request.active(), clock.instant());
+                request.active() == null || request.active(), clock.instant(), cost.configured());
         Item ingredient = factory.create(ItemType.INGREDIENT, context);
         items.saveAndFlush(ingredient);
         audit.record(actor, "INGREDIENT_CREATED", ingredient, null, audit.snapshot(ingredient), ipAddress);
@@ -54,7 +56,8 @@ public class IngredientCommandService {
         CurrentUser actor = access.require(true);
         Item ingredient = access.ingredient(actor.restaurantId(), ingredientId, false);
         if (request.sku() == null && request.name() == null && request.baseUnit() == null
-                && request.description() == null && request.costPrice() == null && request.trackInventory() == null)
+                && request.description() == null && request.costPrice() == null && request.trackInventory() == null
+                && request.costConfigured() == null)
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EMPTY_UPDATE_REQUEST", "No fields provided");
         lifecycle.requireVersion(ingredient, request.expectedVersion());
         Map<String, Object> before = audit.snapshot(ingredient);
@@ -75,8 +78,9 @@ public class IngredientCommandService {
         }
         if (request.description() != null)
             ingredient.setDescription(validation.optional(request.description()));
-        if (request.costPrice() != null)
-            ingredient.setCostPrice(validation.price(request.costPrice()));
+        var cost = costs.update(ingredient.getCostPrice(), ingredient.isCostConfigured(), request.costPrice(), request.costConfigured());
+        ingredient.setCostPrice(cost.price());
+        ingredient.setCostConfigured(cost.configured());
         if (Boolean.FALSE.equals(request.trackInventory()) && ingredient.isTrackInventory()) {
             requireNoReservations(actor.restaurantId(), ingredientId);
             requireNoStock(actor.restaurantId(), ingredientId);

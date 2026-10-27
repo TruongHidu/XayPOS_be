@@ -8,6 +8,8 @@ import java.util.UUID;
 
 /** Internal MENU contract: no caller recipe-management permission and no JPA entities. */
 public interface ActiveOrderRecipeQuery {
+    Map<UUID, Boolean> findRecipeSettings(UUID restaurantId, Collection<UUID> menuItemIds);
+
     Map<UUID, RecipeDefinition> findActive(UUID restaurantId, Collection<UUID> menuItemIds);
 
     record RecipeDefinition(UUID id, UUID menuItemId, int version, BigDecimal yieldQuantity,

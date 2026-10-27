@@ -1,5 +1,7 @@
 # Snapshot công thức khi gửi món — Giai đoạn 4
 
+> Phase 1 update (V37): Acceptance now freezes recipeEnabledSnapshot and costSourceSnapshot. RECIPE_DISABLED means MANUAL/no usages; FEATURE_DISABLED means RECIPE requested but unavailable, with no manual fallback. Legacy rows retain null metadata. Enabled items missing an active recipe reject acceptance. No monetary historical cost is captured. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 Snapshot này chốt **công thức và định lượng**, không phải giữ chỗ, trừ kho hoặc
 giá vốn thực tế. ORDER sở hữu snapshot; dữ liệu MENU được đọc qua internal port
 `ActiveOrderRecipeQuery`, không qua controller/API quản trị công thức.

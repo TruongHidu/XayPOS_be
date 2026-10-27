@@ -48,6 +48,9 @@ public class RecipeCostCalculator {
         if (price == null)
             throw new RecipeCostCalculationException("INGREDIENT_COST_UNAVAILABLE",
                     "Ingredient reference cost is unavailable");
+        if (!price.configured())
+            throw new RecipeCostCalculationException("INGREDIENT_COST_NOT_CONFIGURED",
+                    "Configure every ingredient reference cost before estimating this recipe");
         if (!input.ingredientId().equals(price.ingredientId()) || price.unitCost() == null
                 || price.unitCost().signum() < 0)
             throw new RecipeCostCalculationException("INVALID_INGREDIENT_REFERENCE_COST",

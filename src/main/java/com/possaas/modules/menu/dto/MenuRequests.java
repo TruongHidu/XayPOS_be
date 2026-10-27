@@ -22,7 +22,7 @@ public final class MenuRequests {
                         @NotBlank @Size(max = 30) String baseUnit, @Size(max = 10000) String description,
                         @Size(max = 500) String imageUrl,
                         @NotNull @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal salePrice,
-                        @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal costPrice, Boolean active) {
+                        @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal costPrice, Boolean active, Boolean costConfigured, Boolean recipeEnabled) {
         }
 
         public record UpdateItem(@Size(max = 150) String name, @Size(max = 80) String sku,
@@ -30,7 +30,7 @@ public final class MenuRequests {
                         @Size(max = 10000) String description, @Size(max = 500) String imageUrl,
                         @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal salePrice,
                         @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal costPrice,
-                        @NotNull @Min(0) Long expectedVersion) {
+                        @NotNull @Min(0) Long expectedVersion, Boolean costConfigured, Boolean recipeEnabled) {
         }
 
         public record Status(@NotNull Boolean active, @NotNull @Min(0) Long expectedVersion) {

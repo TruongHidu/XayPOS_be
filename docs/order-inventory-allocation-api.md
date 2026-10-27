@@ -1,5 +1,7 @@
 # Giữ chỗ và tiêu thụ nguyên liệu theo order — Giai đoạn 5
 
+> Phase 1 update (V37): RECIPE_DISABLED maps first to SKIPPED / SNAPSHOT_RECIPE_DISABLED, even without inventory entitlement. No warehouse/reservation is needed. Later toggles never change the old allocation. RECIPE_USE.unitCost remains null. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 Các API ORDER/KDS/QR giữ nguyên URL, body và quyền. Backend tự giữ chỗ khi món
 được chấp nhận, tiêu thụ khi bắt đầu thực hiện và giải phóng khi hủy PENDING.
 Không có API public reserve/consume/release hoặc sửa reservedQuantity.

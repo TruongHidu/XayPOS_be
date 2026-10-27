@@ -9,6 +9,6 @@ public class IngredientResponseMapper {
     public IngredientResponse map(Item item) {
         return new IngredientResponse(item.getId(), item.getSku(), item.getName(), item.getBaseUnit(),
                 item.getDescription(), item.getCostPrice(), item.isTrackInventory(), item.isActive(),
-                item.getVersion(), item.getCreatedAt(), item.getUpdatedAt());
+                item.getVersion(), item.getCreatedAt(), item.getUpdatedAt(), item.isCostConfigured());
     }
 }

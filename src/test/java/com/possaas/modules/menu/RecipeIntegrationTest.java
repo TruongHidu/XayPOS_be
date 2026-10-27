@@ -380,7 +380,7 @@ class RecipeIntegrationTest {
         item.setName(name);
         item.setBaseUnit(unit);
         item.setSalePrice(type == ItemType.MENU_ITEM ? new BigDecimal("100.00") : BigDecimal.ZERO);
-        item.setCostPrice(BigDecimal.ZERO);
+        item.setCostPrice(BigDecimal.ZERO);item.setCostConfigured(true);
         item.setTrackInventory(trackInventory);
         item.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);
         item.setActive(active);

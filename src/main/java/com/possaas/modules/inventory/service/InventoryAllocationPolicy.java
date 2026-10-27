@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 public class InventoryAllocationPolicy {
     public InventoryAllocationSkipReason skipReason(AcceptedItem item, boolean enabled) {
         if ("LEGACY_UNAVAILABLE".equals(item.snapshotStatus())) return InventoryAllocationSkipReason.LEGACY_UNAVAILABLE;
+        if ("RECIPE_DISABLED".equals(item.snapshotStatus())) return InventoryAllocationSkipReason.SNAPSHOT_RECIPE_DISABLED;
         if (!enabled) return InventoryAllocationSkipReason.INVENTORY_FEATURE_DISABLED;
         return switch (item.snapshotStatus()) {
             case "NO_RECIPE" -> InventoryAllocationSkipReason.SNAPSHOT_NO_RECIPE;

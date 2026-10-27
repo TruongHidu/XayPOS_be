@@ -462,7 +462,7 @@ class InventoryIntegrationTest {
         User owner = fixture(Set.of("INVENTORY_MANAGEMENT"), true);
         Result warehouse = createWarehouse(owner, "COST-FIRST");
         Item ingredient = ingredient(owner.getRestaurantId(), "COST-FIRST", "Giá vốn", true, true);
-        ingredient.setCostPrice(new BigDecimal("50.00"));
+        ingredient.setCostPrice(new BigDecimal("50.00"));ingredient.setCostConfigured(true);
         ingredient = items.saveAndFlush(ingredient);
         long oldVersion = ingredient.getVersion();
         Result draft = draftMovement(owner, warehouse.id(), ingredient.getId(), "RECEIPT", "5", "130", null);
@@ -497,7 +497,7 @@ class InventoryIntegrationTest {
         Item menu = ingredient(owner.getRestaurantId(), "COST-MENU", "Món", false, true);
         menu.setItemType(ItemType.MENU_ITEM);
         menu.setSalePrice(new BigDecimal("700.00"));
-        menu.setCostPrice(new BigDecimal("300.00"));
+        menu.setCostPrice(new BigDecimal("300.00"));menu.setCostConfigured(true);
         menu = items.saveAndFlush(menu);
         Recipe recipe = new Recipe();
         recipe.initialize(owner.getRestaurantId(), menu.getId(), 1, BigDecimal.ONE, "g", clock.instant());
@@ -693,7 +693,7 @@ class InventoryIntegrationTest {
         item.setName(name);
         item.setBaseUnit("g");
         item.setSalePrice(BigDecimal.ZERO);
-        item.setCostPrice(BigDecimal.ZERO);
+        item.setCostPrice(BigDecimal.ZERO);item.setCostConfigured(true);
         item.setTrackInventory(track);
         item.setActive(active);
         item.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);

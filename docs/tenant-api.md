@@ -1,5 +1,7 @@
 # Tenant profile and staff API
 
+> Phase 1 update (V37): Private menu/ingredient POST/PATCH/GET now expose costConfigured; menu also exposes recipeEnabled. A missing price differs from an explicitly configured zero. The detailed input matrix and errors are documented in the Phase 1 API guide. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 V32: [Snapshot công thức order item](order-recipe-snapshot-api.md) được chốt khi
 SUBMIT/confirm/approve QR, không giữ chỗ/trừ kho. API đọc riêng
 `GET /api/v1/orders/{orderId}/items/{orderItemId}/recipe-snapshot` cần ORDER_VIEW +

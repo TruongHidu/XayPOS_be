@@ -24,7 +24,7 @@ class IngredientPolicyTest {
     private ItemCreationContext context(boolean trackInventory) {
         return new ItemCreationContext(UUID.randomUUID(), UUID.randomUUID(), " ingredient ", " Ingredient ", " kg ",
                 " description ", "https://example.com/ignored.jpg", new BigDecimal("999"), new BigDecimal("12.50"),
-                trackInventory, true, Instant.parse("2026-10-16T08:00:00Z"));
+                trackInventory, true, Instant.parse("2026-10-16T08:00:00Z"), true);
     }
 
     @Test

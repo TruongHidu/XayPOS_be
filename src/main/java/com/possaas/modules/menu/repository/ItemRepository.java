@@ -24,9 +24,10 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
         UUID getIngredientId();
         String getBaseUnit();
         BigDecimal getUnitCost();
+        boolean isCostConfigured();
     }
 
-    @Query("select i.id as ingredientId, i.baseUnit as baseUnit, i.costPrice as unitCost from Item i "
+    @Query("select i.id as ingredientId, i.baseUnit as baseUnit, i.costPrice as unitCost, i.costConfigured as costConfigured from Item i "
             + "where i.restaurantId=:restaurantId and i.id in :ingredientIds "
             + "and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT")
     List<IngredientReferenceCost> findIngredientReferenceCosts(@Param("restaurantId") UUID restaurantId,

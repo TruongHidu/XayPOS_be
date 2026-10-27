@@ -62,6 +62,9 @@ class IngredientCostPriceProviderTest {
             }
 
             @Override
+            public boolean isCostConfigured() { return true; }
+
+            @Override
             public BigDecimal getUnitCost() {
                 return cost;
             }

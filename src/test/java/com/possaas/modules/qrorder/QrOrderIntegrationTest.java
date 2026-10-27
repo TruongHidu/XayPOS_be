@@ -94,7 +94,7 @@ class QrOrderIntegrationTest {
         subscription.setCurrencyCode("VND"); subscription.setPriceAmount(BigDecimal.ZERO); subscription.setFeatureSnapshot(snapshot(FEATURES));
         subscription=subscriptions.saveAndFlush(subscription);
         item=new Item(); item.initialize(restaurant.getId(),NOW); item.setItemType(ItemType.MENU_ITEM); item.setName("Pho");
-        item.setBaseUnit("bowl"); item.setSalePrice(new BigDecimal("50000")); item.setCostPrice(new BigDecimal("10000")); item=items.saveAndFlush(item);
+        item.setBaseUnit("bowl"); item.setSalePrice(new BigDecimal("50000")); item.setCostPrice(new BigDecimal("10000"));item.setCostConfigured(true); item=items.saveAndFlush(item);
         table=freeTable(); realtime.clear();
     }
     @AfterEach void clearFailures() { reset(audit); }
@@ -537,7 +537,26 @@ class QrOrderIntegrationTest {
         staff(post("/api/v1/inventory/stock-documents/"+receipt.body.path("id").asText()+"/confirm"),Map.of("expectedVersion",receipt.body.path("version").asLong()),permissions).expect(200);
     }
 
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"false,true", "true,false"})
+    void recipeDecisionIsFrozenAtApprovalRatherThanGuestSubmission(boolean atSubmit,boolean atApproval)throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");features(codes);
+        qrRecipe(1,"100");item=items.findById(item.getId()).orElseThrow();item.setRecipeEnabled(atSubmit);items.saveAndFlush(item);
+        var pending=submit(mint(false),"recipe-decision",payload());pending.expect(201);
+        assertThat(count("order_item_recipe_snapshots")).isZero();
+        item=items.findById(item.getId()).orElseThrow();item.setRecipeEnabled(atApproval);items.saveAndFlush(item);
+        var review=review(pending);var approved=approve(pending,review,null,ALL);approved.expect(200);
+        String source=jdbc.queryForObject("select cost_source_snapshot from order_item_recipe_snapshots where restaurant_id=?",String.class,restaurant.getId());
+        assertThat(source).isEqualTo(atApproval?"RECIPE":"MANUAL");
+        item=items.findById(item.getId()).orElseThrow();item.setRecipeEnabled(!atApproval);items.saveAndFlush(item);
+        approve(pending,review,null,ALL).expect(200);
+        assertThat(count("order_item_recipe_snapshots")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select cost_source_snapshot from order_item_recipe_snapshots where restaurant_id=?",String.class,restaurant.getId())).isEqualTo(source);
+    }
+
     Recipe qrRecipe(int version,String quantity) {
+        item.setRecipeEnabled(true);item=items.saveAndFlush(item);
         Item ingredient=new Item();ingredient.initialize(restaurant.getId(),NOW);ingredient.setName("Ingredient snapshot");ingredient.setItemType(ItemType.INGREDIENT);
         ingredient.setBaseUnit("g");ingredient.setTrackInventory(true);ingredient.setSalePrice(BigDecimal.ZERO);ingredient=items.saveAndFlush(ingredient);
         Recipe recipe=new Recipe();recipe.initialize(restaurant.getId(),item.getId(),version,BigDecimal.ONE,item.getBaseUnit(),NOW);recipe=recipes.saveAndFlush(recipe);

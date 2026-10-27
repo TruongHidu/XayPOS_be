@@ -1,5 +1,7 @@
 # Triển khai ORDER recipe snapshot — Giai đoạn 4
 
+> Phase 1 update (V37): V37 extends the existing immutable snapshot, preserving old rows. The consumer-owned port batches current menu settings, then loads recipes only for enabled items. Replay, consume and release use frozen decisions. Source metadata does not contain monetary historical costs. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 ## Thiết kế và transaction
 
 - ORDER sở hữu hai bảng header/usage, entity bất biến và API đọc riêng.

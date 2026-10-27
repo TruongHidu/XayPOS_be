@@ -36,6 +36,8 @@ public class MenuItemCreationStrategy implements ItemCreationStrategy {
         item.setImageUrl(validation.image(c.imageUrl()));
         item.setSalePrice(validation.price(c.salePrice()));
         item.setCostPrice(validation.price(c.costPrice()));
+        item.setCostConfigured(c.costConfigured());
+        item.setRecipeEnabled(false);
         item.setActive(c.active());
         return item;
     }

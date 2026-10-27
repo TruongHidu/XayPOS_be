@@ -11,6 +11,10 @@ import java.util.UUID;
 public interface IngredientReferenceCostWriter {
     Map<UUID, BigDecimal> lockReferenceCosts(UUID restaurantId, Collection<UUID> ingredientIds);
 
+    Map<UUID, ReferenceCost> lockReferenceCostStates(UUID restaurantId, Collection<UUID> ingredientIds);
+
+    record ReferenceCost(BigDecimal price, boolean configured) {}
+
     void updateReferenceCosts(CurrentUser actor, UUID sourceDocumentId, Map<UUID, BigDecimal> costs,
             Instant timestamp, String ipAddress);
 }

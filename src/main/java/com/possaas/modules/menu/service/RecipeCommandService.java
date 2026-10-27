@@ -78,10 +78,13 @@ public class RecipeCommandService {
 
     public void deactivate(UUID menuItemId, UUID recipeId, long expectedVersion, String ipAddress) {
         CurrentUser actor = access.require(true);
-        access.menuItem(actor.restaurantId(), menuItemId);
+        Item menuItem = access.menuItem(actor.restaurantId(), menuItemId);
         Recipe recipe = access.recipeForUpdate(actor.restaurantId(), menuItemId, recipeId);
         if (!recipe.isActive())
             return;
+        if (menuItem.isRecipeEnabled())
+            throw new com.possaas.common.exception.ConflictException("RECIPE_APPLICATION_ENABLED",
+                    "Disable recipe application on the menu item before deactivating its recipe");
         lifecycle.requireVersion(recipe, expectedVersion);
         List<RecipeItem> lines = recipeItems.findAllByRestaurantIdAndRecipeIdOrderByIngredientId(
                 actor.restaurantId(), recipe.getId());

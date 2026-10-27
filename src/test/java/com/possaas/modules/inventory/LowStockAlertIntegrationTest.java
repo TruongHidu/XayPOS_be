@@ -78,7 +78,7 @@ class LowStockAlertIntegrationTest {
         subscription=new RestaurantSubscription();subscription.setRestaurantId(user.getRestaurantId());subscription.setPackageId(packages.findByCode("PRO").orElseThrow().getId());subscription.setStatus(SubscriptionStatus.ACTIVE);
         subscription.setStartAt(NOW.minusSeconds(60));subscription.setEndAt(NOW.plusSeconds(3600));subscription.setPriceAmount(BigDecimal.ZERO);subscription.setCurrencyCode("VND");
         features(Set.of("INVENTORY_MANAGEMENT","LOW_STOCK_ALERT","RECIPE_MANAGEMENT"));
-        ingredient=new Item();ingredient.initialize(user.getRestaurantId(),NOW);ingredient.setItemType(ItemType.INGREDIENT);ingredient.setName("Thịt bò");ingredient.setSku("BEEF_%");ingredient.setBaseUnit("g");ingredient.setTrackInventory(true);ingredient.setActive(true);ingredient.setSalePrice(BigDecimal.ZERO);ingredient.setCostPrice(BigDecimal.TEN);ingredient.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);ingredient=items.saveAndFlush(ingredient);
+        ingredient=new Item();ingredient.initialize(user.getRestaurantId(),NOW);ingredient.setItemType(ItemType.INGREDIENT);ingredient.setName("Thịt bò");ingredient.setSku("BEEF_%");ingredient.setBaseUnit("g");ingredient.setTrackInventory(true);ingredient.setActive(true);ingredient.setSalePrice(BigDecimal.ZERO);ingredient.setCostPrice(BigDecimal.TEN);ingredient.setCostConfigured(true);ingredient.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);ingredient=items.saveAndFlush(ingredient);
         warehouse=call(post(WAREHOUSES),Map.of("code","MAIN","name","Kho chính"),ALL).expect(201).id();
     }
     @AfterEach void resetSpies(){reset(audits,projection,alertRepository);}

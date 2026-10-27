@@ -20,6 +20,19 @@ class OrderRecipeQueryAdapterTest {
     final ItemRepository items=mock(ItemRepository.class);
     final OrderRecipeQueryAdapter adapter=new OrderRecipeQueryAdapter(recipes,details,items);
     final UUID tenant=UUID.randomUUID(),menuId=UUID.randomUUID();
+    @Test void configurationReadIncludesDisabledItemsWithoutConsultingRecipeDefinitions() {
+        var disabled=new Item();disabled.initialize(tenant,Instant.EPOCH);disabled.setId(menuId);
+        disabled.setItemType(ItemType.MENU_ITEM);disabled.setRecipeEnabled(false);
+        var enabled=new Item();enabled.initialize(tenant,Instant.EPOCH);enabled.setId(UUID.randomUUID());
+        enabled.setItemType(ItemType.MENU_ITEM);enabled.setRecipeEnabled(true);
+        when(items.findAllByRestaurantIdAndIdIn(eq(tenant),anyCollection())).thenReturn(List.of(disabled,enabled));
+        var ids=List.of(disabled.getId(),enabled.getId());
+        var result=adapter.findRecipeSettings(tenant,ids);
+        assertThat(result).containsEntry(menuId,false).containsEntry(enabled.getId(),true);
+        verify(items,times(1)).findAllByRestaurantIdAndIdIn(tenant,ids);
+        verifyNoInteractions(recipes,details);
+        assertThatThrownBy(result::clear).isInstanceOf(UnsupportedOperationException.class);
+    }
     @Test void noActiveRecipeDoesNotInventAnEmptyRecipeOrReadIngredients() {
         when(recipes.findAllByRestaurantIdAndMenuItemIdInAndActiveTrue(eq(tenant),anyCollection())).thenReturn(List.of());
         assertThat(adapter.findActive(tenant,List.of(menuId))).isEmpty();verifyNoInteractions(details,items);

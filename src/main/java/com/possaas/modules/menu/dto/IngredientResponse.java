@@ -15,5 +15,5 @@ public record IngredientResponse(
         boolean active,
         long version,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt, boolean costConfigured) {
 }

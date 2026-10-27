@@ -575,7 +575,7 @@
   "/api/v1/orders/{orderId}/items/{orderItemId}/recipe-snapshot":
     "get":
       "operationId": "getOrderItemRecipeSnapshot"
-      "description": "Requires ORDER_VIEW plus RECIPE_VIEW, ORDER_MANAGEMENT plus RECIPE_MANAGEMENT and the normal tenant/account/restaurant/subscription guards. Reads immutable recipe acceptance data only; no live recipe/ingredient/cost lookup or mutation. Cross-tenant or wrong-order lines return 404. CAPTURED includes all recipe ingredients, including trackInventory=false; quantities use final CEILING scale 3, waste=quantity*(1+waste/100). NO_RECIPE and FEATURE_DISABLED decisions are durable; LEGACY_UNAVAILABLE means pre-V32 submitted lines with no guessed recipe and null capturedAt. NOT_SUBMITTED is response-only for unsent lines. Submitted missing/drifted snapshots return ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT. Does not reserve or deduct inventory, compute actual historical cost or expose private recipe data in regular ORDER/KDS/public QR responses."
+      "description": "Requires ORDER_VIEW plus RECIPE_VIEW, ORDER_MANAGEMENT plus RECIPE_MANAGEMENT and the normal tenant/account/restaurant/subscription guards. Reads immutable recipe acceptance data only; no live recipe/ingredient/cost lookup or mutation. Cross-tenant or wrong-order lines return 404. CAPTURED includes all recipe ingredients, including trackInventory=false; quantities use final CEILING scale 3, waste=quantity*(1+waste/100). V37: recipeEnabled=false freezes RECIPE_DISABLED/MANUAL with no usages; allocation is SKIPPED/SNAPSHOT_RECIPE_DISABLED. Enabled plus valid recipe freezes CAPTURED/RECIPE; enabled without recipe entitlement freezes FEATURE_DISABLED/RECIPE without manual fallback. Enabled with entitlement but missing active recipe rejects acceptance with 409 ACTIVE_RECIPE_REQUIRED. Current toggle changes never alter existing decision/reservation/consume/release. NO_RECIPE and FEATURE_DISABLED decisions are durable; LEGACY_UNAVAILABLE means pre-V32 submitted lines with no guessed recipe and null capturedAt. NOT_SUBMITTED is response-only for unsent lines. Submitted missing/drifted snapshots return ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT. Does not reserve or deduct inventory, compute actual historical cost or expose private recipe data in regular ORDER/KDS/public QR responses."
       "security": [{"BearerAuth": []}]
       "x-permission": "ORDER_VIEW and RECIPE_VIEW"
       "parameters":
@@ -697,11 +697,13 @@
     "OrderRecipeSnapshot":
       "type": "object"
       "additionalProperties": false
-      "required": ["orderId", "orderItemId", "snapshotStatus", "recipeId", "recipeVersion", "yieldQuantity", "yieldUnit", "orderQuantity", "orderUnit", "capturedAt", "ingredients"]
+      "required": ["orderId", "orderItemId", "snapshotStatus", "recipeId", "recipeVersion", "yieldQuantity", "yieldUnit", "orderQuantity", "orderUnit", "capturedAt", "ingredients", "recipeEnabledSnapshot", "costSourceSnapshot"]
       "properties":
         "orderId": {"type": "string", "format": "uuid"}
         "orderItemId": {"type": "string", "format": "uuid"}
-        "snapshotStatus": {"type": "string", "enum": ["CAPTURED", "NO_RECIPE", "FEATURE_DISABLED", "LEGACY_UNAVAILABLE", "NOT_SUBMITTED"]}
+        "recipeEnabledSnapshot": {"type":"boolean","nullable":true,"description":"Frozen at acceptance. Null for old or not-submitted decisions; never inferred from current menu."}
+        "costSourceSnapshot": {"type":"string","nullable":true,"enum":["MANUAL","RECIPE"],"description":"Selected source only, not a monetary cost snapshot or completeness guarantee."}
+        "snapshotStatus": {"type": "string", "enum": ["CAPTURED", "RECIPE_DISABLED", "NO_RECIPE", "FEATURE_DISABLED", "LEGACY_UNAVAILABLE", "NOT_SUBMITTED"]}
         "recipeId": {"type": "string", "format": "uuid", "nullable": true}
         "recipeVersion": {"type": "integer", "minimum": 1, "nullable": true, "description": "Immutable recipe business version, not lock_version."}
         "yieldQuantity": {"type": "number", "exclusiveMinimum": true, "minimum": 0, "multipleOf": 0.001, "nullable": true}

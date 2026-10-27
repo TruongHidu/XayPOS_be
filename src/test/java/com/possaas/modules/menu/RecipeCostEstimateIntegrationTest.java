@@ -211,7 +211,7 @@ class RecipeCostEstimateIntegrationTest {
         money(before.body, "totalBatchCost", "20");
         beef.setName("Current name");
         beef.setSku("CURRENT-SKU");
-        beef.setCostPrice(new BigDecimal("3.25"));
+        beef.setCostPrice(new BigDecimal("3.25"));beef.setCostConfigured(true);
         beef.setActive(false);
         items.saveAndFlush(beef);
 
@@ -506,7 +506,7 @@ class RecipeCostEstimateIntegrationTest {
         item.setName(name);
         item.setBaseUnit(unit);
         item.setSalePrice(type == ItemType.MENU_ITEM ? new BigDecimal("100") : BigDecimal.ZERO);
-        item.setCostPrice(new BigDecimal(cost));
+        item.setCostPrice(new BigDecimal(cost));item.setCostConfigured(true);
         item.setTrackInventory(tracking);
         item.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);
         item.setActive(true);

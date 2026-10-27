@@ -265,7 +265,7 @@ class IngredientIntegrationTest {
         item.setName(name);
         item.setBaseUnit("portion");
         item.setSalePrice(new BigDecimal("100.00"));
-        item.setCostPrice(BigDecimal.ZERO);
+        item.setCostPrice(BigDecimal.ZERO);item.setCostConfigured(true);
         item.setTrackInventory(false);
         item.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);
         return items.saveAndFlush(item);

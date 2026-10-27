@@ -25,22 +25,31 @@ public class ReceiptReferenceCostService {
     private final InventoryBalanceRepository balances;
     private final IngredientReferenceCostWriter costs;
     private final WeightedAverageCostPolicy policy;
+    private final com.possaas.modules.audit.service.AuditService audit;
 
     /** Run before changing any balances, under the existing restaurant mutation lock. */
     public void recalculate(CurrentUser actor, StockDocument document, List<StockDocumentItem> items,
             Instant timestamp, String ipAddress) {
         if (document.getDocumentType() != StockDocumentType.RECEIPT) return;
         List<UUID> ids = items.stream().map(StockDocumentItem::getIngredientId).toList();
-        Map<UUID, BigDecimal> previousCosts = costs.lockReferenceCosts(actor.restaurantId(), ids);
+        var previousCosts = costs.lockReferenceCostStates(actor.restaurantId(), ids);
         Map<UUID, BigDecimal> previousQuantities = balances.findTotalQuantities(actor.restaurantId(), ids)
                 .stream().collect(Collectors.toMap(InventoryBalanceRepository.IngredientTotalQuantity::getItemId,
                         InventoryBalanceRepository.IngredientTotalQuantity::getQuantity));
         Map<UUID, BigDecimal> updated = new LinkedHashMap<>();
         for (StockDocumentItem item : items) {
             UUID id = item.getIngredientId();
-            updated.put(id, policy.calculate(previousQuantities.getOrDefault(id, BigDecimal.ZERO),
-                    previousCosts.get(id), item.getQuantity(), item.getUnitCost()));
+            BigDecimal quantity = previousQuantities.getOrDefault(id, BigDecimal.ZERO);
+            var previous = previousCosts.get(id);
+            if (previous == null)
+                throw new com.possaas.common.exception.ConflictException("INVALID_INVENTORY_COST_DATA", "Reference cost state is missing");
+            if (quantity.signum() > 0 && !previous.configured()) {
+                audit.record(actor.restaurantId(), actor.userId(), "INGREDIENT_COST_RECALCULATION_SKIPPED", "items", id,
+                        null, Map.of("sourceDocumentId", document.getId(), "reason", "UNCONFIGURED_OPENING_REFERENCE_COST"), ipAddress);
+                continue;
+            }
+            updated.put(id, policy.calculate(quantity, previous.price(), item.getQuantity(), item.getUnitCost()));
         }
-        costs.updateReferenceCosts(actor, document.getId(), updated, timestamp, ipAddress);
+        if (!updated.isEmpty()) costs.updateReferenceCosts(actor, document.getId(), updated, timestamp, ipAddress);
     }
 }

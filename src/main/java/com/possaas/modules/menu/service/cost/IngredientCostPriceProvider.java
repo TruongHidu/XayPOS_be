@@ -24,6 +24,6 @@ public class IngredientCostPriceProvider implements IngredientCostProvider {
         // Historical recipes can reference inactive/soft-deleted ingredients. Tenant and type still apply.
         return items.findIngredientReferenceCosts(restaurantId, ingredientIds).stream()
                 .collect(Collectors.toUnmodifiableMap(ItemRepository.IngredientReferenceCost::getIngredientId,
-                        row -> new IngredientCost(row.getIngredientId(), row.getBaseUnit(), row.getUnitCost())));
+                        row -> new IngredientCost(row.getIngredientId(), row.getBaseUnit(), row.getUnitCost(), row.isCostConfigured())));
     }
 }

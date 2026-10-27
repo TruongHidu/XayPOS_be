@@ -28,6 +28,15 @@ public class OrderRecipeQueryAdapter implements ActiveOrderRecipeQuery {
     private final ItemRepository items;
 
     @Override
+    public Map<UUID, Boolean> findRecipeSettings(UUID restaurantId, Collection<UUID> menuItemIds) {
+        if (menuItemIds.isEmpty()) return Map.of();
+        return items.findAllByRestaurantIdAndIdIn(restaurantId, menuItemIds).stream()
+                .filter(item -> item.getItemType() == ItemType.MENU_ITEM && item.getDeletedAt() == null)
+                .collect(Collectors.toUnmodifiableMap(com.possaas.modules.menu.entity.Item::getId,
+                        com.possaas.modules.menu.entity.Item::isRecipeEnabled));
+    }
+
+    @Override
     public Map<UUID, RecipeDefinition> findActive(UUID restaurantId, Collection<UUID> menuItemIds) {
         if (menuItemIds.isEmpty()) return Map.of();
         var active = recipes.findAllByRestaurantIdAndMenuItemIdInAndActiveTrue(restaurantId, menuItemIds);

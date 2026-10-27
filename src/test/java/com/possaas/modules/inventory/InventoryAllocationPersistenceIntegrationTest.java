@@ -384,7 +384,7 @@ class InventoryAllocationPersistenceIntegrationTest {
 
     private Item item(UUID tenant, String name, String unit, ItemType type, boolean tracked) {
         Item item = new Item(); item.initialize(tenant, clock.instant()); item.setName(name); item.setBaseUnit(unit);
-        item.setItemType(type); item.setTrackInventory(tracked); item.setSalePrice(BigDecimal.ZERO); item.setCostPrice(BigDecimal.TEN);
+        item.setItemType(type); item.setTrackInventory(tracked); item.setSalePrice(BigDecimal.ZERO); item.setCostPrice(BigDecimal.TEN);item.setCostConfigured(true);
         return items.saveAndFlush(item);
     }
 

@@ -341,7 +341,7 @@ class TableSessionTransferIntegrationTest {
         catch(jakarta.servlet.ServletException expected) { assertThat(expected.getCause()).isNotNull(); }
     }
     private Map<String,Object> orderBody(RestaurantTable table) {
-        UUID item=UUID.randomUUID(); jdbc.update("insert into items(id,restaurant_id,name,item_type,base_unit,sale_price,cost_price,availability_status,is_active,created_at,updated_at) values(?,?,'Pho','MENU_ITEM','bowl',50000,12000,'AVAILABLE',true,?,?)",item,restaurant.getId(),java.sql.Timestamp.from(NOW),java.sql.Timestamp.from(NOW));
+        UUID item=UUID.randomUUID(); jdbc.update("insert into items(id,restaurant_id,name,item_type,base_unit,sale_price,cost_price,cost_configured,availability_status,is_active,created_at,updated_at) values(?,?,'Pho','MENU_ITEM','bowl',50000,12000,true,'AVAILABLE',true,?,?)",item,restaurant.getId(),java.sql.Timestamp.from(NOW),java.sql.Timestamp.from(NOW));
         return Map.of("serviceType","DINE_IN","sourceChannel","WAITER","tableId",table.getId(),"submissionMode","SUBMIT","items",List.of(Map.of("itemId",item,"quantity",1)));
     }
     private RestaurantTable table() { var t=new RestaurantTable(); t.initialize(restaurant.getId(),NOW); t.setCode("T"+UUID.randomUUID()); t.setName("Table "+t.getCode()); t.setQrToken("t"+UUID.randomUUID().toString().replace("-","")+"a".repeat(10)); return tables.saveAndFlush(t); }

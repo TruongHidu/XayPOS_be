@@ -1,5 +1,7 @@
 # Recipe API
 
+> Phase 1 update (V37): Recipe definition activity and menu recipeEnabled are independent. Create/replace does not enable application. Disable menu application before deactivating its active recipe (409 RECIPE_APPLICATION_ENABLED). cost-estimate returns 409 INGREDIENT_COST_NOT_CONFIGURED for any unknown ingredient cost; configured zero remains valid with a warning. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+
 Module công thức nằm trong business module `menu`. Công thức là aggregate riêng:
 `MENU_ITEM -> recipe version -> recipe items -> INGREDIENT`. Không lưu trong
 `items.metadata`, không phải một `ItemType`, và không xuất hiện ở public/QR menu.
@@ -222,7 +224,8 @@ không query riêng từng nguyên liệu.
 
 Nếu đơn vị snapshot khác `baseUnit` hiện tại, API từ chối toàn bộ estimate với
 `409 INGREDIENT_COST_UNIT_MISMATCH`. Thiếu nguồn giá hoặc dữ liệu không hợp lệ
-không bị bỏ qua hoặc tự coi là 0. `costPrice=0` hợp lệ và có warning theo nguyên
+không bị bỏ qua hoặc tự coi là 0. `costConfigured=false` trả `409 INGREDIENT_COST_NOT_CONFIGURED`.
+`costPrice=0` với `costConfigured=true` hợp lệ và có warning theo nguyên
 liệu, không trùng:
 
 ```json
@@ -233,7 +236,7 @@ liệu, không trùng:
 }
 ```
 
-Nếu mọi giá đều bằng 0, vẫn trả 200, total/per-yield bằng 0 và warnings. Các lỗi
+Nếu mọi giá đều bằng 0 và đã cấu hình, vẫn trả 200, total/per-yield bằng 0 và warnings. Các lỗi
 409 riêng của estimate: `INGREDIENT_COST_UNIT_MISMATCH`,
 `INGREDIENT_COST_UNAVAILABLE`, `INVALID_INGREDIENT_REFERENCE_COST`,
 `INVALID_RECIPE_COST_DATA`. Các lỗi 400/401/403/404 dùng envelope hiện tại.
