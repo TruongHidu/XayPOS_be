@@ -2,6 +2,10 @@
 
 Use existing authenticated menu/ingredient APIs. No socket or new mutation endpoint is needed.
 
+V38 adds a separate protected [historical cost summary](order-reference-cost-snapshot-fe-sync.md)
+without changing these catalogue editing flows. It freezes new acceptance prices;
+old rows remain unpriced, and public/KDS/realtime contracts stay unchanged.
+
 - Add a menu switch labelled “Sử dụng công thức”. New items default off. After creating a recipe, explicitly PATCH recipeEnabled=true with the latest expectedVersion.
 - Keep definition activation/versioning separate. Toggle off retains the recipe. Before archiving an active definition, disable application; handle RECIPE_APPLICATION_ENABLED.
 - Hide/disable enabling without RECIPE_MANAGEMENT; allow disabling through the existing menu permission after a package change. The server remains authoritative.

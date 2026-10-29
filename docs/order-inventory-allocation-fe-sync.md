@@ -25,10 +25,16 @@ version, Idempotency-Key và security của ORDER/KDS/QR hiện có.
 - Allocation detail chỉ dành cho người có đủ ba quyền đọc và ba feature. Không
   chờ hoặc gọi endpoint này trong waiter/kitchen flow. Không đưa ingredient,
   recipe usage, allocation detail hoặc cost vào public QR/KDS/order thường.
-- Ledger có hai nguồn. Với ORDER_ITEM/RECIPE_USE, document fields và unitCost
-  null; hiển thị “Chưa định giá”, không chuyển thành 0 hoặc dùng tính lãi thực.
+- Ledger có hai nguồn. Với ORDER_ITEM/RECIPE_USE, document fields null; từ V38
+  unitCost bằng frozen usage reference price nếu configured, gồm 0.00. Unknown/
+  legacy vẫn null; hiển thị “Chưa có giá tham chiếu”, không chuyển thành 0.
+  Header INCOMPLETE vẫn có thể có tracked usage đã biết giá. Không suy tổng giá
+  vốn món/lãi thực từ ledger vì MANUAL và untracked không có RECIPE_USE.
 - Đổi default warehouse/đổi bàn không thay kho giữ cho dòng cũ. Gọi thêm có thể
   dùng kho default mới. Tên/SKU/công thức mới không làm thay quantity đã chốt.
 
 Request/response, lỗi và ví dụ Postman:
 [order-inventory-allocation-api.md](order-inventory-allocation-api.md).
+
+Summary giá vốn đọc bằng quyền riêng, không trả ingredient:
+[order-reference-cost-snapshot-fe-sync.md](order-reference-cost-snapshot-fe-sync.md).

@@ -4,6 +4,11 @@ Giữ modular monolith Controller → Service → Repository. Controller và RES
 không thay đổi. Strategy và CoR vẫn quyết định nghiệp vụ; realtime chỉ quan sát mutation
 đã thành công. Không migration, permission/feature mới hoặc sửa V1–V36.
 
+V38 reference-cost capture vẫn nằm trong transaction acceptance trước boundary
+cuối này. Không thêm monetary fields vào ORDER_CHANGED, event mới hoặc tăng root
+version thêm. Capture/audit/inventory rollback không phát event committed.
+Summary giá vốn được GET bằng [quyền riêng](order-reference-cost-snapshot-api.md).
+
 ## Ranh giới phát sự kiện
 
 | Command | Publication boundary sau flush/audit cuối |

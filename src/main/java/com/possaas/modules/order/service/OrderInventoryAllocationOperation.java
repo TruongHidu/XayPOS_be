@@ -32,7 +32,7 @@ public class OrderInventoryAllocationOperation {
 
     public void accept(Order order, List<OrderItem> accepted, CurrentUser actor, Instant now, String ip) {
         if (accepted.isEmpty()) return;
-        recipeSnapshots.capture(order, accepted, actor, now, ip);
+        var entitlement=recipeSnapshots.capture(order, accepted, actor, now, ip);
         var headers = snapshots.findAllByRestaurantIdAndOrderItemIdIn(actor.restaurantId(),
                 accepted.stream().map(OrderItem::getId).toList()).stream()
                 .collect(Collectors.toMap(OrderItemRecipeSnapshot::getOrderItemId, Function.identity()));
@@ -51,7 +51,8 @@ public class OrderInventoryAllocationOperation {
                         usage.getIngredientNameSnapshot(), usage.getIngredientUnitSnapshot(),
                         usage.getRequiredQuantity())).toList());
         }).toList();
-        inventory.reserve(actor, order.getId(), decisions, now, ip);
+        inventory.reserve(actor, order.getId(), decisions,
+                entitlement!=null && entitlement.hasFeature("INVENTORY_MANAGEMENT"),now,ip);
     }
 
     public void validate(Order order, Collection<OrderItem> lines) {

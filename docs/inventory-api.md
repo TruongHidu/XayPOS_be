@@ -290,9 +290,13 @@ hay giá vốn thực tế của order.
 Sổ `/transactions` là append-only và lưu `quantityChange`, `beforeQuantity`,
 `afterQuantity`, unit/cost cùng snapshot tên/SKU từ nguồn đã chốt.
 `sourceType=STOCK_DOCUMENT` giữ các field chứng từ cũ. `sourceType=ORDER_ITEM`
-có transactionType=RECIPE_USE, orderId/orderItemId/reservationId; các field chứng
-từ null và unitCost=null nghĩa chưa định giá, không phải 0. RECIPE_USE.quantityChange
-âm; before/after là physical. Không dùng ledger chưa định giá để tính lợi nhuận.
+có transactionType=RECIPE_USE, orderId/orderItemId/reservationId/recipeUsageId; các
+field chứng từ null. Từ V38, unitCost bằng đúng giá tham chiếu frozen của usage tại
+acceptance: known giữ giá, configured zero là 0.00, unknown/legacy là null. Không
+lấy giá hiện tại khi consume và không UPDATE ledger cũ. Header INCOMPLETE vẫn có
+thể có tracked usage đã biết giá. RECIPE_USE.quantityChange âm; before/after là
+physical. Đây chưa phải actual COGS; ledger tracked không đại diện toàn bộ giá
+vốn món vì còn MANUAL/untracked. Không đổi null thành 0 hoặc dùng tính lãi thực.
 Các lỗi
 chính: `STOCK_DOCUMENT_NOT_FOUND`, `STOCK_DOCUMENT_ITEM_NOT_FOUND`,
 `INVALID_STOCK_DOCUMENT_TRANSITION`, `STOCK_DOCUMENT_EMPTY`,
@@ -312,3 +316,5 @@ module ORDER. V33 dùng tracked usages đã chốt để reserve ở kho default
 thành RECIPE_USE hoặc release khi hủy PENDING. Snapshot không đổi. Dòng đã gửi
 trước V33 là SKIPPED/LEGACY_UNAVAILABLE kể cả snapshot CAPTURED; không hồi tố kho.
 Giá bình quân ingredient có thể đổi sau RECEIPT mà snapshot/reservation cũ giữ nguyên.
+V38 thêm [summary giá vốn tham chiếu lịch sử](order-reference-cost-snapshot-api.md)
+trong ORDER với quyền đọc riêng; snapshot tồn tại không đồng nghĩa đã tiêu thụ.

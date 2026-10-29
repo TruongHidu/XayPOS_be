@@ -2,14 +2,22 @@
 
 Module REPORT is tenant-only and read-only. All endpoints require a staff JWT, use the restaurant from the token, and return `Cache-Control: no-store`. They never accept a restaurant ID and are not available to the public QR portal or a system administrator without tenant context.
 
+V38 adds a separate ORDER-owned [historical reference-cost summary](order-reference-cost-snapshot-api.md),
+requiring ORDER_VIEW + REPORT_DETAIL_VIEW and ORDER_MANAGEMENT + DETAIL_REPORT.
+That endpoint is outside `/reports` and returns no recipe/ingredient details.
+Existing report totals and access requirements below stay unchanged. The separate
+[reference-margin reports](reference-margin-report-api.md) use frozen historical
+reference cost; they are not actual COGS or net profit.
+
 ## Access matrix
 
 | Endpoint | Permission | Effective subscription feature |
 |---|---|---|
 | `GET /api/v1/reports/daily` | `REPORT_DAILY_VIEW` | `DAILY_REVENUE` |
-| All other endpoints below | `REPORT_DETAIL_VIEW` | `DETAIL_REPORT` |
+| Other operational endpoints below | `REPORT_DETAIL_VIEW` | `DETAIL_REPORT` |
+| `/api/v1/reports/reference-margin/*` | `ORDER_VIEW` and `REPORT_DETAIL_VIEW` | `ORDER_MANAGEMENT` and `DETAIL_REPORT` |
 
-Authorization is permission- and feature-based, not role- or package-name-based. The feature comes from the immutable effective subscription snapshot. `ORDER_VIEW` and `PAYMENT_VIEW` are not additional requirements.
+Authorization is permission- and feature-based, not role- or package-name-based. The feature comes from the immutable effective subscription snapshot. The operational endpoints do not additionally require `ORDER_VIEW` or `PAYMENT_VIEW`; reference-margin endpoints do require `ORDER_VIEW`.
 
 Common headers:
 
@@ -154,7 +162,7 @@ Only non-cancelled lines of completed orders are included, attributed by order `
 }
 ```
 
-`itemSalesAmount` is not profit and may not equal bill totals because order-level discounts, tax, and service charge are not allocated to lines. No historical cost snapshot exists yet.
+`itemSalesAmount` is not profit and may not equal bill totals because order-level discounts, tax, and service charge are not allocated to lines. Historical cost snapshots are available through the separate reference-cost API and reports; they do not change this endpoint's semantics.
 
 ## Reconciliation order list
 
@@ -187,4 +195,4 @@ The row allowlist deliberately excludes customer identity, notes, provider metad
 | 403 | `SUBSCRIPTION_NOT_ACTIVE` | No effective active subscription |
 | 409 | `INVALID_REPORT_TIMEZONE` | Stored restaurant timezone is invalid |
 
-No refund, profit, tax-accounting, split-payment, inventory, staff-performance, export, or AI report is implemented in this MVP.
+No refund, actual COGS, net-profit, tax-accounting, split-payment, inventory, staff-performance, export, or AI report is implemented in this MVP. See [reference-margin reports](reference-margin-report-api.md) for the historical reference-cost cohort.

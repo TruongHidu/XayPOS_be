@@ -195,7 +195,7 @@ class InventoryAllocationPersistenceIntegrationTest {
         }, "ck_order_inventory_history");
         assertThat(statementsFinished).isTrue();
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), reservationId(fixture),
-                fixture.tracked().getFirst(), new BigDecimal("-100"), "g", null, "ORDER_ITEM"),
+                fixture.tracked().getFirst(), new BigDecimal("-100"), "g", BigDecimal.TEN, "ORDER_ITEM"),
                 "ck_order_inventory_history");
         assertThat(status(fixture)).isEqualTo("RESERVED");
         assertThat(recipeUseCount(fixture)).isZero();
@@ -203,24 +203,26 @@ class InventoryAllocationPersistenceIntegrationTest {
     }
 
     @Test
-    void recipeLedgerRequiresExactReservationTenantOrderQuantityUnitAndNullCost() {
+    void recipeLedgerRequiresExactReservationTenantOrderQuantityUnitAndSnapshotCost() {
         reserve(fixture);
         UUID detail = reservationId(fixture);
         Usage usage = fixture.tracked().getFirst();
         Fixture foreign = createFixture(); reserve(foreign);
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), reservationId(foreign),
-                usage, new BigDecimal("-100"), "g", null, "ORDER_ITEM"), "fk_inventory_recipe_use_reservation");
+                usage, new BigDecimal("-100"), "g", BigDecimal.TEN, "ORDER_ITEM"), "fk_inventory_recipe_use_reservation");
         Fixture sibling = anotherSource(fixture);
         reject(fixture, () -> appendRecipeUse(fixture, sibling.order(), sibling.item(), detail,
-                usage, new BigDecimal("-100"), "g", null, "ORDER_ITEM"), "ck_inventory_transaction_source");
+                usage, new BigDecimal("-100"), "g", BigDecimal.TEN, "ORDER_ITEM"), "ck_inventory_transaction_source");
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), detail,
-                usage, new BigDecimal("-99"), "g", null, "ORDER_ITEM"), "ck_inventory_transaction_source");
+                usage, new BigDecimal("-99"), "g", BigDecimal.TEN, "ORDER_ITEM"), "ck_inventory_transaction_source");
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), detail,
-                usage, new BigDecimal("-100"), "kg", null, "ORDER_ITEM"), "ck_inventory_transaction_source");
+                usage, new BigDecimal("-100"), "kg", BigDecimal.TEN, "ORDER_ITEM"), "ck_inventory_transaction_source");
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), detail,
                 usage, new BigDecimal("-100"), "g", BigDecimal.ZERO, "ORDER_ITEM"), "ck_inventory_transaction_source");
         reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), detail,
-                usage, new BigDecimal("-100"), "g", null, "STOCK_DOCUMENT"), "ck_inventory_transaction_source");
+                usage, new BigDecimal("-100"), "g", null, "ORDER_ITEM"), "ck_inventory_transaction_source");
+        reject(fixture, () -> appendRecipeUse(fixture, fixture.order(), fixture.item(), detail,
+                usage, new BigDecimal("-100"), "g", BigDecimal.TEN, "STOCK_DOCUMENT"), "ck_inventory_transaction_source");
         assertThat(recipeUseCount(fixture)).isZero();
     }
 
@@ -368,8 +370,11 @@ class InventoryAllocationPersistenceIntegrationTest {
         OrderItem line = new OrderItem(); line.initialize(actor.restaurantId(), now); line.setOrderId(order.getId());
         line.setItemId(menu); line.setItemName("Menu snapshot"); line.setUnit("portion"); line.setQuantity(BigDecimal.ONE);
         line.setUnitPrice(BigDecimal.ZERO); line.setLineTotal(BigDecimal.ZERO); line.setLineNumber(1); line = orderItems.saveAndFlush(line);
+        BigDecimal total = java.util.stream.Stream.concat(definitions.stream(), java.util.stream.Stream.of(untracked))
+                .map(usage -> usage.quantity().multiply(BigDecimal.TEN).setScale(2, java.math.RoundingMode.HALF_UP))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         OrderItemRecipeSnapshot snapshot = snapshots.saveAndFlush(new OrderItemRecipeSnapshot(line, RecipeSnapshotStatus.CAPTURED,
-                recipe, 1, BigDecimal.ONE, "portion", now));
+                recipe, 1, BigDecimal.ONE, "portion", now, true, OrderCostSnapshot.complete(total, total)));
         List<Usage> tracked = new ArrayList<>();
         for (Usage definition : definitions) tracked.add(captureUsage(actor.restaurantId(), snapshot.getId(), definition, true, now));
         Usage capturedUntracked = captureUsage(actor.restaurantId(), snapshot.getId(), untracked, false, now);
@@ -378,7 +383,8 @@ class InventoryAllocationPersistenceIntegrationTest {
 
     private Usage captureUsage(UUID tenant, UUID snapshot, Usage definition, boolean tracked, Instant now) {
         OrderItemRecipeUsage usage = usages.saveAndFlush(new OrderItemRecipeUsage(tenant, snapshot, definition.ingredientId(),
-                definition.name(), definition.sku(), definition.unit(), definition.quantity(), BigDecimal.ZERO, tracked, definition.quantity(), now));
+                definition.name(), definition.sku(), definition.unit(), definition.quantity(), BigDecimal.ZERO, tracked, definition.quantity(), now,
+                new OrderIngredientCostSnapshot(true, BigDecimal.TEN.setScale(2), definition.quantity().multiply(BigDecimal.TEN).setScale(2, java.math.RoundingMode.HALF_UP))));
         return new Usage(usage.getId(), definition.ingredientId(), definition.sku(), definition.name(), definition.unit(), definition.quantity());
     }
 
@@ -391,7 +397,7 @@ class InventoryAllocationPersistenceIntegrationTest {
     private void reserve(Fixture source) {
         locked(source, () -> {
             inventory.reserve(source.actor(), source.order(), List.of(new AcceptedItem(source.item(), source.snapshot(), "CAPTURED",
-                    BigDecimal.ONE, "portion", source.tracked())), clock.instant(), null);
+                    BigDecimal.ONE, "portion", source.tracked())), true, clock.instant(), null);
             jdbc.update("update order_items set sent_to_kitchen_at=? where id=?", timestamp(), source.item());
             jdbc.update("update orders set status='CONFIRMED',confirmed_at=? where id=?", timestamp(), source.order());
         });

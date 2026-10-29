@@ -23,6 +23,13 @@ cho side effect. Thiếu kho default/available trả 409 và rollback toàn bộ
 Payment/complete không trừ lại; complete kiểm không còn RESERVED bị bỏ quên.
 Đổi bàn không thay kho đã chốt. [Đồng bộ FE](order-inventory-allocation-fe-sync.md).
 
+V38 chốt [giá vốn tham chiếu lịch sử](order-reference-cost-snapshot-api.md) trong
+cùng acceptance, kể cả MANUAL và untracked ingredients. Summary đọc bằng
+ORDER_VIEW + REPORT_DETAIL_VIEW, ORDER_MANAGEMENT + DETAIL_REPORT; recipe detail
+vẫn theo guard riêng. DRAFT/QR PENDING chưa chốt. Thiếu cấu hình giá cho kết quả
+INCOMPLETE, không chặn lifecycle hợp lệ. OrderResponse/realtime/KDS/public không
+thêm cost; root version và mutation permissions giữ nguyên.
+
 Files và kết quả test thực tế: [order-implementation.md](order-implementation.md).
 
 ## Authorization và headers

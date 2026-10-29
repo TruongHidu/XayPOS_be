@@ -22,7 +22,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = ReportController.class)
+@RestControllerAdvice(assignableTypes = {ReportController.class, ReferenceMarginReportController.class})
 @RequiredArgsConstructor
 public class ReportErrorHandler {
     private final Clock clock;

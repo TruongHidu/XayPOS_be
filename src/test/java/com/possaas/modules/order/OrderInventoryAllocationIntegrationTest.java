@@ -60,6 +60,8 @@ class OrderInventoryAllocationIntegrationTest {
         "INVENTORY_THRESHOLD_UPDATE","INGREDIENT_UPDATE","INGREDIENT_DELETE"));ALL=Set.copyOf(p);}
     static final List<String> FEATURES=List.of("MENU_MANAGEMENT","ORDER_MANAGEMENT","POS_QUICK_ORDER","TABLE_MANAGEMENT",
         "RECIPE_MANAGEMENT","INVENTORY_MANAGEMENT","KITCHEN_DISPLAY","PAYMENT_MANAGEMENT","LOW_STOCK_ALERT");
+    static final List<String> COST_FEATURES=java.util.stream.Stream.concat(FEATURES.stream(),java.util.stream.Stream.of("DETAIL_REPORT")).toList();
+    static final Set<String> COST_READ=Set.of("ORDER_VIEW","REPORT_DETAIL_VIEW");
     @TestConfiguration static class FixedTime {@Bean @Primary Clock allocationClock(){return Clock.fixed(NOW,ZoneOffset.UTC);}}
     @DynamicPropertySource static void isolated(DynamicPropertyRegistry p) {
         String base=System.getenv().getOrDefault("DB_URL","jdbc:postgresql://localhost:5432/kiot_tay_db");
@@ -77,6 +79,7 @@ class OrderInventoryAllocationIntegrationTest {
     @MockitoSpyBean OrderItemInventoryAllocationRepository allocations;
     @MockitoSpyBean InventoryReservationRepository reservations;
     @MockitoSpyBean OrderItemSubmissionRepository submissions;
+    @MockitoSpyBean com.possaas.modules.order.application.port.OrderReferenceCostQuery referenceCosts;
     @Autowired com.possaas.support.CommittedRealtimeEvents committed;
     Restaurant restaurant;User user;RestaurantSubscription subscription;Item menu,ingredient;Recipe recipe;UUID warehouse;
 
@@ -295,12 +298,13 @@ class OrderInventoryAllocationIntegrationTest {
         balance(warehouse,"2000","525","1475");assertThat(allocation(order,0).body.path("status").asText()).isEqualTo("RESERVED");assertInvariant();
         bulk(order,"mark-served").expect(200);assertThat(recipeUses()).isEqualTo(2);assertInvariant();
     }
-    @Test void ledgerQueryIncludesRecipeUseWithNullableDocumentAndUnvaluedCostAndFilters() throws Exception {
+    @Test void ledgerQueryIncludesRecipeUseWithNullableDocumentAndFrozenCostAndFilters() throws Exception {
         stock("1000");var order=create(true,"3").expect(201);single(order,0,"start-cooking").expect(200);
         var view=call(get("/api/v1/inventory/transactions").param("orderId",order.id().toString()).param("orderItemId",order.line(0).toString()).param("sourceType","ORDER_ITEM").param("transactionType","RECIPE_USE"),null,ALL).expect(200);
         assertThat(view.body.path("totalElements").asLong()).isEqualTo(1);var row=view.body.at("/content/0");
         assertThat(row.path("sourceType").asText()).isEqualTo("ORDER_ITEM");assertThat(row.path("orderId").asText()).isEqualTo(order.id().toString());assertThat(row.path("orderItemId").asText()).isEqualTo(order.line(0).toString());
-        for(String field:List.of("stockDocumentId","documentCode","documentType","unitCost"))assertThat(row.path(field).isNull()).as(field).isTrue();
+        for(String field:List.of("stockDocumentId","documentCode","documentType"))assertThat(row.path(field).isNull()).as(field).isTrue();
+        assertThat(row.path("unitCost").decimalValue()).isEqualByComparingTo("10");
         assertThat(row.path("reservationId").asText()).isNotBlank();assertThat(row.path("quantityChange").decimalValue()).isEqualByComparingTo("-315");assertThat(row.path("beforeQuantity").decimalValue()).isEqualByComparingTo("1000");assertThat(row.path("afterQuantity").decimalValue()).isEqualByComparingTo("685");
         var document=call(get("/api/v1/inventory/transactions").param("sourceType","STOCK_DOCUMENT"),null,ALL).expect(200);assertThat(document.body.path("totalElements").asLong()).isEqualTo(1);assertThat(document.body.at("/content/0/unitCost").decimalValue()).isEqualByComparingTo("10");
     }
@@ -326,7 +330,9 @@ class OrderInventoryAllocationIntegrationTest {
     }
     @Test void batchAllocationQueriesStayBoundedWhenManyLinesShareIngredient() throws Exception {
         stock("10000");var request=body(true,"1");request.put("items",java.util.stream.IntStream.range(0,9).mapToObj(i->line(menu.getId(),"1","batch"+i)).toList());
-        clearInvocations(allocations,reservations);var order=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).expect(201);
+        clearInvocations(allocations,reservations,referenceCosts);var order=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).expect(201);
+        verify(referenceCosts,times(1)).findIngredientCosts(restaurant.getId(),List.of(ingredient.getId()));
+        verify(referenceCosts,never()).findManualCosts(any(),anyCollection());
         verify(allocations,atMost(2)).findAllForUpdate(eq(restaurant.getId()),anyCollection());
         verify(reservations,atMost(3)).findAllForAllocations(eq(restaurant.getId()),anyCollection());
         verify(allocations,never()).findByRestaurantIdAndOrderIdAndOrderItemId(any(),any(),any());
@@ -541,11 +547,11 @@ class OrderInventoryAllocationIntegrationTest {
         assertThat(decision(order,0).body.path("costSourceSnapshot").asText()).isEqualTo("RECIPE");
     }
 
-    @Test void acceptedRecipeStillConsumesAfterToggleOffAndRecipeUsePriceRemainsNull()throws Exception {
+    @Test void acceptedRecipeStillConsumesAfterToggleOffAndRecipeUsePriceRemainsFrozen()throws Exception {
         stock("1000");var order=create(true,"3").expect(201);toggle(false).expect(200);
         var served=bulk(order,"mark-served").expect(200);balance(warehouse,"685","0","685");
         assertThat(recipeUses()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select bool_and(unit_cost is null) from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE'",Boolean.class,restaurant.getId())).isTrue();
+        assertThat(jdbc.queryForObject("select unit_cost from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE'",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("10");
         bulk(served,"mark-served").expect(200);assertThat(recipeUses()).isEqualTo(1);
         assertThat(served.body.toString()).doesNotContain("costConfigured","recipeEnabled","costSourceSnapshot");
     }
@@ -624,6 +630,190 @@ class OrderInventoryAllocationIntegrationTest {
         assertThat(count("inventory_reservations")).isEqualTo(captured?1:0);
         balance(warehouse,"1000",captured?"315":"0",captured?"685":"1000");assertInvariant();
     }
+
+    @ParameterizedTest @ValueSource(strings={"25.15","0.00"})
+    void manualPositiveAndConfiguredZeroAreCompleteWithoutAnyRecipeOrInventoryFeature(String price)throws Exception {
+        setFeatures(COST_FEATURES);toggle(false).expect(200);setPrice(menu,true,price);
+        setFeatures(COST_FEATURES.stream().filter(f->!Set.of("RECIPE_MANAGEMENT","INVENTORY_MANAGEMENT").contains(f)).toList());
+        var order=create(true,"2.5").expect(201);var cost=cost(order,0).expect(200);
+        assertThat(cost.body.path("costSnapshotVersion").asInt()).isEqualTo(1);
+        assertThat(cost.body.path("costBasis").asText()).isEqualTo("CATALOG_REFERENCE_AT_ACCEPTANCE");
+        assertThat(cost.body.path("costSource").asText()).isEqualTo("MANUAL");
+        assertThat(cost.body.path("costStatus").asText()).isEqualTo("COMPLETE");assertThat(cost.body.path("reason").isNull()).isTrue();
+        assertThat(cost.body.path("unitCost").decimalValue()).isEqualByComparingTo(price);
+        assertThat(cost.body.path("totalCost").decimalValue()).isEqualByComparingTo(new BigDecimal(price).multiply(new BigDecimal("2.5")).setScale(2,java.math.RoundingMode.HALF_UP));
+        assertThat(cost.body.path("orderQuantity").decimalValue()).isEqualByComparingTo("2.5");
+        assertThat(cost.body.path("orderUnit").asText()).isEqualTo("portion");assertThat(cost.body.path("currencyCode").asText()).isEqualTo("VND");
+        assertThat(cost.body.path("costCapturedAt").asText()).isEqualTo(NOW.toString());assertThat(cost.cache).contains("no-store");
+        assertThat(count("order_item_recipe_usages")).isZero();assertThat(count("inventory_reservations")).isZero();assertThat(recipeUses()).isZero();
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);
+        var audited=json.readTree(jdbc.queryForObject("select after_data::text from audit_logs where restaurant_id=? and action_code='ORDER_ITEM_RECIPE_SNAPSHOTTED'",String.class,restaurant.getId()));
+        assertThat(audited.path("costSnapshotVersion").asInt()).isEqualTo(1);assertThat(audited.path("costStatus").asText()).isEqualTo("COMPLETE");
+        assertThat(audited.path("totalCostSnapshot").decimalValue()).isEqualByComparingTo(cost.body.path("totalCost").decimalValue());
+    }
+
+    @Test void unconfiguredManualRemainsUnknownAndCancelPreservesTheDecision()throws Exception {
+        setFeatures(COST_FEATURES);toggle(false).expect(200);setPrice(menu,false,null);var order=create(true,"3").expect(201);
+        var before=cost(order,0).expect(200).body;
+        assertThat(before.path("costStatus").asText()).isEqualTo("INCOMPLETE");
+        assertThat(before.path("reason").asText()).isEqualTo("MANUAL_COST_NOT_CONFIGURED");
+        assertThat(before.path("unitCost").isNull()).isTrue();assertThat(before.path("totalCost").isNull()).isTrue();
+        setPrice(menu,true,"99");cancel(order).expect(200);assertThat(cost(order,0).expect(200).body).isEqualTo(before);
+        assertThat(count("inventory_reservations")).isZero();assertThat(recipeUses()).isZero();
+    }
+
+    @Test void draftHasNoMonetaryDecisionAndConfirmationCapturesTheThenCurrentPrice()throws Exception {
+        setFeatures(COST_FEATURES);toggle(false).expect(200);var draft=create(false,"3").expect(201);long audits=count("audit_logs");
+        var unsubmitted=cost(draft,0).expect(200);
+        assertThat(unsubmitted.body.path("costStatus").asText()).isEqualTo("NOT_SUBMITTED");
+        for(String field:List.of("costSnapshotVersion","costSource","unitCost","totalCost","costCapturedAt"))assertThat(unsubmitted.body.path(field).isNull()).as(field).isTrue();
+        assertThat(count("order_item_recipe_snapshots")).isZero();assertThat(count("audit_logs")).isEqualTo(audits);
+        setPrice(menu,true,"27.35");var confirmed=confirm(draft).expect(200);var captured=cost(confirmed,0).expect(200);
+        assertThat(captured.body.path("unitCost").decimalValue()).isEqualByComparingTo("27.35");
+        assertThat(captured.body.path("totalCost").decimalValue()).isEqualByComparingTo("82.05");
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);
+    }
+
+    @Test void createAndAppendReplayPreserveMoneyAndCanonicalVersionsAfterCatalogueAndFeatureChanges()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");String key=UUID.randomUUID().toString();var request=body(true,"3");
+        var order=call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(201);
+        var original=cost(order,0).expect(200).body;assertThat(original.path("totalCost").decimalValue()).isEqualByComparingTo("3150");
+        setPrice(ingredient,true,"20");clearInvocations(referenceCosts);call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(200);verifyNoInteractions(referenceCosts);
+        String appendKey=UUID.randomUUID().toString();var addition=addition(order,"2");
+        var added=call(post(path(order)+"/items").header("Idempotency-Key",appendKey),addition,ORDER).expect(200);
+        var newer=cost(added,1).expect(200).body;assertThat(newer.path("totalCost").decimalValue()).isEqualByComparingTo("4200");
+        assertThat(cost(added,0).expect(200).body).isEqualTo(original);
+        setPrice(ingredient,true,"30");replaceRecipe("2000");toggle(false).expect(200);withoutCostFeature("RECIPE_MANAGEMENT");
+        clearInvocations(referenceCosts);call(post(path(order)+"/items").header("Idempotency-Key",appendKey),addition,ORDER).expect(200);verifyNoInteractions(referenceCosts);
+        assertThat(cost(added,0).expect(200).body).isEqualTo(original);assertThat(cost(added,1).expect(200).body).isEqualTo(newer);
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(2);assertThat(committed.orders).hasSize(2);
+        assertThat(committed.orders.getLast().version()).isEqualTo(added.version());assertThat(detail(added).version()).isEqualTo(added.version());
+        var served=bulk(added,"mark-served").expect(200);bulk(served,"mark-served").expect(200);
+        verifyNoInteractions(referenceCosts);
+        var costs=jdbc.queryForList("select unit_cost from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE' order by order_item_id",BigDecimal.class,restaurant.getId());
+        assertThat(costs).usingComparatorForType(BigDecimal::compareTo,BigDecimal.class).containsExactlyInAnyOrder(new BigDecimal("10.00"),new BigDecimal("20.00"));
+        assertThat(recipeUses()).isEqualTo(2);
+    }
+
+    @Test void receiptRepricingAfterAcceptanceChangesOnlyNewSnapshotsAndNeverRecipeUseHistory()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");var order=create(true,"3").expect(201);var before=cost(order,0).expect(200).body;
+        receive(warehouse,ingredient,"1000","30");assertThat(items.findById(ingredient.getId()).orElseThrow().getCostPrice()).isEqualByComparingTo("20");
+        var added=append(order,"2").expect(200);assertThat(cost(added,0).expect(200).body).isEqualTo(before);
+        assertThat(cost(added,1).expect(200).body.path("totalCost").decimalValue()).isEqualByComparingTo("4200");
+        single(added,0,"start-cooking").expect(200);
+        assertThat(jdbc.queryForObject("select unit_cost from inventory_transactions where order_item_id=? and transaction_type='RECIPE_USE'",BigDecimal.class,order.line(0))).isEqualByComparingTo("10");
+    }
+
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void trackedConfiguredZeroAndUnknownRemainDistinctAndNeitherBlocksServingPaymentOrCompletion(boolean configured)throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");setPrice(ingredient,configured,configured?"0":null);var order=create(true,"3").expect(201);
+        var cost=cost(order,0).expect(200).body;
+        assertThat(cost.path("costStatus").asText()).isEqualTo(configured?"COMPLETE":"INCOMPLETE");
+        if(configured){assertThat(cost.path("unitCost").decimalValue()).isEqualByComparingTo("0");assertThat(cost.path("totalCost").decimalValue()).isEqualByComparingTo("0");}
+        else {assertThat(cost.path("reason").asText()).isEqualTo("INGREDIENT_COST_NOT_CONFIGURED");assertThat(cost.path("unitCost").isNull()).isTrue();assertThat(cost.path("totalCost").isNull()).isTrue();}
+        var served=bulk(order,"mark-served").expect(200);bulk(served,"mark-served").expect(200);
+        BigDecimal ledgerCost=jdbc.queryForObject("select unit_cost from inventory_transactions where order_item_id=? and transaction_type='RECIPE_USE'",BigDecimal.class,order.line(0));
+        if(configured)assertThat(ledgerCost).isEqualByComparingTo("0");else assertThat(ledgerCost).isNull();
+        var paid=call(post(path(served)+"/payments").header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("expectedOrderVersion",served.version(),"paymentMethod","CASH","amount",served.body.path("totalAmount").decimalValue()),ORDER).expect(201);
+        var afterPayment=detail(served).expect(200);var complete=call(post(path(afterPayment)+"/complete"),Map.of("expectedVersion",afterPayment.version()),ORDER).expect(200);
+        call(post(path(complete)+"/complete"),Map.of("expectedVersion",complete.version()),ORDER).expect(200);
+        assertThat(recipeUses()).isEqualTo(1);assertThat(cost(complete,0).expect(200).body).isEqualTo(cost);balance(warehouse,"685","0","685");
+    }
+
+    @Test void missingUntrackedPriceMakesHeaderIncompleteButKnownTrackedUsageStillPostsItsOwnCost()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");var untracked=item("Garnish",ItemType.INGREDIENT,"g",false);setPrice(untracked,false,null);
+        var part=new RecipeItem();part.initialize(restaurant.getId(),recipe.getId(),untracked,new BigDecimal("5"),BigDecimal.ZERO,NOW);recipeItems.saveAndFlush(part);
+        var order=create(true,"3").expect(201);var cost=cost(order,0).expect(200).body;
+        assertThat(cost.path("costStatus").asText()).isEqualTo("INCOMPLETE");assertThat(cost.path("totalCost").isNull()).isTrue();
+        var rows=jdbc.queryForList("select ingredient_id,cost_configured_snapshot,unit_cost_snapshot,line_cost_snapshot from order_item_recipe_usages where recipe_snapshot_id=(select id from order_item_recipe_snapshots where order_item_id=?)",order.line(0));
+        assertThat(rows).hasSize(2);
+        var known=rows.stream().filter(r->ingredient.getId().equals(r.get("ingredient_id"))).findFirst().orElseThrow();
+        assertThat(known.get("cost_configured_snapshot")).isEqualTo(true);assertThat((BigDecimal)known.get("unit_cost_snapshot")).isEqualByComparingTo("10");assertThat((BigDecimal)known.get("line_cost_snapshot")).isEqualByComparingTo("3150");
+        var unknown=rows.stream().filter(r->untracked.getId().equals(r.get("ingredient_id"))).findFirst().orElseThrow();
+        assertThat(unknown.get("cost_configured_snapshot")).isEqualTo(false);assertThat(unknown.get("unit_cost_snapshot")).isNull();assertThat(unknown.get("line_cost_snapshot")).isNull();
+        bulk(order,"mark-served").expect(200);assertThat(recipeUses()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select unit_cost from inventory_transactions where order_item_id=? and transaction_type='RECIPE_USE'",BigDecimal.class,order.line(0))).isEqualByComparingTo("10");
+        assertThat(count("inventory_reservations")).isEqualTo(1);
+    }
+
+    @Test void recipeTotalIncludesUntrackedUsageAndIsNeverRebuiltFromRoundedDisplayUnitCost()throws Exception {
+        withoutCostFeature("INVENTORY_MANAGEMENT");setPrice(ingredient,true,"1");
+        jdbc.update("update recipes set yield_quantity=1 where id=?",recipe.getId());
+        jdbc.update("update recipe_items set quantity=0.005,waste_percent=0 where recipe_id=?",recipe.getId());
+        var untracked=item("Dust",ItemType.INGREDIENT,"g",false);setPrice(untracked,true,"1");
+        var part=new RecipeItem();part.initialize(restaurant.getId(),recipe.getId(),untracked,new BigDecimal("0.005"),BigDecimal.ZERO,NOW);recipeItems.saveAndFlush(part);
+        var order=create(true,"3").expect(201);var cost=cost(order,0).expect(200).body;
+        assertThat(cost.path("costStatus").asText()).isEqualTo("COMPLETE");assertThat(cost.path("totalCost").decimalValue()).isEqualByComparingTo("0.04");
+        assertThat(cost.path("unitCost").decimalValue()).isEqualByComparingTo("0.01");
+        assertThat(cost.path("unitCost").decimalValue().multiply(new BigDecimal("3"))).isNotEqualByComparingTo(cost.path("totalCost").decimalValue());
+        assertThat(jdbc.queryForList("select required_quantity from order_item_recipe_usages where recipe_snapshot_id=(select id from order_item_recipe_snapshots where order_item_id=?)",BigDecimal.class,order.line(0))).allSatisfy(q->assertThat(q).isEqualByComparingTo("0.015"));
+        assertThat(count("inventory_reservations")).isZero();assertThat(recipeUses()).isZero();
+    }
+
+    @Test void recipeFeatureDisabledRecordsUnavailableWithoutManualFallbackAndReadSurvivesDowngrade()throws Exception {
+        withoutCostFeature("RECIPE_MANAGEMENT");setPrice(menu,true,"99");var order=create(true,"3").expect(201);
+        var cost=cost(order,0).expect(200).body;assertThat(cost.path("costSource").asText()).isEqualTo("RECIPE");
+        assertThat(cost.path("costStatus").asText()).isEqualTo("UNAVAILABLE");assertThat(cost.path("reason").asText()).isEqualTo("RECIPE_FEATURE_DISABLED");
+        assertThat(cost.path("unitCost").isNull()).isTrue();assertThat(cost.path("totalCost").isNull()).isTrue();
+        assertThat(count("order_item_recipe_usages")).isZero();assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);
+    }
+
+    @Test void costSummaryRequiresOnlyOrderAndDetailedReportReadAccessAndDoesNotWriteOrLeakIngredients()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");var order=create(true,"3").expect(201);long audits=count("audit_logs"),versions=order.version();
+        clearInvocations(referenceCosts);var response=cost(order,0).expect(200);assertThat(response.cache).contains("no-store");verifyNoInteractions(referenceCosts);
+        assertThat(response.body.toString()).doesNotContain("ingredients","ingredientId","recipeId","requiredQuantity","costConfigured");
+        for(String permission:List.of("ORDER_VIEW","REPORT_DETAIL_VIEW")){var allowed=new HashSet<>(COST_READ);allowed.remove(permission);call(get(costPath(order,0)),null,allowed).expect(403);}
+        for(String feature:List.of("ORDER_MANAGEMENT","DETAIL_REPORT")){withoutCostFeature(feature);cost(order,0).expect(403);setFeatures(COST_FEATURES);}
+        setFeatures(COST_FEATURES.stream().filter(f->!Set.of("RECIPE_MANAGEMENT","INVENTORY_MANAGEMENT").contains(f)).toList());
+        call(get(costPath(order,0)),null,Set.of("ORDER_VIEW","REPORT_DETAIL_VIEW")).expect(200);
+        call(get(path(order)+"/items/"+order.line(0)+"/recipe-snapshot"),null,Set.of("ORDER_VIEW","REPORT_DETAIL_VIEW")).expect(403);
+        assertThat(detail(order).expect(200).version()).isEqualTo(versions);assertThat(count("audit_logs")).isEqualTo(audits);
+        assertThat(detail(order).body.toString()).doesNotContain("unitCost","totalCost","costStatus","costSnapshotVersion","costCapturedAt");
+        assertThat(call(get("/api/v1/kitchen/items"),null,ORDER).expect(200).body.toString()).doesNotContain("unitCost","totalCost","costStatus","costSnapshotVersion");
+        setFeatures(COST_FEATURES);var another=create(true,"1").expect(201);
+        call(get(path(order)+"/items/"+another.line(0)+"/cost-snapshot"),null,COST_READ).expect(404);
+        assertThat(mvc.perform(get(costPath(order,0))).andReturn().getResponse().getStatus()).isEqualTo(401);
+        setup();setFeatures(COST_FEATURES);call(get(costPath(order,0)),null,COST_READ).expect(404);
+    }
+
+    @Test void concurrentIngredientPriceUpdateAndAcceptanceCaptureOneSerializedPriceForAllLines()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");var request=body(true,"3");request.put("items",List.of(line(menu.getId(),"3","first"),line(menu.getId(),"2","second")));
+        var results=race(()->setPrice(ingredient,true,"20"),()->call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER));
+        results.get(0).expect(200);var order=results.get(1).expect(201);
+        var first=cost(order,0).expect(200).body;var second=cost(order,1).expect(200).body;
+        assertThat(first.path("totalCost").decimalValue()).satisfiesAnyOf(c->assertThat(c).isEqualByComparingTo("3150"),c->assertThat(c).isEqualByComparingTo("6300"));
+        assertThat(first.path("unitCost").decimalValue()).isEqualByComparingTo(second.path("unitCost").decimalValue());
+        assertThat(second.path("totalCost").decimalValue()).isEqualByComparingTo(first.path("unitCost").decimalValue().multiply(new BigDecimal("2")));
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(2);assertInvariant();
+    }
+
+    @Test void concurrentReceiptRepricingAndAcceptanceUseOneCompleteReferencePrice()throws Exception {
+        setFeatures(COST_FEATURES);stock("1000");var receipt=movement(warehouse,ingredient,"RECEIPT","1000","30",null).expect(201);
+        var request=body(true,"3");request.put("items",List.of(line(menu.getId(),"3","first"),line(menu.getId(),"2","second")));
+        var results=race(()->call(post("/api/v1/inventory/stock-documents/"+receipt.id()+"/confirm"),Map.of("expectedVersion",receipt.version()),ALL),
+            ()->call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER));
+        results.get(0).expect(200);var order=results.get(1).expect(201);var first=cost(order,0).expect(200).body;var second=cost(order,1).expect(200).body;
+        assertThat(first.path("totalCost").decimalValue()).satisfiesAnyOf(c->assertThat(c).isEqualByComparingTo("3150"),c->assertThat(c).isEqualByComparingTo("6300"));
+        assertThat(first.path("unitCost").decimalValue()).isEqualByComparingTo(second.path("unitCost").decimalValue());
+        assertThat(second.path("totalCost").decimalValue()).isEqualByComparingTo(first.path("unitCost").decimalValue().multiply(new BigDecimal("2")));
+        assertThat(items.findById(ingredient.getId()).orElseThrow().getCostPrice()).isEqualByComparingTo("20");balance(warehouse,"2000","525","1475");assertInvariant();
+    }
+
+    @Test void draftCurrencyMismatchRollsBackAcceptanceAndLeavesNoMonetaryDecisionOrEvent()throws Exception {
+        toggle(false).expect(200);var draft=create(false,"3").expect(201);long audits=count("audit_logs");
+        restaurant=restaurants.findById(restaurant.getId()).orElseThrow();restaurant.setCurrencyCode("USD");restaurant=restaurants.saveAndFlush(restaurant);committed.clear();
+        confirm(draft).error(409,"ORDER_COST_CURRENCY_MISMATCH");assertThat(count("order_item_recipe_snapshots")).isZero();
+        assertThat(count("audit_logs")).isEqualTo(audits);assertThat(detail(draft).version()).isEqualTo(draft.version());assertThat(committed.orders).isEmpty();
+    }
+
+    Reply setPrice(Item source,boolean configured,String price)throws Exception {
+        long version=items.findById(source.getId()).orElseThrow().getVersion();var request=new LinkedHashMap<String,Object>();request.put("expectedVersion",version);request.put("costConfigured",configured);
+        if(price!=null)request.put("costPrice",new BigDecimal(price));
+        return call(patch("/api/v1/menu/"+(source.getItemType()==ItemType.INGREDIENT?"ingredients/":"items/")+source.getId()),request,ALL).expect(200);
+    }
+    String costPath(Reply order,int index){return path(order)+"/items/"+order.line(index)+"/cost-snapshot";}
+    Reply cost(Reply order,int index)throws Exception{return call(get(costPath(order,index)),null,COST_READ);}
+    void withoutCostFeature(String code){setFeatures(COST_FEATURES.stream().filter(f->!f.equals(code)).toList());}
 
     Reply toggle(boolean enabled)throws Exception {
         long version=items.findById(menu.getId()).orElseThrow().getVersion();

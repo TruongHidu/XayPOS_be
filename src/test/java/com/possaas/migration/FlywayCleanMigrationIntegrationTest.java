@@ -62,7 +62,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("37");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("38");
             assertThat(countTables(schema)).isEqualTo(41);
             assertThat(tableExists(schema, "stock_audits")).isTrue();
             assertThat(tableExists(schema, "stock_audit_items")).isTrue();
@@ -464,7 +464,7 @@ class FlywayCleanMigrationIntegrationTest {
                     + "CROSS JOIN generate_series(1, 2) WHERE p.code = 'BASIC'");
             }
             Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load();
+                .locations("classpath:db/migration").target("8").load();
             assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("V8: duplicate PENDING subscriptions");
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery("SELECT count(*) FROM \"" + schema
@@ -544,7 +544,7 @@ class FlywayCleanMigrationIntegrationTest {
                     + "FROM " + prefix + "restaurants r," + prefix + "packages p WHERE p.code='BASIC'");
             }
             Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load().migrate();
+                .locations("classpath:db/migration").target("12").load().migrate();
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
                 try (ResultSet rows = statement.executeQuery("SELECT max_staff FROM " + prefix + "packages WHERE code='BASIC'")) {
                     rows.next(); assertThat(rows.getLong(1)).isEqualTo(7);
@@ -582,7 +582,7 @@ class FlywayCleanMigrationIntegrationTest {
                     + "WHERE feature_id=(SELECT id FROM " + prefix + "features WHERE code='STAFF_MANAGEMENT')");
             }
             Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-                .locations("classpath:db/migration").load();
+                .locations("classpath:db/migration").target("12").load();
             assertThatThrownBy(upgrade::migrate).hasStackTraceContaining("V12: invalid legacy maxStaff");
             try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery("SELECT count(*) FROM " + prefix + "package_features WHERE limits->>'maxStaff'='bad'")) {

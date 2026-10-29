@@ -1,10 +1,13 @@
 package com.possaas.modules.inventory.service;
 
 import com.possaas.common.exception.ConflictException;
+import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery.UsageCost;
 import com.possaas.modules.inventory.entity.*;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand.AcceptedItem;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand.LineState;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand.Usage;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import org.springframework.stereotype.Component;
 
@@ -67,7 +70,7 @@ public class InventoryAllocationPolicy {
     }
 
     public void history(OrderItemInventoryAllocation allocation, List<InventoryReservation> details,
-            Map<UUID, InventoryTransaction> ledger) {
+            Map<UUID, InventoryTransaction> ledger, Map<UUID, UsageCost> costs) {
         if (allocation.getStatus() == InventoryAllocationStatus.SKIPPED) {
             if (!details.isEmpty() || allocation.getWarehouseId() != null || allocation.getSkipReason() == null)
                 throw conflict();
@@ -75,6 +78,7 @@ public class InventoryAllocationPolicy {
         }
         if (details.isEmpty() || allocation.getWarehouseId() == null || allocation.getSkipReason() != null)
             throw conflict();
+        if (costs == null) throw conflict();
         Set<UUID> ingredients = new HashSet<>();
         Set<UUID> usages = new HashSet<>();
         for (InventoryReservation detail : details) {
@@ -84,6 +88,7 @@ public class InventoryAllocationPolicy {
                     || !allocation.getWarehouseId().equals(detail.getWarehouseId())
                     || detail.getQuantity().signum() <= 0 || !ingredients.add(detail.getIngredientId())
                     || !usages.add(detail.getRecipeUsageId())) throw conflict();
+            BigDecimal expectedCost = usageUnitCost(allocation, detail, costs.get(detail.getRecipeUsageId()));
             InventoryTransaction transaction = ledger.get(detail.getId());
             if (allocation.getStatus() != InventoryAllocationStatus.CONSUMED) {
                 if (transaction != null) throw conflict();
@@ -94,14 +99,48 @@ public class InventoryAllocationPolicy {
                     || !allocation.getOrderItemId().equals(transaction.getOrderItemId())
                     || !detail.getWarehouseId().equals(transaction.getWarehouseId())
                     || !detail.getIngredientId().equals(transaction.getItemId())
+                    || !detail.getId().equals(transaction.getReservationId())
                     || !detail.getRecipeUsageId().equals(transaction.getRecipeUsageId())
                     || transaction.getQuantityChange().compareTo(detail.getQuantity().negate()) != 0
                     || !detail.getIngredientUnitSnapshot().equals(transaction.getUnit())
-                    || transaction.getUnitCost() != null || transaction.getStockDocumentId() != null
+                    || !sameCost(expectedCost, transaction.getUnitCost()) || transaction.getStockDocumentId() != null
                     || transaction.getStockDocumentItemId() != null
                     || transaction.getBeforeQuantity().add(transaction.getQuantityChange())
                         .compareTo(transaction.getAfterQuantity()) != 0) throw conflict();
         }
+    }
+
+    /** The usage decision is authoritative even when another usage made its header incomplete. */
+    public BigDecimal usageUnitCost(OrderItemInventoryAllocation allocation, InventoryReservation reservation,
+            UsageCost cost) {
+        if (cost == null || !allocation.getOrderId().equals(cost.orderId())
+                || !allocation.getOrderItemId().equals(cost.orderItemId())
+                || !allocation.getRecipeSnapshotId().equals(cost.recipeSnapshotId())
+                || !reservation.getRecipeUsageId().equals(cost.recipeUsageId())
+                || !reservation.getIngredientId().equals(cost.ingredientId())
+                || !reservation.getIngredientUnitSnapshot().equals(cost.unit())
+                || cost.quantity() == null || reservation.getQuantity().compareTo(cost.quantity()) != 0)
+            throw conflict();
+        if (cost.costSnapshotVersion() == null) {
+            if (cost.costConfigured() != null || cost.unitCost() != null) throw conflict();
+            return null;
+        }
+        if (cost.costSnapshotVersion() != 1 || cost.costConfigured() == null) throw conflict();
+        if (!cost.costConfigured()) {
+            if (cost.unitCost() != null) throw conflict();
+            return null;
+        }
+        if (cost.unitCost() == null || cost.unitCost().signum() < 0) throw conflict();
+        try {
+            if (cost.unitCost().setScale(2, RoundingMode.UNNECESSARY).precision() > 14) throw conflict();
+        } catch (ArithmeticException invalidPrecision) {
+            throw conflict();
+        }
+        return cost.unitCost();
+    }
+
+    private boolean sameCost(BigDecimal expected, BigDecimal actual) {
+        return expected == null ? actual == null : actual != null && expected.compareTo(actual) == 0;
     }
 
     public static ConflictException conflict() {

@@ -73,6 +73,7 @@ class QrOrderIntegrationTest {
     @Autowired PackagePlanRepository packages; @Autowired RestaurantSubscriptionRepository subscriptions;
     @Autowired ItemRepository items; @Autowired RestaurantTableRepository tables; @Autowired TableSessionRepository sessions;
     @MockitoSpyBean AuditService audit;
+    @MockitoSpyBean com.possaas.modules.order.application.port.OrderReferenceCostQuery referenceCosts;
     @Autowired com.possaas.modules.menu.repository.RecipeRepository recipes;
     @Autowired com.possaas.modules.menu.repository.RecipeItemRepository recipeItems;
     Restaurant restaurant; User user; RestaurantSubscription subscription; RestaurantTable table; Item item;
@@ -129,9 +130,48 @@ class QrOrderIntegrationTest {
         assertThat(events("QR_ORDER_REQUEST_APPROVED")).isEqualTo(1);
         var receipt=guestGet(guest,request); receipt.expect(200);
         assertThat(receipt.body.path("approvedAmount").decimalValue()).isEqualByComparingTo("50000");
-        for(String forbidden:List.of("order","approvedOrderId","approvedSessionId","customerPhone","paidAmount","totalAmount","guestToken","costPrice"))
+        for(String forbidden:List.of("order","approvedOrderId","approvedSessionId","customerPhone","paidAmount","totalAmount","guestToken","costPrice","unitCost","totalCost","costSnapshotVersion","costStatus","costCapturedAt"))
             assertThat(receipt.body.has(forbidden)).as(forbidden).isFalse();
     }
+    @Test void monetaryDecisionIsCapturedAtApprovalAndReplayNeverRepricesIt()throws Exception {
+        String guest=mint(false);var pending=submit(guest,"historical-cost",payload());pending.expect(201);
+        assertThat(count("order_item_recipe_snapshots")).isZero();assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isZero();
+        item=items.findById(item.getId()).orElseThrow();item.setCostPrice(new BigDecimal("20000.25"));item=items.saveAndFlush(item);
+        var reviewed=review(pending);var approved=approve(pending,reviewed,null,ALL);approved.expect(200);
+        UUID line=UUID.fromString(approved.body.at("/order/items/0/id").asText());
+        var snapshot=jdbc.queryForMap("select cost_snapshot_version,cost_status,cost_source_snapshot,unit_cost_snapshot,total_cost_snapshot,captured_at from order_item_recipe_snapshots where order_item_id=?",line);
+        assertThat(((Number)snapshot.get("cost_snapshot_version")).shortValue()).isEqualTo((short)1);assertThat(snapshot.get("cost_status")).isEqualTo("COMPLETE");assertThat(snapshot.get("cost_source_snapshot")).isEqualTo("MANUAL");
+        assertThat((BigDecimal)snapshot.get("unit_cost_snapshot")).isEqualByComparingTo("20000.25");assertThat((BigDecimal)snapshot.get("total_cost_snapshot")).isEqualByComparingTo("20000.25");
+        item=items.findById(item.getId()).orElseThrow();item.setCostPrice(new BigDecimal("90000"));items.saveAndFlush(item);
+        clearInvocations(referenceCosts);approve(pending,reviewed,null,ALL).expect(200);verifyNoInteractions(referenceCosts);
+        assertThat(jdbc.queryForMap("select cost_snapshot_version,cost_status,cost_source_snapshot,unit_cost_snapshot,total_cost_snapshot,captured_at from order_item_recipe_snapshots where order_item_id=?",line)).isEqualTo(snapshot);
+        assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);assertThat(count("order_item_recipe_usages")).isZero();
+        assertThat(approved.body.path("order").toString()).doesNotContain("unitCost","totalCost","costSnapshotVersion","costStatus","costCapturedAt");
+        assertThat(guestGet(guest,pending).body.toString()).doesNotContain("unitCost","totalCost","costSnapshotVersion","costStatus","costCapturedAt");
+    }
+
+    @Test void additionalQrApprovalCapturesCurrentReferenceCostOnlyForItsNewLine()throws Exception {
+        String guest=mint(true);var first=submit(guest,"cost-first",payload());var a=approve(first,review(first),null,ALL);a.expect(200);
+        UUID oldLine=UUID.fromString(a.body.at("/order/items/0/id").asText());UUID session=UUID.fromString(a.body.path("approvedSessionId").asText());
+        item=items.findById(item.getId()).orElseThrow();item.setCostPrice(new BigDecimal("30000"));item=items.saveAndFlush(item);
+        var more=submit(guest,"cost-more",payload());var reviewed=review(more);var b=approve(more,reviewed,session,ALL);b.expect(200);
+        UUID newLine=UUID.fromString(b.body.at("/order/items/1/id").asText());
+        assertThat(jdbc.queryForObject("select unit_cost_snapshot from order_item_recipe_snapshots where order_item_id=?",BigDecimal.class,oldLine)).isEqualByComparingTo("10000");
+        assertThat(jdbc.queryForObject("select unit_cost_snapshot from order_item_recipe_snapshots where order_item_id=?",BigDecimal.class,newLine)).isEqualByComparingTo("30000");
+        item=items.findById(item.getId()).orElseThrow();item.setCostConfigured(false);item.setCostPrice(BigDecimal.ZERO);items.saveAndFlush(item);
+        clearInvocations(referenceCosts);approve(more,reviewed,session,ALL).expect(200);verifyNoInteractions(referenceCosts);assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select total_cost_snapshot from order_item_recipe_snapshots where order_item_id=?",BigDecimal.class,newLine)).isEqualByComparingTo("30000");
+    }
+
+    @Test void unknownReferenceCostDoesNotPreventQrApprovalAndNeverBecomesZero()throws Exception {
+        item.setCostConfigured(false);item.setCostPrice(BigDecimal.ZERO);item=items.saveAndFlush(item);
+        var request=submit(mint(false),"cost-unknown",payload());request.expect(201);var approved=approve(request,review(request),null,ALL);approved.expect(200);
+        var snapshot=jdbc.queryForMap("select cost_status,cost_unavailable_reason,unit_cost_snapshot,total_cost_snapshot from order_item_recipe_snapshots where restaurant_id=?",restaurant.getId());
+        assertThat(snapshot.get("cost_status")).isEqualTo("INCOMPLETE");assertThat(snapshot.get("cost_unavailable_reason")).isEqualTo("MANUAL_COST_NOT_CONFIGURED");
+        assertThat(snapshot.get("unit_cost_snapshot")).isNull();assertThat(snapshot.get("total_cost_snapshot")).isNull();
+        assertThat(status(request)).isEqualTo("APPROVED");assertThat(events("ORDER_ITEM_RECIPE_SNAPSHOTTED")).isEqualTo(1);
+    }
+
     @Test void twoTakeawayRequestsNeverMergeAndDoNotNeedTableOrPosQuickFeature() throws Exception {
         features(List.of("QR_MENU_VIEW","QR_STATIC_ORDER","ORDER_MANAGEMENT")); String guest=mint(false);
         var r1=submit(guest,"a",payload()); var r2=submit(guest,"b",payload()); r1.expect(201); r2.expect(201);

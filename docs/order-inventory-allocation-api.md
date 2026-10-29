@@ -1,6 +1,6 @@
 # Giữ chỗ và tiêu thụ nguyên liệu theo order — Giai đoạn 5
 
-> Phase 1 update (V37): RECIPE_DISABLED maps first to SKIPPED / SNAPSHOT_RECIPE_DISABLED, even without inventory entitlement. No warehouse/reservation is needed. Later toggles never change the old allocation. RECIPE_USE.unitCost remains null. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+> V38: RECIPE_USE.unitCost uses the exact frozen tracked usage price: known/zero is retained, unknown or legacy stays null. It never reads today's catalogue at consume. RECIPE_DISABLED still maps first to SKIPPED / SNAPSHOT_RECIPE_DISABLED without warehouse/reservations. Read the separate [historical reference-cost summary](order-reference-cost-snapshot-api.md).
 
 Các API ORDER/KDS/QR giữ nguyên URL, body và quyền. Backend tự giữ chỗ khi món
 được chấp nhận, tiêu thụ khi bắt đầu thực hiện và giải phóng khi hủy PENDING.
@@ -38,6 +38,7 @@ snapshot; không tính lại hao hụt hoặc đọc active recipe. Dòng không
 có allocation SKIPPED với skipReason:
 
 - INVENTORY_FEATURE_DISABLED.
+- SNAPSHOT_RECIPE_DISABLED.
 - SNAPSHOT_NO_RECIPE.
 - SNAPSHOT_FEATURE_DISABLED.
 - NO_TRACKED_INGREDIENTS.
@@ -106,10 +107,13 @@ Ví dụ 200 RESERVED:
 `GET /api/v1/inventory/transactions` tiếp tục cần INVENTORY_VIEW và
 INVENTORY_MANAGEMENT; hỗ trợ filter orderId/orderItemId cùng paging/sort cũ.
 sourceType là STOCK_DOCUMENT hoặc ORDER_ITEM. RECIPE_USE có orderId/orderItemId/
-reservationId, stockDocumentId/documentCode/documentType=null và unitCost=null
-(chưa định giá). Quantity change âm; beforeQuantity/afterQuantity là tồn vật lý.
-Nguồn chứng từ giữ nguyên field, giá và lịch sử cũ. Giá tham chiếu ingredient từ
-RECEIPT khác giá vốn thực tế của order; không dùng null như giá 0 hay báo lãi thực.
+reservationId/recipeUsageId, stockDocumentId/documentCode/documentType=null.
+Từ V38 unitCost bằng giá reference đã chốt của chính usage: known/zero giữ nguyên;
+unknown hoặc legacy là null. Header INCOMPLETE vẫn có thể ghi giá của usage đã
+biết. Quantity change âm; beforeQuantity/afterQuantity là tồn vật lý. Nguồn chứng
+từ giữ nguyên field, giá và lịch sử cũ; không sửa ledger trước migration.
+Đây chưa phải actual COGS. Không dùng null như 0 hay suy tổng giá vốn món từ ledger
+tracked vì còn MANUAL/untracked. Snapshot tiền không chứng minh đã consume.
 
 ## Lỗi
 
@@ -152,7 +156,8 @@ tồn, review/approve lại theo version/hash/quote guard hiện có.
    thêm allocation/reservation/audit, balance vẫn như trên.
 4. POST `/api/v1/orders/{orderId}/items/{orderItemId}/start-cooking` body
    `{"expectedOrderVersion": <version>}`. Balance thành 685/0/685, allocation
-   CONSUMED, ledger có một ORDER_ITEM/RECIPE_USE -315 với unitCost=null. Retry
+   CONSUMED, ledger có một ORDER_ITEM/RECIPE_USE -315 với unitCost bằng giá usage
+   đã chốt (hoặc null nếu unknown/legacy). Retry
    transition theo replay rule hiện có không ghi thêm ledger/audit.
 5. Tạo order mới 3 phần và POST `/api/v1/orders/{orderId}/cancel` body
    `{"expectedVersion": <version>, "reason": "Khách hủy"}` khi món PENDING.

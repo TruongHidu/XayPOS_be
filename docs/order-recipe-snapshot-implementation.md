@@ -1,6 +1,6 @@
 # Triển khai ORDER recipe snapshot — Giai đoạn 4
 
-> Phase 1 update (V37): V37 extends the existing immutable snapshot, preserving old rows. The consumer-owned port batches current menu settings, then loads recipes only for enabled items. Replay, consume and release use frozen decisions. Source metadata does not contain monetary historical costs. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+> V38 extends the same immutable header/usages with historical reference costs; old monetary fields stay null. Preparation computes quantities and money before header INSERT. Replay uses frozen facts and never prices history from the current catalogue. This recipe response remains free of cost fields. See [monetary implementation](order-reference-cost-snapshot-implementation.md) and [summary API](order-reference-cost-snapshot-api.md).
 
 ## Thiết kế và transaction
 
@@ -11,7 +11,7 @@
 - OrderRecipeSnapshotService dùng transaction MANDATORY và restaurant mutation lock của caller.
 - Confirm dùng operation chung cho create SUBMIT/confirm/append OPEN/QR create.
 - Append đã gửi và QR append chỉ capture added; các chain/Strategy và hash cũ giữ nguyên.
-- AuditService.recordAll lưu summary bền vững, không copy ingredient/cost vào audit.
+- AuditService.recordAll lưu summary bền vững; V38 thêm monetary decision trong cùng action, không copy ingredient detail hoặc thêm audit trùng.
 - Query chỉ đọc snapshot, không gọi MENU và không làm thay đổi order version.
 
 ## Migration và dữ liệu cũ

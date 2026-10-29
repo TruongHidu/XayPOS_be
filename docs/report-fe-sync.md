@@ -32,3 +32,11 @@ The backend returns `Cache-Control: no-store`; keep report state short-lived and
 5. Reconciliation drawer/table: `/reports/orders`.
 
 An empty report is a successful state: show zeros and an empty table, not a not-found error.
+
+## Reference margin
+
+The three [reference-margin endpoints](reference-margin-report-api.md) require both `ORDER_VIEW` and `REPORT_DETAIL_VIEW`, and both `ORDER_MANAGEMENT` and `DETAIL_REPORT`. Keep the ordinary report guards unchanged. Use backend errors as the final authority.
+
+Show net sales for all completed orders separately from the covered net sales, reference cost, and reference margin for fully costed orders only. Display `costCoverageStatus`, fully costed/excluded counts and issue codes; incomplete, unavailable and legacy snapshots are unknown, not zero. If no orders qualify, covered sums are zero for the empty cohort and margin percentage is null. Do not label the result net profit or actual COGS.
+
+Summary and series use `completedAt` in the restaurant timezone. Series buckets are zero-filled; use the server's total percentage rather than averaging bucket percentages. The order list allows `costCoverage` and paginated sorting; null cost/margin means the order is excluded. Add `costCoverage`, `granularity`, dates, currency, service type, source channel, page, size, sort and direction to the respective cache keys. A 409 `REPORT_COST_DATA_CONFLICT` needs a recoverable error state, not a fabricated zero.

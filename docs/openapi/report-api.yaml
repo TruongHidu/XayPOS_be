@@ -143,6 +143,61 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/reference-margin/summary:
+    get:
+      summary: Historical reference-margin summary
+      description: Requires ORDER_VIEW and REPORT_DETAIL_VIEW, ORDER_MANAGEMENT and DETAIL_REPORT. Covered amounts only include fully costed completed orders; they are not actual COGS or net profit.
+      parameters: *rangeParameters
+      responses:
+        '200': { $ref: '#/components/responses/ReferenceMarginSummary' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/reference-margin/series:
+    get:
+      summary: Historical reference-margin series
+      description: Requires ORDER_VIEW and REPORT_DETAIL_VIEW, ORDER_MANAGEMENT and DETAIL_REPORT. Empty buckets are zero-filled.
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+        - name: granularity
+          in: query
+          schema: { type: string, enum: [DAY, MONTH], default: DAY }
+      responses:
+        '200': { $ref: '#/components/responses/ReferenceMarginSeries' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/v1/reports/reference-margin/orders:
+    get:
+      summary: Historical reference-margin order reconciliation
+      description: Requires ORDER_VIEW and REPORT_DETAIL_VIEW, ORDER_MANAGEMENT and DETAIL_REPORT. Unknown cost and margin are null.
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/ServiceType'
+        - $ref: '#/components/parameters/SourceChannel'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: costCoverage
+          in: query
+          schema: { type: string, enum: [ALL, COMPLETE, EXCLUDED], default: ALL }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [completedAt, netSalesAmount, referenceCostAmount, referenceMarginAmount], default: completedAt }
+        - $ref: '#/components/parameters/Direction'
+      responses:
+        '200': { $ref: '#/components/responses/ReferenceMarginOrders' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -237,6 +292,61 @@ components:
         completedAt: { type: [string, 'null'], format: date-time }
         cancelledAt: { type: [string, 'null'], format: date-time }
         reportEventAt: { type: string, format: date-time }
+    ReferenceCostIssue:
+      type: object
+      properties:
+        code: { type: string, enum: [INCOMPLETE, UNAVAILABLE, LEGACY_UNAVAILABLE, NO_ELIGIBLE_ITEMS] }
+        orderCount: { type: integer, format: int64 }
+        itemCount: { type: integer, format: int64 }
+    ReferenceMarginSummary:
+      type: object
+      description: Unprefixed amounts cover all completed orders; covered amounts cover fully costed orders only.
+      properties:
+        costBasis: { type: string, const: CATALOG_REFERENCE_AT_ACCEPTANCE }
+        marginScope: { type: string, const: FULLY_COSTED_COMPLETED_ORDERS }
+        costCoverageStatus: { type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE, NO_DATA] }
+        completedOrderCount: { type: integer, format: int64 }
+        fullyCostedOrderCount: { type: integer, format: int64 }
+        excludedOrderCount: { type: integer, format: int64 }
+        orderCoveragePercent: { type: [number, 'null'] }
+        subtotalAmount: { type: number }
+        discountAmount: { type: number }
+        taxAmount: { type: number }
+        serviceChargeAmount: { type: number }
+        salesAmount: { type: number }
+        netSalesAmount: { type: number }
+        coveredNetSalesAmount: { type: number }
+        coveredReferenceCostAmount: { type: number }
+        coveredReferenceMarginAmount: { type: number }
+        coveredReferenceMarginPercent: { type: [number, 'null'] }
+        costIssues: { type: array, items: { $ref: '#/components/schemas/ReferenceCostIssue' } }
+    ReferenceMarginPoint:
+      allOf:
+        - $ref: '#/components/schemas/ReferenceMarginSummary'
+        - type: object
+          properties:
+            bucketStartDate: { type: string, format: date }
+    ReferenceMarginOrder:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        orderCode: { type: string }
+        completedAt: { type: string, format: date-time }
+        serviceType: { type: string, enum: [DINE_IN, TAKEAWAY] }
+        sourceChannel: { type: string, enum: [CASHIER, WAITER, QR_STATIC, QR_TABLE] }
+        subtotalAmount: { type: number }
+        discountAmount: { type: number }
+        taxAmount: { type: number }
+        serviceChargeAmount: { type: number }
+        salesAmount: { type: number }
+        netSalesAmount: { type: number }
+        eligibleItemCount: { type: integer, format: int64 }
+        fullyCostedItemCount: { type: integer, format: int64 }
+        costCoverageStatus: { type: string, enum: [COMPLETE, PARTIAL, UNAVAILABLE] }
+        costIssues: { type: array, items: { $ref: '#/components/schemas/ReferenceCostIssue' } }
+        referenceCostAmount: { type: [number, 'null'] }
+        referenceMarginAmount: { type: [number, 'null'] }
+        referenceMarginPercent: { type: [number, 'null'] }
     Page:
       type: object
       properties:
@@ -254,6 +364,38 @@ components:
         fieldErrors: { type: object, additionalProperties: { type: string } }
         timestamp: { type: string, format: date-time }
   responses:
+    ReferenceMarginSummary:
+      description: Completed-order reference-margin summary envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties: { data: { $ref: '#/components/schemas/ReferenceMarginSummary' } }
+    ReferenceMarginSeries:
+      description: Zero-filled reference-margin series envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties: { data: { type: array, items: { $ref: '#/components/schemas/ReferenceMarginPoint' } } }
+    ReferenceMarginOrders:
+      description: Reference-margin reconciliation page envelope
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Page'
+                      - type: object
+                        properties: { content: { type: array, items: { $ref: '#/components/schemas/ReferenceMarginOrder' } } }
     Overview:
       description: Overview envelope
       content:

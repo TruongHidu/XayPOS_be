@@ -286,7 +286,23 @@ không chạy migrate schema public của database đang làm việc.
 V37 adds recipeEnabled/costConfigured to the private catalogue and freezes recipe/source
 decisions at order acceptance. Unknown reference cost is distinct from explicitly configured
 zero. Existing snapshots, reservations and ledger remain authoritative after catalogue changes.
-This phase does not add historical monetary costing or profit reports.
+V37 introduced no historical monetary costing or profit reports; V38 extends it below.
 See [API/Postman](docs/recipe-application-and-cost-config-api.md),
 [design and verification](docs/recipe-application-and-cost-config-implementation.md),
 and [FE integration](docs/recipe-application-and-cost-config-fe-sync.md).
+
+## Historical order-item reference cost — Phase 2
+
+V38 freezes versioned MANUAL/RECIPE reference cost at fresh acceptance in the
+existing recipe snapshot header/usages. COMPLETE includes configured zero;
+INCOMPLETE/UNAVAILABLE keep totals null. Legacy rows stay unpriced and are never
+backfilled from today's catalogue. RECIPE_USE copies its frozen tracked usage
+price; unknown/legacy stays null. This is reference cost, not guaranteed actual
+COGS or net profit; a snapshot does not mean inventory has been consumed.
+
+Read `/api/v1/orders/{orderId}/items/{orderItemId}/cost-snapshot` with ORDER_VIEW
+and REPORT_DETAIL_VIEW plus ORDER_MANAGEMENT and DETAIL_REPORT. The no-store
+summary exposes no ingredients and leaves recipe/public/KDS/realtime contracts
+unchanged. See [API/Postman](docs/order-reference-cost-snapshot-api.md),
+[design and migration](docs/order-reference-cost-snapshot-implementation.md), and
+[FE integration](docs/order-reference-cost-snapshot-fe-sync.md).

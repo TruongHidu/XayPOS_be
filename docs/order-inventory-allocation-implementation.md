@@ -1,6 +1,6 @@
 # Triển khai Giai đoạn 5 — allocation nguyên liệu
 
-> Phase 1 update (V37): V37 adds SNAPSHOT_RECIPE_DISABLED to the existing enum/CHECK. Catalogue changes do not rebuild allocations. Reservations, deferred history guards, append-only ledger and null RECIPE_USE unit costs retain their existing contracts. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+> V38 preserves allocation/reservation identity, lifecycle, deferred history and append-only ledger. RECIPE_USE now receives the exact frozen usage reference price through INVENTORY-owned RecipeUsageCostQuery and the ORDER adapter; known/zero is retained, unknown/legacy stays null. Catalogue changes never reprice old rows. See [reference-cost design](order-reference-cost-snapshot-implementation.md).
 
 ORDER sở hữu lifecycle và recipe snapshot. INVENTORY sở hữu allocation,
 reservation, balance và ledger. MENU sở hữu ingredient. Module trao đổi qua
@@ -66,8 +66,10 @@ Không CASCADE xóa lịch sử. V1–V32 giữ nguyên.
 
 Ledger thêm source_type mặc định STOCK_DOCUMENT cho lịch sử; không sửa dữ liệu
 ledger cũ qua trigger. STOCK_DOCUMENT giữ document references và unitCost hợp lệ;
-ORDER_ITEM chỉ dùng RECIPE_USE, order/item/reservation references, không có document
-và unitCost=null. Query đọc cả hai nguồn bằng snapshot tương ứng, không INNER JOIN
+ORDER_ITEM chỉ dùng RECIPE_USE, order/item/reservation references, không có document.
+V38 mở đúng nhánh CHECK và BEFORE INSERT so unitCost với frozen usage qua
+recipeUsageId: configured true bằng snapshot, unknown/legacy bắt null. Mọi kiểm
+identity/reservation/quantity/unit vẫn giữ. Query đọc cả hai nguồn bằng snapshot tương ứng, không INNER JOIN
 chứng từ làm mất RECIPE_USE và không Enum.valueOf(null). Ledger vẫn append-only.
 
 Upgrade V32 tạo SKIPPED/LEGACY_UNAVAILABLE cho mọi line đã gửi xác định bằng

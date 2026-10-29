@@ -1,6 +1,6 @@
 # Snapshot công thức khi gửi món — Giai đoạn 4
 
-> Phase 1 update (V37): Acceptance now freezes recipeEnabledSnapshot and costSourceSnapshot. RECIPE_DISABLED means MANUAL/no usages; FEATURE_DISABLED means RECIPE requested but unavailable, with no manual fallback. Legacy rows retain null metadata. Enabled items missing an active recipe reject acceptance. No monetary historical cost is captured. See [configuration API](recipe-application-and-cost-config-api.md) and [FE sync](recipe-application-and-cost-config-fe-sync.md).
+> V38: Acceptance freezes monetary reference cost in the existing header/usages, alongside the V37 source decision. This recipe API keeps its existing permissions and response without cost fields. Read the separate protected [cost summary API](order-reference-cost-snapshot-api.md); CAPTURED alone does not mean complete pricing. Old monetary metadata remains null and is never repriced.
 
 Snapshot này chốt **công thức và định lượng**, không phải giữ chỗ, trừ kho hoặc
 giá vốn thực tế. ORDER sở hữu snapshot; dữ liệu MENU được đọc qua internal port
@@ -35,12 +35,13 @@ AFTER_COMMIT. Create/append/QR approval replay không chốt lại hoặc tạo 
 | snapshotStatus | Ý nghĩa |
 | --- | --- |
 | CAPTURED | Có RECIPE_MANAGEMENT và active recipe hợp lệ khi chấp nhận món |
-| NO_RECIPE | Có feature nhưng lúc gửi món không có active recipe |
+| RECIPE_DISABLED | Món không áp dụng recipe; source MANUAL, không có usages |
+| NO_RECIPE | Quyết định lịch sử; fresh acceptance bật recipe nhưng thiếu active recipe trả ACTIVE_RECIPE_REQUIRED |
 | FEATURE_DISABLED | Lúc gửi món không có RECIPE_MANAGEMENT; bán hàng vẫn được phép |
 | LEGACY_UNAVAILABLE | Dòng đã gửi từ trước V32; không biết công thức thật lúc gửi |
 | NOT_SUBMITTED | Response-only cho dòng chưa gửi; không tạo row cho DRAFT |
 
-NO_RECIPE/FEATURE_DISABLED là quyết định bền vững, có header dù không có usage.
+RECIPE_DISABLED/NO_RECIPE/FEATURE_DISABLED là quyết định bền vững, có header dù không có usage.
 Thêm recipe hoặc đổi package sau này không áp ngược vào dòng cũ. Dòng mới đánh giá
 entitlement/recipe tại lần gửi mới. Không nhầm các trạng thái trên với trạng thái
 bếp, order hoặc reservation.
@@ -63,8 +64,9 @@ baseUnit hiện hành tại lúc capture, không tự quy đổi kg/g, lít/ml. 
 thiếu nguyên liệu hoặc nguyên liệu không hợp lệ là lỗi, không fallback NO_RECIPE.
 
 Tên/SKU/đơn vị/quantity/waste lấy từ đúng recipe version, trackInventory chốt từ
-ingredient hiện tại. Giữ cả nguyên liệu trackInventory=false. Không chốt unitCost,
-không ghi giá vốn thực tế hoặc warehouse vào snapshot giai đoạn này.
+ingredient hiện tại. Giữ cả nguyên liệu trackInventory=false. Từ V38, persistence
+chốt giá tham chiếu cho mọi usage; response recipe này không trả các số tiền đó.
+Không ghi actual COGS hoặc warehouse vào recipe snapshot.
 
 Sau khi chốt, đổi recipe, tên/SKU/giá/tracking, deactivate/soft-delete ingredient,
 cancel order/line hoặc COOKING/READY/SERVED đều không sửa snapshot. Không mở quyền
@@ -110,8 +112,8 @@ hiện có. Đây không phải API public QR. Header trả về: `Cache-Control
 }
 ```
 
-`recipeVersion` là business version, không phải lock_version. Với NO_RECIPE,
-FEATURE_DISABLED hoặc LEGACY_UNAVAILABLE, recipe fields null và ingredients=[].
+`recipeVersion` là business version, không phải lock_version. Với RECIPE_DISABLED,
+NO_RECIPE, FEATURE_DISABLED hoặc LEGACY_UNAVAILABLE, recipe fields null và ingredients=[].
 capturedAt là lúc quyết định với NO_RECIPE/FEATURE_DISABLED; null với legacy và
 NOT_SUBMITTED. Legacy orderQuantity/unit là dữ liệu dòng tại migration, không phải
 bằng chứng công thức từng được chốt. NOT_SUBMITTED dùng quantity/unit của DRAFT.
@@ -182,10 +184,11 @@ V32 chỉ đánh dấu các line có sent_to_kitchen_at là LEGACY_UNAVAILABLE; 
 recipe live, không tạo usage giả, không đổi order/item/version/tồn/audit cũ. DRAFT
 và dòng hủy trước khi gửi không có marker và vẫn capture khi gửi mới hợp lệ.
 
-Audit ORDER_ITEM_RECIPE_SNAPSHOTTED lưu summary orderId/orderItemId/status/recipe ID
-và business version, kể cả quyết định NO_RECIPE/FEATURE_DISABLED. Ghi qua batch
-AuditService trong transaction; không chép công thức/cost vào audit, không audit
-cho backfill legacy, không tạo audit thành công khi rollback hoặc replay.
+Audit ORDER_ITEM_RECIPE_SNAPSHOTTED lưu summary orderId/orderItemId/status/recipe ID,
+business version và source decision. V38 bổ sung monetary version/status/reason/
+unit/total trong cùng audit cho mỗi fresh decision, không thêm audit action thứ
+hai. Ghi qua batch AuditService trong transaction; không chép chi tiết ingredient,
+không audit cho legacy, không tạo audit thành công khi rollback hoặc replay.
 
 ## Điểm tích hợp và giới hạn
 
@@ -197,8 +200,9 @@ cho backfill legacy, không tạo audit thành công khi rollback hoặc replay.
   ORDER kiểm tra quyết định đã có bằng một batch query, không N+1.
 - API recipe cost-estimate vẫn tính bằng giá ingredient hiện tại, khác snapshot
   định lượng bất biến và khác giá vốn lịch sử.
-- V33 dùng snapshot để giữ chỗ/tiêu thụ/giải phóng qua allocation riêng. Snapshot
-  tiếp tục không lưu warehouse/cost; không unit conversion, FIFO hoặc tự ghi
+- V33 dùng snapshot để giữ chỗ/tiêu thụ/giải phóng qua allocation riêng. V38 thêm
+  reference cost trong persistence và [API summary riêng](order-reference-cost-snapshot-api.md);
+  snapshot không lưu warehouse; không unit conversion, FIFO hoặc tự ghi
   MENU_ITEM.costPrice. CAPTURED có từ trước V33 vẫn có allocation SKIPPED với
   skipReason=LEGACY_UNAVAILABLE.
 

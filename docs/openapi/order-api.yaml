@@ -1,7 +1,7 @@
 "openapi": "3.0.3"
 "info":
   "title": "POS SaaS Staff Order MVP"
-  "version": "1.6.0"
+  "version": "1.7.0"
   "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/single-item and bulk mark-ready/mark-served/complete/close operations are documented in kitchen-lifecycle-api.yaml. V23 grants KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN without bypassing snapshot features or user DENY; bulk body uses expectedOrderVersion. V24 complete DINE_IN atomically closes exactly order.tableSessionId after full payment, all live items SERVED and session readiness, with ORDER_COMPLETE+TABLE_CLOSE and ORDER_MANAGEMENT+TABLE_MANAGEMENT. TAKEAWAY requires only ORDER_COMPLETE+ORDER_MANAGEMENT and no TABLE operation. Complete body remains expectedVersion of ORDER and response remains OrderResponse; CLOSED retries are no-ops, legacy COMPLETED+OPEN repairs close only the session if ready. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including manual close/cancel according to existing policies; refresh/login required. V25 QR ordering uses separate guest pending-request and staff-approval APIs in public-qr-order-api.yaml. Staff hashes, DTOs and POS_QUICK_ORDER gate remain unchanged. V33 reserves tracked immutable snapshot usages during SUBMIT/confirm/append/QR approve; DRAFT and QR pending never reserve. Missing default warehouse or insufficient available stock returns 409 INVENTORY_DEFAULT_WAREHOUSE_REQUIRED/INSUFFICIENT_AVAILABLE_STOCK and rolls back the whole command. PENDING starts consume once; cancel PENDING releases without increasing physical. Durable SKIPPED never applies inventory later. Existing staff permissions suffice without inventory/recipe management permissions. Payment/complete do not deduct; table transfer preserves allocation warehouse. Allocation details remain separate in tenant-api.yaml and never enter ordinary OrderResponse. No /orders/from-table route; occupancy stays in TABLE."
 "security":
   -
@@ -606,6 +606,62 @@
         "404": {"$ref": "#/components/responses/NotFound"}
         "409": {"$ref": "#/components/responses/Conflict"}
         "500": {"$ref": "#/components/responses/Internal"}
+  "/api/v1/orders/{orderId}/items/{orderItemId}/cost-snapshot":
+    "get":
+      "operationId": "getOrderItemCostSnapshot"
+      "summary": "Read immutable historical reference-cost summary for one order line"
+      "description": >-
+        Requires ORDER_VIEW and REPORT_DETAIL_VIEW, ORDER_MANAGEMENT and DETAIL_REPORT,
+        with existing tenant/account/restaurant/subscription guards. No recipe/inventory
+        permission or feature is required for this summary. Reads immutable accepted
+        header facts only; no ingredient/recipe details, live catalogue lookup, audit or
+        version mutation. Fresh SUBMIT/confirm/append/QR approval captures version 1 in
+        the same acceptance transaction. COMPLETE includes configured zero; INCOMPLETE
+        and UNAVAILABLE have null totals. LEGACY_UNAVAILABLE has null monetary version,
+        basis, amounts and capture time, retaining only source metadata actually stored.
+        NOT_SUBMITTED has null source/monetary metadata and writes no row. Submitted lines
+        with missing/drifted headers return ORDER_ITEM_RECIPE_SNAPSHOT_CONFLICT; invalid
+        stored monetary version/status returns ORDER_COST_SNAPSHOT_CONFLICT. Cross-tenant
+        or wrong-order lines return 404. RECIPE totalCost is authoritative: sum of each
+        HALF_UP 2-decimal requiredQuantity * frozen ingredient price, including untracked
+        usages; unitCost is total/orderQuantity HALF_UP 2, never multiplied back to replace
+        total. This is catalogue reference cost at acceptance, not guaranteed actual COGS,
+        FIFO, net profit or evidence of inventory consumption. Existing recipe-snapshot,
+        OrderResponse, KDS/public QR/menu and ORDER_CHANGED retain their current fields
+        and permissions. No new realtime event or package/role/feature grants.
+      "security": [{"BearerAuth": []}]
+      "x-permission": "ORDER_VIEW and REPORT_DETAIL_VIEW"
+      "x-features": ["ORDER_MANAGEMENT", "DETAIL_REPORT"]
+      "parameters":
+        - {"name": "orderId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+        - {"name": "orderItemId", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+      "responses":
+        "200":
+          "description": "Immutable summary, LEGACY_UNAVAILABLE or NOT_SUBMITTED; nullable values are never implicit zero."
+          "headers": {"Cache-Control": {"schema": {"type": "string", "example": "no-store"}}}
+          "content":
+            "application/json":
+              "schema": {"$ref": "#/components/schemas/OrderCostSnapshot"}
+              "example":
+                "orderId": "11111111-1111-4111-8111-111111111111"
+                "orderItemId": "22222222-2222-4222-8222-222222222222"
+                "costSnapshotVersion": 1
+                "costBasis": "CATALOG_REFERENCE_AT_ACCEPTANCE"
+                "costSource": "RECIPE"
+                "costStatus": "COMPLETE"
+                "reason": null
+                "orderQuantity": 2.000
+                "orderUnit": "portion"
+                "currencyCode": "VND"
+                "unitCost": 25000.00
+                "totalCost": 50000.00
+                "costCapturedAt": "2026-10-27T08:00:00Z"
+        "400": {"$ref": "#/components/responses/BadRequest"}
+        "401": {"$ref": "#/components/responses/Unauthorized"}
+        "403": {"$ref": "#/components/responses/Forbidden"}
+        "404": {"$ref": "#/components/responses/NotFound"}
+        "409": {"$ref": "#/components/responses/Conflict"}
+        "500": {"$ref": "#/components/responses/Internal"}
 "components":
   "securitySchemes":
     "BearerAuth":
@@ -686,6 +742,24 @@
           "schema":
             "$ref": "#/components/schemas/Error"
   "schemas":
+    "OrderCostSnapshot":
+      "type": "object"
+      "additionalProperties": false
+      "required": ["orderId", "orderItemId", "costSnapshotVersion", "costBasis", "costSource", "costStatus", "reason", "orderQuantity", "orderUnit", "currencyCode", "unitCost", "totalCost", "costCapturedAt"]
+      "properties":
+        "orderId": {"type": "string", "format": "uuid"}
+        "orderItemId": {"type": "string", "format": "uuid"}
+        "costSnapshotVersion": {"type": "integer", "nullable": true, "enum": [1, null], "description": "Version 1 for fresh monetary decisions; null for legacy or not submitted."}
+        "costBasis": {"type": "string", "nullable": true, "enum": ["CATALOG_REFERENCE_AT_ACCEPTANCE", null], "description": "Null for legacy/not submitted; reference cost is not actual inventory valuation."}
+        "costSource": {"type": "string", "nullable": true, "enum": ["MANUAL", "RECIPE", null], "description": "Frozen source only; legacy retains stored source if any, never inferred from current toggle. Null for NOT_SUBMITTED."}
+        "costStatus": {"type": "string", "enum": ["COMPLETE", "INCOMPLETE", "UNAVAILABLE", "LEGACY_UNAVAILABLE", "NOT_SUBMITTED"], "description": "LEGACY_UNAVAILABLE and NOT_SUBMITTED are response-only. CAPTURED recipe status does not imply COMPLETE cost."}
+        "reason": {"type": "string", "nullable": true, "enum": ["MANUAL_COST_NOT_CONFIGURED", "INGREDIENT_COST_NOT_CONFIGURED", "RECIPE_FEATURE_DISABLED", null], "description": "INCOMPLETE uses its matching manual/ingredient reason; UNAVAILABLE uses recipe feature reason. Null for COMPLETE/legacy/not submitted."}
+        "orderQuantity": {"type": "number", "exclusiveMinimum": true, "minimum": 0, "multipleOf": 0.001}
+        "orderUnit": {"type": "string"}
+        "currencyCode": {"type": "string", "description": "Immutable ORDER currency; no conversion or aggregation across currencies."}
+        "unitCost": {"type": "number", "nullable": true, "minimum": 0, "multipleOf": 0.01, "description": "NUMERIC(38,2), COMPLETE only. Recipe presentation unit is total/orderQuantity HALF_UP 2; configured zero is valid."}
+        "totalCost": {"type": "number", "nullable": true, "minimum": 0, "multipleOf": 0.01, "description": "NUMERIC(38,2), COMPLETE only. Recipe authoritative sum of individually rounded tracked and untracked usage costs. Never treat null as zero or recalculate from rounded unitCost."}
+        "costCapturedAt": {"type": "string", "format": "date-time", "nullable": true, "description": "Acceptance timestamp for version 1, including INCOMPLETE/UNAVAILABLE; null for legacy/not submitted. Not a consumption timestamp."}
     "OrderSubmissionMode":
       "type": "string"
       "nullable": true

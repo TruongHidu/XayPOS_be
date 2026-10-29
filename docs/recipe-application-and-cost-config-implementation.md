@@ -1,5 +1,10 @@
 # Implementation — recipe application and reference-cost configuration
 
+This document records Phase 1/V37. V38 adds [monetary snapshots and ledger price guards](order-reference-cost-snapshot-implementation.md)
+without changing the catalogue configuration contract below. Existing monetary
+history stays null; new RECIPE_USE uses the exact known/zero usage price or null
+for unknown/legacy.
+
 ## Ownership and boundaries
 
 MENU owns `Item.recipeEnabled` and `Item.costConfigured`. ReferenceCostConfigurationPolicy normalizes create/patch semantics without persistence. RecipeApplicationPolicy validates enabling against the existing feature, recipe and ingredient rules. Controllers and existing mutation permissions remain unchanged.
@@ -28,7 +33,9 @@ Catalogue mutations, receipt updates and order acceptance retain the restaurant 
 
 V37 adds catalogue flags, validates ingredient/application and unknown-price pairs, classifies current catalogue data, expands snapshot/allocation decision enums and adds nullable legacy-compatible source metadata. New non-legacy decision inserts require metadata. Existing update/delete guards cover the new snapshot columns too.
 
-No old immutable rows are updated, no ledger trigger is disabled, and RECIPE_USE.unit_cost remains null. Migration V1–V36 bytes are preserved. Historical monetary costing remains Phase 2.
+V37 updated no old immutable rows, disabled no ledger trigger and retained null
+RECIPE_USE.unit_cost. Migration V1–V36 bytes were preserved. V38 now extends new
+acceptance/consume as described in the Phase 2 document linked above.
 
 ## Verification
 

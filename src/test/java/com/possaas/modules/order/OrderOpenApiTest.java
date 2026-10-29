@@ -11,7 +11,7 @@ class OrderOpenApiTest {
     private JsonNode document() throws Exception {
         try(var input=Files.newInputStream(Path.of("docs/openapi/order-api.yaml"))) { return new ObjectMapper().valueToTree(new Yaml().load(input)); }
     }
-    @Test void documentCoversElevenPrivateOperationsAndResolvesEveryReference() throws Exception {
+    @Test void documentCoversTwelvePrivateOperationsAndResolvesEveryReference() throws Exception {
         var root=document(); var operations=new HashSet<String>();
         root.path("paths").fields().forEachRemaining(path->{
             assertThat(path.getKey().startsWith("/api/v1/orders") ||
@@ -24,7 +24,7 @@ class OrderOpenApiTest {
                 for(String status:List.of("400","401","403","404","409","500")) assertThat(operation.path("responses").has(status)).isTrue();
             });
         });
-        assertThat(operations).hasSize(11); references(root,root);
+        assertThat(operations).hasSize(12); references(root,root);
         var create=root.at("/paths/~1api~1v1~1orders/post");
         assertThat(create.path("parameters").get(0).path("name").asText()).isEqualTo("Idempotency-Key");
         assertThat(create.path("parameters").get(0).path("required").asBoolean()).isTrue();
@@ -35,8 +35,8 @@ class OrderOpenApiTest {
         for(String name:List.of("restaurantId","createdBy","unitPrice","status","paymentStatus","currencyCode","totalAmount")) assertThat(request.has(name)).isFalse();
         assertThat(request.at("/sourceChannel/enum").toString()).contains("CASHIER","WAITER").doesNotContain("QR_TABLE","QR_STATIC");
         var order=root.at("/components/schemas/Order/properties");
-        for(String name:List.of("costPrice","requestHash","idempotencyKey","mutationSequence","metadata")) assertThat(order.has(name)).isFalse();
-        assertThat(root.at("/components/schemas/OrderItem/properties").has("costPrice")).isFalse();
+        for(String name:List.of("costPrice","requestHash","idempotencyKey","mutationSequence","metadata","unitCost","totalCost","costStatus","costSnapshotVersion")) assertThat(order.has(name)).isFalse();
+        for(String name:List.of("costPrice","unitCost","totalCost","costStatus","costSnapshotVersion"))assertThat(root.at("/components/schemas/OrderItem/properties").has(name)).isFalse();
         assertThat(root.at("/components/schemas/UpdateItem/required").toString()).contains("expectedVersion");
     }
     @Test void recipeSnapshotIsSeparateReadOnlyPrivateOperationWithAccurateExample() throws Exception {
@@ -61,6 +61,21 @@ class OrderOpenApiTest {
         assertThat(operation.path("description").asText()).contains("TABLE_OPEN","after replay","create-table-submit-v1");
         assertThat(operation.at("/requestBody/content/application~1json/examples/submitFromTable/value/submissionMode").asText()).isEqualTo("SUBMIT");
         assertThat(root.at("/paths/~1api~1v1~1orders~1from-table").isMissingNode()).isTrue();
+    }
+    @Test void costSummaryIsPrivateReadOnlyAndKeepsRecipeDetailsOutsideItsSchema()throws Exception {
+        var root=document();var path=root.at("/paths/~1api~1v1~1orders~1{orderId}~1items~1{orderItemId}~1cost-snapshot");
+        assertThat(path.size()).isEqualTo(1);var operation=path.path("get");
+        assertThat(operation.path("description").asText()).contains("ORDER_VIEW","REPORT_DETAIL_VIEW","ORDER_MANAGEMENT","DETAIL_REPORT");
+        assertThat(operation.path("parameters").size()).isEqualTo(2);assertThat(operation.has("requestBody")).isFalse();
+        assertThat(operation.at("/responses/200/headers/Cache-Control/schema/example").asText()).isEqualTo("no-store");
+        String ref=operation.at("/responses/200/content/application~1json/schema/$ref").asText();assertThat(ref).startsWith("#/components/schemas/");
+        var properties=root.at(ref.substring(1)).path("properties");
+        for(String field:List.of("orderId","orderItemId","costSnapshotVersion","costBasis","costSource","costStatus","reason","orderQuantity","orderUnit","currencyCode","unitCost","totalCost","costCapturedAt"))assertThat(properties.has(field)).as(field).isTrue();
+        for(String field:List.of("ingredients","ingredientId","recipeId","requiredQuantity","costConfigured"))assertThat(properties.has(field)).as(field).isFalse();
+        assertThat(properties.at("/costStatus/enum").toString()).contains("COMPLETE","INCOMPLETE","UNAVAILABLE","LEGACY_UNAVAILABLE","NOT_SUBMITTED");
+        for(String field:List.of("costSnapshotVersion","costSource","unitCost","totalCost","costCapturedAt"))assertThat(properties.path(field).path("nullable").asBoolean()).as(field).isTrue();
+        var recipe=root.at("/components/schemas/OrderRecipeSnapshot/properties");
+        for(String field:List.of("unitCost","totalCost","costStatus","costSnapshotVersion"))assertThat(recipe.has(field)).as(field).isFalse();
     }
     private void references(JsonNode node,JsonNode root) {
         if(node.has("$ref")) { String ref=node.path("$ref").asText(); assertThat(ref).startsWith("#/"); assertThat(root.at(ref.substring(1)).isMissingNode()).as(ref).isFalse(); }

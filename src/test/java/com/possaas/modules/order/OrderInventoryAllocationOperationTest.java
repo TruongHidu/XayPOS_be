@@ -37,6 +37,9 @@ class OrderInventoryAllocationOperationTest {
         var tracked = usage(firstSnapshot, true, "315.001");
         var untracked = usage(firstSnapshot, false, "999.999");
         var other = usage(secondSnapshot, true, "0.001");
+        var entitlement=mock(com.possaas.modules.subscription.domain.CurrentEntitlement.class);
+        when(entitlement.hasFeature("INVENTORY_MANAGEMENT")).thenReturn(true);
+        when(capture.capture(root,List.of(first,second),actor,now,"ip")).thenReturn(entitlement);
         when(snapshots.findAllByRestaurantIdAndOrderItemIdIn(eq(tenant), anyCollection()))
                 .thenReturn(List.of(secondSnapshot, firstSnapshot));
         when(usages.findAllByRestaurantIdAndRecipeSnapshotIdInOrderByRecipeSnapshotIdAscIngredientIdAsc(
@@ -49,7 +52,7 @@ class OrderInventoryAllocationOperationTest {
         sequence.verify(capture).capture(root, List.of(first, second), actor, now, "ip");
         sequence.verify(snapshots).findAllByRestaurantIdAndOrderItemIdIn(tenant, List.of(first.getId(), second.getId()));
         sequence.verify(usages).findAllByRestaurantIdAndRecipeSnapshotIdInOrderByRecipeSnapshotIdAscIngredientIdAsc(eq(tenant), anyCollection());
-        sequence.verify(inventory).reserve(eq(actor), eq(orderId), sent.capture(), eq(now), eq("ip"));
+        sequence.verify(inventory).reserve(eq(actor), eq(orderId), sent.capture(), eq(true), eq(now), eq("ip"));
         var decisions = sent.getValue();
         assertThat(decisions).extracting(AcceptedItem::orderItemId).containsExactly(first.getId(), second.getId());
         assertThat(decisions.getFirst().recipeSnapshotId()).isEqualTo(firstSnapshot.getId());
@@ -125,12 +128,13 @@ class OrderInventoryAllocationOperationTest {
     }
     private OrderItemRecipeSnapshot snapshot(OrderItem line) {
         var value = new OrderItemRecipeSnapshot(line, RecipeSnapshotStatus.CAPTURED, UUID.randomUUID(), 1,
-                new BigDecimal("10.000"), "portion", now);
+                new BigDecimal("10.000"), "portion", now, true, OrderCostSnapshot.complete(BigDecimal.ZERO,BigDecimal.ZERO));
         ReflectionTestUtils.setField(value, "id", UUID.randomUUID()); return value;
     }
     private OrderItemRecipeUsage usage(OrderItemRecipeSnapshot snapshot, boolean tracked, String quantity) {
         var value = new OrderItemRecipeUsage(tenant, snapshot.getId(), UUID.randomUUID(), "Ingredient", "ING", "g",
-                new BigDecimal("1000.000"), new BigDecimal("5.00"), tracked, new BigDecimal(quantity), now);
+                new BigDecimal("1000.000"), new BigDecimal("5.00"), tracked, new BigDecimal(quantity), now,
+                new OrderIngredientCostSnapshot(true,BigDecimal.ZERO,BigDecimal.ZERO));
         ReflectionTestUtils.setField(value, "id", UUID.randomUUID()); return value;
     }
 }

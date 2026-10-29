@@ -15,6 +15,13 @@ thiếu available hoặc kho default trả 409 và request vẫn PENDING. Sau b�
 staff review/approve lại theo version/hash/quote guard. Replay không giữ kho thêm.
 Ingredient/allocation/cost không xuất hiện trong public QR response.
 
+V38 chốt giá vốn tham chiếu cùng acceptance lúc staff approve, không ở guest
+PENDING/review. Giá thay đổi trước approve được đọc tại approve; replay dùng
+snapshot đã lưu. Monetary/audit/inventory error rollback toàn bộ approval và
+giữ request PENDING. Thiếu cấu hình giá thông thường tạo INCOMPLETE và vẫn cho
+approve hợp lệ. [Summary giá vốn](order-reference-cost-snapshot-api.md) là API
+staff với quyền riêng; không mở cho guest hoặc thêm monetary fields vào QR DTO.
+
 Quote/hash/request DTO giữ contract hiện có.
 
 `QrOrderRequest` là yêu cầu của khách, không phải order. PENDING không mở phiên, tạo order/order_items, gửi bếp, tính vào bill, làm bàn bận hoặc đặt giữ bàn. Sau approval mới có order/món và history/audit nghiệp vụ. `QrOrderRequest.PENDING` khác `OrderItem.PENDING` (món đã được duyệt vào order, chờ chế biến).

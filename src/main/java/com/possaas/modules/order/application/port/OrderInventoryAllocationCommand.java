@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /** Synchronous internal inventory side effects; the caller holds the restaurant mutation lock. */
 public interface OrderInventoryAllocationCommand {
-    void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, Instant now, String ip);
+    void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, boolean inventoryEnabled, Instant now, String ip);
     void consume(CurrentUser actor, UUID orderId, Collection<UUID> itemIds, Instant now, String ip);
     void release(CurrentUser actor, UUID orderId, Collection<UUID> itemIds, Instant now, String ip);
 

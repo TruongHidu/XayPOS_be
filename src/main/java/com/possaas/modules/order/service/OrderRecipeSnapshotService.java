@@ -10,6 +10,8 @@ import com.possaas.modules.order.entity.*;
 import com.possaas.modules.order.repository.OrderItemRecipeSnapshotRepository;
 import com.possaas.modules.order.repository.OrderItemRecipeUsageRepository;
 import com.possaas.modules.subscription.application.port.CurrentEntitlementQuery;
+import com.possaas.modules.subscription.domain.CurrentEntitlement;
+import com.possaas.modules.order.service.cost.OrderCostSnapshotPreparation;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Function;
@@ -29,9 +31,10 @@ public class OrderRecipeSnapshotService {
     private final RecipeUsageQuantityCalculator calculator;
     private final OrderRecipeSnapshotPolicy policy;
     private final AuditService audit;
+    private final OrderCostSnapshotPreparation costs;
 
-    public void capture(Order order, List<OrderItem> accepted, CurrentUser actor, Instant now, String ip) {
-        if (accepted.isEmpty()) return;
+    public CurrentEntitlement capture(Order order, List<OrderItem> accepted, CurrentUser actor, Instant now, String ip) {
+        if (accepted.isEmpty()) return null;
         if (!order.getRestaurantId().equals(actor.restaurantId())) throw policy.conflict();
         for (OrderItem line : accepted) {
             if (line.getId() == null || !actor.restaurantId().equals(line.getRestaurantId())
@@ -47,15 +50,20 @@ public class OrderRecipeSnapshotService {
             else if (line.getSentToKitchenAt() != null) throw policy.conflict();
             else if (line.getStatus() == OrderItemStatus.PENDING) fresh.add(line);
         }
-        if (fresh.isEmpty()) return;
-        boolean enabled = entitlements.getForRestaurant(actor.restaurantId()).hasFeature("RECIPE_MANAGEMENT");
+        if (fresh.isEmpty()) return null;
+        // One acceptance entitlement supplies recipe and subsequent inventory decisions.
+        var entitlement=entitlements.getForRestaurant(actor.restaurantId());
+        boolean enabled=entitlement.hasFeature("RECIPE_MANAGEMENT");
         var menuIds = fresh.stream().map(OrderItem::getItemId).distinct().toList();
         var settings = recipes.findRecipeSettings(actor.restaurantId(), menuIds);
-        if (!settings.keySet().containsAll(menuIds)) throw policy.conflict();
+        if (settings==null || !settings.keySet().containsAll(menuIds)
+                || menuIds.stream().anyMatch(id->settings.get(id)==null)) throw policy.conflict();
         var appliedIds = menuIds.stream().filter(id -> Boolean.TRUE.equals(settings.get(id))).toList();
         var current = enabled && !appliedIds.isEmpty() ? recipes.findActive(actor.restaurantId(), appliedIds)
                 : Map.<UUID, RecipeDefinition>of();
+        if(current==null) throw invalid();
         List<OrderItemRecipeSnapshot> headers = new ArrayList<>();
+        Map<UUID,RecipeSnapshotStatus> statuses=new HashMap<>();
         Map<UUID, List<Usage>> prepared = new HashMap<>();
         for (OrderItem line : fresh) {
             RecipeDefinition recipe = current.get(line.getItemId());
@@ -75,9 +83,17 @@ public class OrderRecipeSnapshotService {
                 }).toList();
                 prepared.put(line.getId(), quantities);
             }
-            headers.add(new OrderItemRecipeSnapshot(line, status, recipe == null ? null : recipe.id(),
-                    recipe == null ? null : recipe.version(), recipe == null ? null : recipe.yieldQuantity(),
-                    recipe == null ? null : recipe.yieldUnit(), now, requested));
+            statuses.put(line.getId(),status);
+        }
+        var money=costs.prepare(order,fresh.stream().map(line->new OrderCostSnapshotPreparation.Input(
+            line.getId(),line.getItemId(),line.getUnit(),line.getQuantity(),statuses.get(line.getId()),
+            prepared.getOrDefault(line.getId(),List.of()).stream().map(usage->new OrderCostSnapshotPreparation.Usage(
+                usage.ingredient().id(),usage.ingredient().unit(),usage.quantity())).toList())).toList());
+        for(var line:fresh) {
+            var recipe=current.get(line.getItemId());
+            headers.add(new OrderItemRecipeSnapshot(line,statuses.get(line.getId()),recipe==null?null:recipe.id(),
+                recipe==null?null:recipe.version(),recipe==null?null:recipe.yieldQuantity(),
+                recipe==null?null:recipe.yieldUnit(),now,settings.get(line.getItemId()),money.get(line.getId()).summary()));
         }
         snapshots.saveAllAndFlush(headers);
         List<OrderItemRecipeUsage> details = new ArrayList<>();
@@ -87,19 +103,26 @@ public class OrderRecipeSnapshotService {
                 var ingredient = usage.ingredient();
                 details.add(new OrderItemRecipeUsage(actor.restaurantId(), header.getId(), ingredient.id(),
                         ingredient.name(), ingredient.sku(), ingredient.unit(), ingredient.recipeQuantity(),
-                        ingredient.wastePercent(), ingredient.trackInventory(), usage.quantity(), now));
+                        ingredient.wastePercent(), ingredient.trackInventory(), usage.quantity(), now,
+                        money.get(header.getOrderItemId()).ingredients().get(ingredient.id())));
             }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("orderId", order.getId()); after.put("orderItemId", header.getOrderItemId());
             after.put("snapshotStatus", header.getSnapshotStatus());
             after.put("recipeEnabledSnapshot", header.getRecipeEnabledSnapshot());
             after.put("costSourceSnapshot", header.getCostSourceSnapshot());
+            after.put("costSnapshotVersion",header.getCostSnapshotVersion());
+            after.put("costStatus",header.getCostStatus());
+            after.put("costUnavailableReason",header.getCostUnavailableReason());
+            after.put("unitCostSnapshot",header.getUnitCostSnapshot());
+            after.put("totalCostSnapshot",header.getTotalCostSnapshot());
             after.put("recipeId", header.getRecipeId()); after.put("recipeVersion", header.getRecipeVersion());
             events.add(new AuditRecordCommand(actor.restaurantId(), actor.userId(), "ORDER_ITEM_RECIPE_SNAPSHOTTED",
                     "order_item_recipe_snapshots", header.getId(), null, after, ip));
         }
         if (!details.isEmpty()) usages.saveAllAndFlush(details);
         audit.recordAll(events);
+        return entitlement;
     }
 
     private void requireRecipe(RecipeDefinition recipe, OrderItem line) {

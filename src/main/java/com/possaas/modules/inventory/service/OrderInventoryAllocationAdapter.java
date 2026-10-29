@@ -2,10 +2,11 @@ package com.possaas.modules.inventory.service;
 
 import com.possaas.common.exception.ConflictException;
 import com.possaas.common.security.CurrentUser;
+import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery;
+import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery.UsageCost;
 import com.possaas.modules.inventory.entity.*;
 import com.possaas.modules.inventory.repository.*;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand;
-import com.possaas.modules.subscription.application.port.CurrentEntitlementQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
@@ -25,14 +26,15 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
     private final InventoryBalanceRepository balances;
     private final InventoryTransactionWriteRepository transactions;
     private final WarehouseRepository warehouses;
-    private final CurrentEntitlementQuery entitlements;
+    private final RecipeUsageCostQuery usageCosts;
     private final InventoryAllocationPolicy policy;
     private final InventoryAvailabilityPolicy availability;
     private final InventoryAllocationAudit audit;
     private final LowStockAlertReconciliationService alerts;
 
     @Override
-    public void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, Instant now, String ip) {
+    public void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, boolean inventoryEnabled,
+            Instant now, String ip) {
         if (items.isEmpty()) return;
         requireInput(items);
         List<UUID> ids = items.stream().map(AcceptedItem::orderItemId).toList();
@@ -47,8 +49,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
                 policy.matchesUsages(existing, item, state.details(existing));
             }
         }
-        boolean enabled = !fresh.isEmpty()
-                && entitlements.getForRestaurant(actor.restaurantId()).hasFeature("INVENTORY_MANAGEMENT");
+        boolean enabled = !fresh.isEmpty() && inventoryEnabled;
         Map<UUID, InventoryAllocationSkipReason> decisions = new HashMap<>();
         boolean needsWarehouse = false;
         for (AcceptedItem item : fresh) {
@@ -124,7 +125,10 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
                     BigDecimal before = balance.getQuantity();
                     BigDecimal after = availability.quantity(before.subtract(amount));
                     balance.applyQuantityChange(amount.negate(), now);
-                    transactions.append(InventoryTransaction.recipeUse(allocation, reservation, before, after, actor.userId(), now));
+                    BigDecimal unitCost = policy.usageUnitCost(allocation, reservation,
+                            state.costs().get(reservation.getRecipeUsageId()));
+                    transactions.append(InventoryTransaction.recipeUse(allocation, reservation, before, after,
+                            unitCost, actor.userId(), now));
                 }
                 balance.applyReservationChange(amount.negate(), now);
             }
@@ -158,15 +162,18 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
         List<InventoryReservation> details = headers.isEmpty() ? List.of() : reservations.findAllForAllocations(tenant,
                 headers.stream().map(OrderItemInventoryAllocation::getId).toList());
         Map<UUID, List<InventoryReservation>> byAllocation = details.stream().collect(Collectors.groupingBy(InventoryReservation::getAllocationId));
+        List<UUID> usageIds = details.stream().map(InventoryReservation::getRecipeUsageId).distinct().toList();
+        Map<UUID, UsageCost> costs = usageIds.isEmpty() ? Map.of() : usageCosts.findCosts(tenant, usageIds);
+        if (costs == null) throw InventoryAllocationPolicy.conflict();
         Map<UUID, InventoryTransaction> ledger = new HashMap<>();
         for (InventoryTransaction transaction : transactions.findForReservations(tenant,
                 details.stream().map(InventoryReservation::getId).toList()))
             if (ledger.put(transaction.getReservationId(), transaction) != null) throw InventoryAllocationPolicy.conflict();
         for (OrderItemInventoryAllocation header : headers)
-            policy.history(header, byAllocation.getOrDefault(header.getId(), List.of()), ledger);
+            policy.history(header, byAllocation.getOrDefault(header.getId(), List.of()), ledger, costs);
         return new State(headers.stream().collect(Collectors.toMap(OrderItemInventoryAllocation::getOrderItemId, Function.identity())),
                 byAllocation, details.stream().map(detail -> new BalanceKey(detail.getWarehouseId(), detail.getIngredientId()))
-                    .collect(Collectors.toSet()));
+                    .collect(Collectors.toSet()), costs);
     }
 
     private Map<BalanceKey, InventoryBalance> balanceState(UUID tenant, Set<BalanceKey> keys, boolean lock,
@@ -214,7 +221,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
 
     private record BalanceKey(UUID warehouseId, UUID ingredientId) {}
     private record State(Map<UUID, OrderItemInventoryAllocation> headers,
-            Map<UUID, List<InventoryReservation>> reservations, Set<BalanceKey> keys) {
+            Map<UUID, List<InventoryReservation>> reservations, Set<BalanceKey> keys, Map<UUID, UsageCost> costs) {
         List<InventoryReservation> details(OrderItemInventoryAllocation allocation) {
             return reservations.getOrDefault(allocation.getId(), List.of());
         }

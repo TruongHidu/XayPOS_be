@@ -32,14 +32,17 @@ public class OrderItemRecipeSnapshot {
     @Column(name = "captured_at", updatable = false) private Instant capturedAt;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
 
-    public OrderItemRecipeSnapshot(OrderItem line, RecipeSnapshotStatus status, UUID recipeId,
-            Integer recipeVersion, BigDecimal yieldQuantity, String yieldUnit, Instant now) {
-        this(line, status, recipeId, recipeVersion, yieldQuantity, yieldUnit, now,
-                status == RecipeSnapshotStatus.LEGACY_UNAVAILABLE ? null : status != RecipeSnapshotStatus.RECIPE_DISABLED);
-    }
+    @Column(name="cost_snapshot_version",updatable=false) private Short costSnapshotVersion;
+    @Enumerated(EnumType.STRING) @Column(name="cost_status",length=30,updatable=false) private OrderCostStatus costStatus;
+    @Enumerated(EnumType.STRING) @Column(name="cost_unavailable_reason",length=60,updatable=false) private OrderCostUnavailableReason costUnavailableReason;
+    @Column(name="unit_cost_snapshot",precision=38,scale=2,updatable=false) private BigDecimal unitCostSnapshot;
+    @Column(name="total_cost_snapshot",precision=38,scale=2,updatable=false) private BigDecimal totalCostSnapshot;
 
     public OrderItemRecipeSnapshot(OrderItem line, RecipeSnapshotStatus status, UUID recipeId,
-            Integer recipeVersion, BigDecimal yieldQuantity, String yieldUnit, Instant now, Boolean recipeEnabled) {
+            Integer recipeVersion, BigDecimal yieldQuantity, String yieldUnit, Instant now, Boolean recipeEnabled, OrderCostSnapshot cost) {
+        java.util.Objects.requireNonNull(cost,"Explicit monetary decision is required");
+        this.costSnapshotVersion=cost.version(); this.costStatus=cost.status(); this.costUnavailableReason=cost.reason();
+        this.unitCostSnapshot=cost.unitCost(); this.totalCostSnapshot=cost.totalCost();
         this.recipeEnabledSnapshot = recipeEnabled;
         this.costSourceSnapshot = recipeEnabled == null ? null : recipeEnabled ? OrderCostSource.RECIPE : OrderCostSource.MANUAL;
         this.restaurantId = line.getRestaurantId(); this.orderItemId = line.getId();

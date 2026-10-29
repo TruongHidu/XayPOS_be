@@ -27,8 +27,14 @@ public class OrderItemRecipeUsage {
     @Column(name = "required_quantity", nullable = false, precision = 14, scale = 3, updatable = false) private BigDecimal requiredQuantity;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
 
+    @Column(name="cost_configured_snapshot",updatable=false) private Boolean costConfiguredSnapshot;
+    @Column(name="unit_cost_snapshot",precision=14,scale=2,updatable=false) private BigDecimal unitCostSnapshot;
+    @Column(name="line_cost_snapshot",precision=38,scale=2,updatable=false) private BigDecimal lineCostSnapshot;
+
     public OrderItemRecipeUsage(UUID tenant, UUID snapshotId, UUID ingredientId, String name, String sku,
-            String unit, BigDecimal recipeQuantity, BigDecimal waste, boolean tracked, BigDecimal required, Instant now) {
+            String unit, BigDecimal recipeQuantity, BigDecimal waste, boolean tracked, BigDecimal required, Instant now, OrderIngredientCostSnapshot cost) {
+        java.util.Objects.requireNonNull(cost,"Explicit ingredient monetary decision is required");
+        this.costConfiguredSnapshot=cost.configured();this.unitCostSnapshot=cost.unitCost();this.lineCostSnapshot=cost.lineCost();
         this.restaurantId = tenant; this.recipeSnapshotId = snapshotId; this.ingredientId = ingredientId;
         this.ingredientNameSnapshot = name; this.ingredientSkuSnapshot = sku; this.ingredientUnitSnapshot = unit;
         this.recipeQuantitySnapshot = recipeQuantity; this.wastePercentSnapshot = waste;

@@ -83,11 +83,12 @@ public class InventoryTransaction {
     }
 
     public static InventoryTransaction recipeUse(OrderItemInventoryAllocation allocation,
-            InventoryReservation reservation, BigDecimal before, BigDecimal after, UUID actor, Instant now) {
+            InventoryReservation reservation, BigDecimal before, BigDecimal after, BigDecimal unitCost,
+            UUID actor, Instant now) {
         InventoryTransaction transaction = new InventoryTransaction(allocation.getRestaurantId(),
                 reservation.getWarehouseId(), reservation.getIngredientId(), InventoryTransactionType.RECIPE_USE,
                 null, null, reservation.getQuantity().negate(), before, after,
-                reservation.getIngredientUnitSnapshot(), null,
+                reservation.getIngredientUnitSnapshot(), unitCost,
                 "RECIPE_USE:" + allocation.getOrderItemId() + ":" + reservation.getIngredientId(), actor, now);
         transaction.sourceType = InventorySourceType.ORDER_ITEM;
         transaction.orderId = allocation.getOrderId(); transaction.orderItemId = allocation.getOrderItemId();

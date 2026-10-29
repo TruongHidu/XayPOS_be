@@ -2,6 +2,11 @@
 
 This phase adds catalogue configuration and immutable source decisions. It does not capture monetary consumption costs, populate RECIPE_USE.unit_cost, or add profit reports.
 
+V38 extends these source decisions with [historical reference-cost snapshots](order-reference-cost-snapshot-api.md)
+at acceptance and frozen usage prices on new RECIPE_USE rows. The catalogue
+configuration contract below remains unchanged; the Phase 1 scope statement
+above describes V37. Legacy monetary fields are never backfilled.
+
 ## Catalogue fields
 
 Private menu responses add `recipeEnabled` and `costConfigured`. Ingredient responses add `costConfigured`. Existing `costPrice` remains numeric and non-negative.
