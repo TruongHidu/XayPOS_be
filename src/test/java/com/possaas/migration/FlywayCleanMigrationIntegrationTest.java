@@ -62,8 +62,10 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("38");
-            assertThat(countTables(schema)).isEqualTo(41);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("39");
+            assertThat(countTables(schema)).isEqualTo(43);
+            assertThat(tableExists(schema, "cashbook_categories")).isTrue();
+            assertThat(tableExists(schema, "cashbook_expenses")).isTrue();
             assertThat(tableExists(schema, "stock_audits")).isTrue();
             assertThat(tableExists(schema, "stock_audit_items")).isTrue();
             assertThat(indexExists(schema, "ux_stock_audit_counting")).isTrue();

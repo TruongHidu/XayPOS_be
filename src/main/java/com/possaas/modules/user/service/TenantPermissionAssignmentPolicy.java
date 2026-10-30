@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class TenantPermissionAssignmentPolicy {
-    private static final Set<String> MODULES = Set.of("MENU", "TABLE", "ORDER", "KITCHEN", "PAYMENT", "STAFF", "INVENTORY", "REPORT", "AI");
+    private static final Set<String> MODULES = Set.of("MENU", "TABLE", "ORDER", "KITCHEN", "PAYMENT", "STAFF", "INVENTORY", "REPORT", "AI", "CASHBOOK");
     private static final Set<String> FORBIDDEN = Set.of("ADMIN_DASHBOARD_VIEW", "RESTAURANT_VIEW", "RESTAURANT_MANAGE",
         "AUDIT_VIEW", "PACKAGE_VIEW", "PACKAGE_MANAGE", "SUBSCRIPTION_VIEW", "SUBSCRIPTION_MANAGE");
 

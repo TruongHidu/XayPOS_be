@@ -67,3 +67,6 @@ Body lỗi dùng format chung `{"success":false,"code":"...","message":"...","fi
 ## Hướng mở rộng SePay
 
 `restaurantId` → tài khoản ngân hàng đã liên kết của nhà hàng → `PaymentIntent`/attempt `PENDING` chứa amount snapshot, mã chuyển khoản duy nhất và expiry → trạng thái checkout/chốt bill riêng để khóa gọi thêm → QR động → IPN/webhook đã xác thực → đối soát đúng tài khoản/mã/số tiền → gọi settlement chung để chuyển `SUCCESS`. Webhook là endpoint server-to-server riêng, không dùng JWT nhân viên. Chỉ sau khi xác thực nguồn webhook mới định danh restaurant từ tài khoản ngân hàng đã liên kết. Dedupe theo `(provider,providerTransactionId)` (partial unique toàn hệ thống, cả tenant), không dùng `Idempotency-Key` của nhân viên. Sai mã/tài khoản/số tiền hoặc intent hết hạn đưa vào đối soát thủ công, không tự đánh dấu `PAID`; cần job đối soát dự phòng cho webhook chậm/thất lạc. Không trộn dòng tiền subscription của nhà hàng với payment đơn món của khách.
+
+
+V39 bổ sung [CASHBOOK — sổ thu chi](cashbook-api.md). Payment SUCCESS là thu; chỉ phiếu chi POSTED là chi. Phiếu nhập CONFIRMED không tự tạo khoản chi. Báo cáo giá vốn và dữ liệu kho giữ semantics hiện có.

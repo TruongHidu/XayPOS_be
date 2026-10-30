@@ -306,3 +306,12 @@ summary exposes no ingredients and leaves recipe/public/KDS/realtime contracts
 unchanged. See [API/Postman](docs/order-reference-cost-snapshot-api.md),
 [design and migration](docs/order-reference-cost-snapshot-implementation.md), and
 [FE integration](docs/order-reference-cost-snapshot-fe-sync.md).
+
+
+## Cashbook
+
+V39 bổ sung sổ thu chi từ payment SUCCESS và phiếu chi POSTED; tạo/void phiếu chi,
+đối chiếu receipt, filter/timezone/currency và permission CASHBOOK riêng. Confirm
+nhập kho không tự ghi chi; dòng tiền không phải lợi nhuận. Currency receipt mới
+được chốt khi tạo, lịch sử cũ giữ UNKNOWN. Xem [API](docs/cashbook-api.md),
+[OpenAPI](docs/openapi/cashbook-api.yaml), [FE sync](docs/cashbook-fe-sync.md).

@@ -318,3 +318,6 @@ trước V33 là SKIPPED/LEGACY_UNAVAILABLE kể cả snapshot CAPTURED; không 
 Giá bình quân ingredient có thể đổi sau RECEIPT mà snapshot/reservation cũ giữ nguyên.
 V38 thêm [summary giá vốn tham chiếu lịch sử](order-reference-cost-snapshot-api.md)
 trong ORDER với quyền đọc riêng; snapshot tồn tại không đồng nghĩa đã tiêu thụ.
+
+
+V39 bổ sung [CASHBOOK — sổ thu chi](cashbook-api.md). Payment SUCCESS là thu; chỉ phiếu chi POSTED là chi. Phiếu nhập CONFIRMED không tự tạo khoản chi. Báo cáo giá vốn và dữ liệu kho giữ semantics hiện có.

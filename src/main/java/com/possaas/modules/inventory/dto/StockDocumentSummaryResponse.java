@@ -22,4 +22,4 @@ public record StockDocumentSummaryResponse(
         long version,
         Instant createdAt,
         Instant updatedAt,
-        UUID stockAuditId) {}
+        UUID stockAuditId, String currencyCode) {}

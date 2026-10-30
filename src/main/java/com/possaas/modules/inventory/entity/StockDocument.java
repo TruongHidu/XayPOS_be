@@ -49,6 +49,9 @@ public class StockDocument {
     private BigDecimal totalQuantity = new BigDecimal("0.000");
     @Column(name = "total_cost", nullable = false, precision = 18, scale = 2)
     private BigDecimal totalCost = new BigDecimal("0.00");
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.CHAR)
+    @Column(name = "currency_code", columnDefinition = "char(3)", length = 3, updatable = false)
+    private String currencyCode;
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
     @Column(name = "confirmed_by")
@@ -82,6 +85,13 @@ public class StockDocument {
         this.lineCount = 0;
         this.createdAt = timestamp;
         this.updatedAt = timestamp;
+    }
+
+    /** Currency is provenance of a fresh receipt, never inferred for legacy documents. */
+    public void captureReceiptCurrency(String currency) {
+        if (id != null || documentType != StockDocumentType.RECEIPT || currencyCode != null)
+            throw new IllegalStateException("Currency can only be assigned to a fresh receipt");
+        currencyCode = java.util.Currency.getInstance(currency.trim().toUpperCase(java.util.Locale.ROOT)).getCurrencyCode();
     }
 
     public void updateNote(String value, Instant now) { note = value; touch(now); }

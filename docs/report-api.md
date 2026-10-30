@@ -196,3 +196,6 @@ The row allowlist deliberately excludes customer identity, notes, provider metad
 | 409 | `INVALID_REPORT_TIMEZONE` | Stored restaurant timezone is invalid |
 
 No refund, actual COGS, net-profit, tax-accounting, split-payment, inventory, staff-performance, export, or AI report is implemented in this MVP. See [reference-margin reports](reference-margin-report-api.md) for the historical reference-cost cohort.
+
+
+V39 bổ sung [CASHBOOK — sổ thu chi](cashbook-api.md). Payment SUCCESS là thu; chỉ phiếu chi POSTED là chi. Phiếu nhập CONFIRMED không tự tạo khoản chi. Báo cáo giá vốn và dữ liệu kho giữ semantics hiện có.

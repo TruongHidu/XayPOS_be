@@ -54,6 +54,7 @@ public class InventoryAudit {
         value.put("lineCount", document.getLineCount());
         value.put("totalQuantity", document.getTotalQuantity());
         value.put("totalCost", document.getTotalCost());
+        value.put("currencyCode", document.getCurrencyCode());
         return value;
     }
 

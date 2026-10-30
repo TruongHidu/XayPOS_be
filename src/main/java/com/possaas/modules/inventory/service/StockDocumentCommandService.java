@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class StockDocumentCommandService {
     private final StockDocumentAccessService access;
+    private final com.possaas.modules.restaurant.repository.RestaurantRepository restaurants;
     private final InventoryAccessService inventoryAccess;
     private final StockDocumentRepository documents;
     private final StockDocumentItemRepository items;
@@ -63,6 +64,14 @@ public class StockDocumentCommandService {
         StockDocument document = new StockDocument();
         document.initialize(actor.restaurantId(), warehouse.getId(), codes.generate(request.documentType()),
                 request.documentType(), key, hash, validation.note(request.note()), actor.userId(), clock.instant());
+        if (request.documentType() == com.possaas.modules.inventory.entity.StockDocumentType.RECEIPT) {
+            var restaurant = restaurants.findByIdAndDeletedAtIsNull(actor.restaurantId())
+                    .orElseThrow(() -> new ResourceNotFoundException("RESTAURANT_NOT_FOUND", "Restaurant not found"));
+            try { document.captureReceiptCurrency(restaurant.getCurrencyCode()); }
+            catch (IllegalArgumentException | NullPointerException failure) {
+                throw new ConflictException("INVALID_STOCK_RECEIPT_CURRENCY", "Restaurant currency is invalid");
+            }
+        }
         documents.saveAndFlush(document);
 
         if (!request.safeItems().isEmpty()) {

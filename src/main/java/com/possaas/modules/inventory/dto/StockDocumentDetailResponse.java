@@ -28,4 +28,4 @@ public record StockDocumentDetailResponse(
         Instant updatedAt,
         Instant confirmedAt,
         Instant cancelledAt,
-        UUID stockAuditId) {}
+        UUID stockAuditId, String currencyCode) {}

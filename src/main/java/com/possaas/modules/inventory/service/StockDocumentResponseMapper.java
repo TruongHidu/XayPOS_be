@@ -18,7 +18,7 @@ public class StockDocumentResponseMapper {
                 document.getLineCount(), document.getTotalQuantity(), document.getTotalCost(),
                 items.stream().map(this::item).toList(), document.getCreatedBy(), document.getConfirmedBy(),
                 document.getCancelledBy(), document.getVersion(), document.getCreatedAt(), document.getUpdatedAt(),
-                document.getConfirmedAt(), document.getCancelledAt(), document.getStockAuditId());
+                document.getConfirmedAt(), document.getCancelledAt(), document.getStockAuditId(), document.getCurrencyCode());
     }
 
     private StockDocumentItemResponse item(StockDocumentItem item) {
