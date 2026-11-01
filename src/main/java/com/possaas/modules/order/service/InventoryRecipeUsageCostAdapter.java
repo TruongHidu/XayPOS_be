@@ -11,6 +11,11 @@ import org.springframework.transaction.annotation.*;
 @Component @RequiredArgsConstructor @Transactional(propagation=Propagation.MANDATORY,readOnly=true)
 public class InventoryRecipeUsageCostAdapter implements RecipeUsageCostQuery {
     private final OrderItemRecipeUsageRepository usages;
+    private final com.possaas.modules.order.repository.OrderItemRecipeSnapshotRepository snapshots;
+    @Override public Map<UUID,UsageCost> findDirectCosts(UUID tenant,Collection<UUID> ids) {
+        if(ids.isEmpty()) return Map.of();
+        return snapshots.findAllByRestaurantIdAndIdIn(tenant,ids).stream().collect(Collectors.toMap(s->s.getId(), s->new UsageCost(null,s.getOrderItemId(),s.getId(),null,s.getMenuItemIdSnapshot(),s.getOrderUnitSnapshot(),s.getOrderQuantitySnapshot(),s.getCostSnapshotVersion(),s.getCostStatus()==com.possaas.modules.order.entity.OrderCostStatus.COMPLETE,s.getUnitCostSnapshot())));
+    }
     @Override public Map<UUID,UsageCost> findCosts(UUID tenant,Collection<UUID> ids) {
         if(ids.isEmpty()) return Map.of();
         return usages.findFrozenCosts(tenant,ids).stream().collect(Collectors.toUnmodifiableMap(

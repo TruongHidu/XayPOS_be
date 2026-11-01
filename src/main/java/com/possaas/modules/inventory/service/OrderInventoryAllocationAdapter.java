@@ -71,13 +71,14 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
         Map<BalanceKey, InventoryBalance> locked = balanceState(actor.restaurantId(), keys, true, state.keys());
         demand.forEach((key, quantity) -> availability.requireAvailable(locked.get(key), quantity));
 
+        Map<UUID, AcceptedItem> input = items.stream().collect(Collectors.toMap(AcceptedItem::orderItemId, Function.identity()));
         List<OrderItemInventoryAllocation> created = fresh.stream().map(item ->
                 new OrderItemInventoryAllocation(actor.restaurantId(), orderId, item.orderItemId(), item.recipeSnapshotId(),
                         item.orderQuantity(), item.orderUnit(), decisions.get(item.orderItemId()) == null ? warehouseId : null,
                         decisions.get(item.orderItemId()), now)).toList();
+        for(var allocation:created) allocation.captureDirectStock(input.get(allocation.getOrderItemId()).directStock());
         if (created.isEmpty()) return;
         allocations.saveAllAndFlush(created);
-        Map<UUID, AcceptedItem> input = items.stream().collect(Collectors.toMap(AcceptedItem::orderItemId, Function.identity()));
         List<InventoryReservation> details = new ArrayList<>();
         for (OrderItemInventoryAllocation allocation : created) {
             if (allocation.getStatus() != InventoryAllocationStatus.RESERVED) continue;
@@ -126,7 +127,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
                     BigDecimal after = availability.quantity(before.subtract(amount));
                     balance.applyQuantityChange(amount.negate(), now);
                     BigDecimal unitCost = policy.usageUnitCost(allocation, reservation,
-                            state.costs().get(reservation.getRecipeUsageId()));
+                            allocation.isDirectStockSnapshot() ? state.directCosts().get(allocation.getRecipeSnapshotId()) : state.costs().get(reservation.getRecipeUsageId()));
                     transactions.append(InventoryTransaction.recipeUse(allocation, reservation, before, after,
                             unitCost, actor.userId(), now));
                 }
@@ -162,18 +163,20 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
         List<InventoryReservation> details = headers.isEmpty() ? List.of() : reservations.findAllForAllocations(tenant,
                 headers.stream().map(OrderItemInventoryAllocation::getId).toList());
         Map<UUID, List<InventoryReservation>> byAllocation = details.stream().collect(Collectors.groupingBy(InventoryReservation::getAllocationId));
-        List<UUID> usageIds = details.stream().map(InventoryReservation::getRecipeUsageId).distinct().toList();
+        List<UUID> usageIds = details.stream().map(InventoryReservation::getRecipeUsageId).filter(Objects::nonNull).distinct().toList();
         Map<UUID, UsageCost> costs = usageIds.isEmpty() ? Map.of() : usageCosts.findCosts(tenant, usageIds);
         if (costs == null) throw InventoryAllocationPolicy.conflict();
+        var directIds=headers.stream().filter(OrderItemInventoryAllocation::isDirectStockSnapshot).map(OrderItemInventoryAllocation::getRecipeSnapshotId).toList();
+        var directCosts=directIds.isEmpty()?Map.<UUID,UsageCost>of():usageCosts.findDirectCosts(tenant,directIds);
         Map<UUID, InventoryTransaction> ledger = new HashMap<>();
         for (InventoryTransaction transaction : transactions.findForReservations(tenant,
                 details.stream().map(InventoryReservation::getId).toList()))
             if (ledger.put(transaction.getReservationId(), transaction) != null) throw InventoryAllocationPolicy.conflict();
         for (OrderItemInventoryAllocation header : headers)
-            policy.history(header, byAllocation.getOrDefault(header.getId(), List.of()), ledger, costs);
+            policy.history(header, byAllocation.getOrDefault(header.getId(), List.of()), ledger, header.isDirectStockSnapshot()?directCosts:costs);
         return new State(headers.stream().collect(Collectors.toMap(OrderItemInventoryAllocation::getOrderItemId, Function.identity())),
                 byAllocation, details.stream().map(detail -> new BalanceKey(detail.getWarehouseId(), detail.getIngredientId()))
-                    .collect(Collectors.toSet()), costs);
+                    .collect(Collectors.toSet()), costs,directCosts);
     }
 
     private Map<BalanceKey, InventoryBalance> balanceState(UUID tenant, Set<BalanceKey> keys, boolean lock,
@@ -207,7 +210,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
             availability.positive(item.orderQuantity());
             Set<UUID> usageIds = new HashSet<>(); Set<UUID> ingredientIds = new HashSet<>();
             for (Usage usage : item.usages()) {
-                if (usage.recipeUsageId() == null || !usageIds.add(usage.recipeUsageId()) || usage.ingredientId() == null
+                if ((!item.directStock() && usage.recipeUsageId() == null) || (item.directStock() && (usage.recipeUsageId()!=null || item.usages().size()!=1 || usage.quantity().compareTo(item.orderQuantity())!=0 || !usage.unit().equals(item.orderUnit()))) || !usageIds.add(usage.recipeUsageId()) || usage.ingredientId() == null
                         || !ingredientIds.add(usage.ingredientId()) || usage.name() == null || usage.name().isBlank()
                         || usage.unit() == null || usage.unit().isBlank()) throw InventoryAllocationPolicy.conflict();
                 availability.positive(usage.quantity());
@@ -221,7 +224,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
 
     private record BalanceKey(UUID warehouseId, UUID ingredientId) {}
     private record State(Map<UUID, OrderItemInventoryAllocation> headers,
-            Map<UUID, List<InventoryReservation>> reservations, Set<BalanceKey> keys, Map<UUID, UsageCost> costs) {
+            Map<UUID, List<InventoryReservation>> reservations, Set<BalanceKey> keys, Map<UUID, UsageCost> costs, Map<UUID,UsageCost> directCosts) {
         List<InventoryReservation> details(OrderItemInventoryAllocation allocation) {
             return reservations.getOrDefault(allocation.getId(), List.of());
         }

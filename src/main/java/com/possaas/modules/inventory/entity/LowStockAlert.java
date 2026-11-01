@@ -15,6 +15,8 @@ public class LowStockAlert {
     @Column(name="restaurant_id",nullable=false,updatable=false) private UUID restaurantId;
     @Column(name="warehouse_id",nullable=false,updatable=false) private UUID warehouseId;
     @Column(name="item_id",nullable=false,updatable=false) private UUID itemId;
+    @Column(name="item_type_snapshot",nullable=false,updatable=false,length=20) private String itemTypeSnapshot="INGREDIENT";
+    public void captureItemType(String type) {itemTypeSnapshot=type;}
     @Column(name="warehouse_code",nullable=false,updatable=false,length=50) private String warehouseCode;
     @Column(name="warehouse_name",nullable=false,updatable=false,length=100) private String warehouseName;
     @Column(name="ingredient_sku",updatable=false,length=80) private String ingredientSku;

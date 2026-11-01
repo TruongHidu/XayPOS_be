@@ -19,6 +19,7 @@ public class InventoryAllocationAudit {
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("orderId", allocation.getOrderId()); after.put("orderItemId", allocation.getOrderItemId());
             after.put("allocationId", allocation.getId()); after.put("warehouseId", allocation.getWarehouseId());
+            after.put("directStockSnapshot",allocation.isDirectStockSnapshot());
             after.put("status", allocation.getStatus()); after.put("skipReason", allocation.getSkipReason());
             return new AuditRecordCommand(actor.restaurantId(), actor.userId(),
                     "ORDER_ITEM_INVENTORY_" + allocation.getStatus().name(),

@@ -62,7 +62,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("39");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("40");
             assertThat(countTables(schema)).isEqualTo(43);
             assertThat(tableExists(schema, "cashbook_categories")).isTrue();
             assertThat(tableExists(schema, "cashbook_expenses")).isTrue();
@@ -1110,9 +1110,26 @@ class FlywayCleanMigrationIntegrationTest {
                 c.commit();c.setAutoCommit(true);
                 try(ResultSet r=s.executeQuery("SELECT count(*),bool_and(unit_cost IS NULL) FROM "+p+"inventory_transactions WHERE transaction_type='RECIPE_USE'")) {r.next();assertThat(r.getInt(1)).isEqualTo(2);assertThat(r.getBoolean(2)).isTrue();}
             }
+            verifyV40UpgradePreservesHistory(schema);
         } finally {dropTestSchema(schema);}
     }
 
+    private void verifyV40UpgradePreservesHistory(String schema)throws Exception {
+        var flyway=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("39").load();
+        flyway.migrate();
+        Map<String,String> before=new java.util.LinkedHashMap<>();
+        try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+            for(String table:java.util.List.of("items","orders","order_items","order_item_recipe_snapshots","order_item_recipe_usages","order_item_inventory_allocations","inventory_reservations","inventory_transactions","inventory_balances","stock_documents","stock_document_items","audit_logs"))
+                before.put(table,tableSnapshot(s,"\""+schema+"\".",table));
+        }
+        Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+        try(Connection c=dataSource.getConnection();Statement s=c.createStatement()) {
+            for(var entry:before.entrySet()) {
+                String sql="SELECT coalesce(jsonb_agg(to_jsonb(t)-ARRAY['direct_stock_snapshot','item_type_snapshot']::text[] ORDER BY (to_jsonb(t)-ARRAY['direct_stock_snapshot','item_type_snapshot']::text[])::text),'[]'::jsonb)::text FROM \""+schema+"\"."+entry.getKey()+" t";
+                try(ResultSet r=s.executeQuery(sql)){r.next();assertThat(r.getString(1)).as("V40 preserves "+entry.getKey()).isEqualTo(entry.getValue());}
+            }
+        }
+    }
     private void v35DocumentFixture(String schema,String key)throws Exception {
         String p="\""+schema+"\".";UUID tenant=UUID.randomUUID(),actor=UUID.randomUUID(),warehouse=UUID.randomUUID(),ingredient=UUID.randomUUID(),document=UUID.randomUUID(),line=UUID.randomUUID();
         try(Connection c=dataSource.getConnection();Statement s=c.createStatement()){

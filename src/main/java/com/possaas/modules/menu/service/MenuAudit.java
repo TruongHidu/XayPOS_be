@@ -32,6 +32,7 @@ public class MenuAudit {
         m.put("salePrice", i.getSalePrice());
         m.put("costPrice", i.getCostPrice());
         m.put("costConfigured", i.isCostConfigured());
+        m.put("trackInventory", i.isTrackInventory());
         m.put("recipeEnabled", i.isRecipeEnabled());
         m.put("active", i.isActive());
         m.put("availabilityStatus", i.getAvailabilityStatus());

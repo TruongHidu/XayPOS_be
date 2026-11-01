@@ -24,7 +24,7 @@ public class LowStockAlertQueryRepository {
     private static final String SELECT="""
         SELECT a.*,b.quantity AS current_quantity,b.reserved_quantity AS current_reserved,
             b.min_quantity AS current_min,
-            (w.is_active AND w.deleted_at IS NULL AND i.item_type='INGREDIENT'
+            (w.is_active AND w.deleted_at IS NULL AND (i.item_type IN ('INGREDIENT','MENU_ITEM') AND NOT i.recipe_enabled)
                 AND i.track_inventory AND i.deleted_at IS NULL AND i.base_unit=a.unit
                 AND b.id IS NOT NULL) AS comparable
         """;
@@ -66,14 +66,14 @@ public class LowStockAlertQueryRepository {
         var physical=comparable?rs.getBigDecimal("current_quantity"):null;
         var reserved=comparable?rs.getBigDecimal("current_reserved"):null;
         return new LowStockAlertResponse(rs.getObject("id",UUID.class),rs.getObject("warehouse_id",UUID.class),
-            rs.getString("warehouse_code"),rs.getString("warehouse_name"),rs.getObject("item_id",UUID.class),
+            rs.getString("warehouse_code"),rs.getString("warehouse_name"),"MENU_ITEM".equals(rs.getString("item_type_snapshot"))?null:rs.getObject("item_id",UUID.class),
             rs.getString("ingredient_sku"),rs.getString("ingredient_name"),rs.getString("unit"),
             LowStockAlertStatus.valueOf(rs.getString("status")),rs.getBigDecimal("quantity_at_trigger"),
             rs.getBigDecimal("threshold_quantity"),physical,reserved,comparable?physical.subtract(reserved):null,
             comparable?rs.getBigDecimal("current_min"):null,instant(rs,"triggered_at"),
             rs.getObject("acknowledged_by",UUID.class),instant(rs,"acknowledged_at"),instant(rs,"resolved_at"),
             rs.getString("resolution_reason")==null?null:LowStockAlertResolutionReason.valueOf(rs.getString("resolution_reason")),
-            rs.getLong("version"),instant(rs,"created_at"),instant(rs,"updated_at"));
+            rs.getLong("version"),instant(rs,"created_at"),instant(rs,"updated_at"),rs.getObject("item_id",UUID.class),rs.getString("item_type_snapshot"));
     }
 
     private static Instant instant(ResultSet rs,String field) throws SQLException {

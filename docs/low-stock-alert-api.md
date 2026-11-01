@@ -202,3 +202,6 @@ chuyển kho, kiểm kê hoặc sửa giá vốn.
 
 Thiết kế: [implementation](low-stock-alert-implementation.md).
 Đồng bộ UI: [FE sync](low-stock-alert-fe-sync.md).
+
+
+V40: hỗ trợ MENU_ITEM theo dõi tồn trực tiếp. Response bổ sung itemId/itemType; ingredientId=null cho MENU_ITEM. Alert event payload bổ sung itemId/itemType, giữ envelope schemaVersion=1. Loại hàng được chốt trong snapshot cảnh báo/kiểm kê. Xem [hướng dẫn đồng bộ FE](direct-stock-menu-items-fe-sync.md).

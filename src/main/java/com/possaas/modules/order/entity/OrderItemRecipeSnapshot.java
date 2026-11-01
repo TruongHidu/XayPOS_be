@@ -20,6 +20,8 @@ public class OrderItemRecipeSnapshot {
     @Enumerated(EnumType.STRING) @Column(name = "snapshot_status", nullable = false, length = 30, updatable = false)
     private RecipeSnapshotStatus snapshotStatus;
     @Column(name = "recipe_enabled_snapshot", updatable = false) private Boolean recipeEnabledSnapshot;
+    @Column(name="direct_stock_snapshot",updatable=false) private Boolean directStockSnapshot;
+    public void captureDirectStock(boolean direct) { if(directStockSnapshot!=null) throw new IllegalStateException("Already captured"); directStockSnapshot=direct; }
     @Enumerated(EnumType.STRING)
     @Column(name = "cost_source_snapshot", length = 20, updatable = false) private OrderCostSource costSourceSnapshot;
     @Column(name = "recipe_id", updatable = false) private UUID recipeId;

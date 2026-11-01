@@ -58,6 +58,8 @@ public class OrderRecipeSnapshotService {
         var settings = recipes.findRecipeSettings(actor.restaurantId(), menuIds);
         if (settings==null || !settings.keySet().containsAll(menuIds)
                 || menuIds.stream().anyMatch(id->settings.get(id)==null)) throw policy.conflict();
+        var directSettings=recipes.findDirectStockSettings(actor.restaurantId(),menuIds);
+        if(directSettings==null) directSettings=Map.of();
         var appliedIds = menuIds.stream().filter(id -> Boolean.TRUE.equals(settings.get(id))).toList();
         var current = enabled && !appliedIds.isEmpty() ? recipes.findActive(actor.restaurantId(), appliedIds)
                 : Map.<UUID, RecipeDefinition>of();
@@ -95,6 +97,11 @@ public class OrderRecipeSnapshotService {
                 recipe==null?null:recipe.version(),recipe==null?null:recipe.yieldQuantity(),
                 recipe==null?null:recipe.yieldUnit(),now,settings.get(line.getItemId()),money.get(line.getId()).summary()));
         }
+        for(var header:headers) {
+            boolean direct=Boolean.TRUE.equals(directSettings.get(header.getMenuItemIdSnapshot()));
+            if(direct && Boolean.TRUE.equals(header.getRecipeEnabledSnapshot())) throw invalid();
+            header.captureDirectStock(direct);
+        }
         snapshots.saveAllAndFlush(headers);
         List<OrderItemRecipeUsage> details = new ArrayList<>();
         List<AuditRecordCommand> events = new ArrayList<>();
@@ -109,6 +116,7 @@ public class OrderRecipeSnapshotService {
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("orderId", order.getId()); after.put("orderItemId", header.getOrderItemId());
             after.put("snapshotStatus", header.getSnapshotStatus());
+            after.put("directStockSnapshot",header.getDirectStockSnapshot());
             after.put("recipeEnabledSnapshot", header.getRecipeEnabledSnapshot());
             after.put("costSourceSnapshot", header.getCostSourceSnapshot());
             after.put("costSnapshotVersion",header.getCostSnapshotVersion());

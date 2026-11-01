@@ -30,7 +30,9 @@ public class LowStockAlertEventPublisher {
             }
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("warehouseId", alert.getWarehouseId());
-            payload.put("ingredientId", alert.getItemId());
+            payload.put("ingredientId", "INGREDIENT".equals(alert.getItemTypeSnapshot())?alert.getItemId():null);
+            payload.put("itemId",alert.getItemId());
+            payload.put("itemType",alert.getItemTypeSnapshot());
             payload.put("status", alert.getStatus().name());
             payload.put("resolutionReason", alert.getResolutionReason() == null
                     ? null : alert.getResolutionReason().name());

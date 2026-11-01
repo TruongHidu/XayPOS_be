@@ -10,6 +10,7 @@ import java.util.UUID;
 public interface ActiveOrderRecipeQuery {
     Map<UUID, Boolean> findRecipeSettings(UUID restaurantId, Collection<UUID> menuItemIds);
 
+    default Map<UUID, Boolean> findDirectStockSettings(UUID restaurantId, Collection<UUID> ids) { return Map.of(); }
     Map<UUID, RecipeDefinition> findActive(UUID restaurantId, Collection<UUID> menuItemIds);
 
     record RecipeDefinition(UUID id, UUID menuItemId, int version, BigDecimal yieldQuantity,

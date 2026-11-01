@@ -94,7 +94,7 @@ Threshold đã có row:
 }
 ```
 
-Balance dùng mô hình sparse. Tracked ingredient chưa có row vẫn được đọc như sau;
+Balance dùng mô hình sparse. Tracked stock item (INGREDIENT hoặc MENU_ITEM DIRECT) chưa có row vẫn được đọc như sau;
 GET không ghi database:
 
 ```json
@@ -202,7 +202,7 @@ Content-Type: application/json
 
 `adjustmentDirection` phải để trống cho `RECEIPT`/`ISSUE`; với `ADJUSTMENT` bắt
 buộc là `INCREASE` hoặc `DECREASE`. `unitCost` mặc định `0`. Ingredient phải cùng
-tenant, là `INGREDIENT`, có `trackInventory=true`; receipt còn yêu cầu ingredient
+tenant, là `INGREDIENT` hoặc `MENU_ITEM` DIRECT, có `trackInventory=true`; receipt còn yêu cầu ingredient
 active. Đơn vị là snapshot từ `baseUnit`, client không được gửi đơn vị.
 
 ```json
@@ -245,7 +245,7 @@ physical giữ nguyên reserved và tăng available tương ứng.
 ### Giá vốn nguyên liệu khi xác nhận phiếu nhập
 
 API và request/response giữ nguyên. Chỉ `RECEIPT` được confirm lần đầu mới cập nhật
-`INGREDIENT.costPrice` theo bình quân liên hoàn:
+`costPrice` của nguyên liệu hoặc hàng bán sẵn DIRECT theo bình quân liên hoàn:
 
 ```text
 newCost = (oldQuantity × oldCost + receiptQuantity × receiptUnitCost)
@@ -321,3 +321,6 @@ trong ORDER với quyền đọc riêng; snapshot tồn tại không đồng ngh
 
 
 V39 bổ sung [CASHBOOK — sổ thu chi](cashbook-api.md). Payment SUCCESS là thu; chỉ phiếu chi POSTED là chi. Phiếu nhập CONFIRMED không tự tạo khoản chi. Báo cáo giá vốn và dữ liệu kho giữ semantics hiện có.
+
+
+V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.

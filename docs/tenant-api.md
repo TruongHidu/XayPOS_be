@@ -745,3 +745,6 @@ V15 adds only the three table-domain tables and constraints; V1-V14 and role gra
 are unchanged. TableIntegrationTest creates/drops its own UUID-named PostgreSQL
 schema, validates tenant/security/concurrency/QR/audit and batch query behavior.
 FlywayCleanMigrationIntegrationTest validates all migrations on a fresh schema.
+
+
+V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.

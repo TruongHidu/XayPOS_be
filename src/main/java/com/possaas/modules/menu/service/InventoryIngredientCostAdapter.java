@@ -28,13 +28,13 @@ public class InventoryIngredientCostAdapter implements IngredientReferenceCostWr
 
     @Override
     public Map<UUID, BigDecimal> lockReferenceCosts(UUID restaurantId, Collection<UUID> ingredientIds) {
-        return requireIngredients(items.findIngredientsForUpdate(restaurantId, ingredientIds), ingredientIds)
+        return requireIngredients(items.findStockItemsForUpdate(restaurantId, ingredientIds), ingredientIds)
                 .stream().collect(Collectors.toMap(Item::getId, Item::getCostPrice));
     }
 
     @Override
     public Map<UUID, ReferenceCost> lockReferenceCostStates(UUID restaurantId, Collection<UUID> ingredientIds) {
-        return requireIngredients(items.findIngredientsForUpdate(restaurantId, ingredientIds), ingredientIds)
+        return requireIngredients(items.findStockItemsForUpdate(restaurantId, ingredientIds), ingredientIds)
                 .stream().collect(Collectors.toMap(Item::getId, item -> new ReferenceCost(item.getCostPrice(), item.isCostConfigured())));
     }
 
@@ -55,14 +55,13 @@ public class InventoryIngredientCostAdapter implements IngredientReferenceCostWr
             var after = audit.snapshot(ingredient);
             after.put("sourceDocumentId", sourceDocumentId);
             after.put("costMethod", "MOVING_WEIGHTED_AVERAGE");
-            audit.record(actor, "INGREDIENT_COST_RECALCULATED", ingredient, before, after, ipAddress);
+            audit.record(actor, ingredient.getItemType() == ItemType.INGREDIENT ? "INGREDIENT_COST_RECALCULATED" : "MENU_ITEM_COST_RECALCULATED", ingredient, before, after, ipAddress);
         }
         // Managed entities are flushed by the enclosing stock confirmation transaction.
     }
 
     private static List<Item> requireIngredients(List<Item> values, Collection<UUID> expected) {
-        List<Item> tracked = values.stream().filter(item -> item.getItemType() == ItemType.INGREDIENT
-                && item.getDeletedAt() == null && item.isTrackInventory()).toList();
+        List<Item> tracked = values.stream().filter(item -> new StockTrackingModeResolver().isTrackedStockItem(item)).toList();
         if (tracked.size() != expected.stream().distinct().count())
             throw new ResourceNotFoundException("TRACKED_INGREDIENT_NOT_FOUND", "Tracked ingredient not found");
         return tracked;

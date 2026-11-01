@@ -17,7 +17,7 @@ public class InventoryReservation {
     @Column(name = "restaurant_id", nullable = false, updatable = false) private UUID restaurantId;
     @Column(name = "allocation_id", nullable = false, updatable = false) private UUID allocationId;
     @Column(name = "recipe_snapshot_id", nullable = false, updatable = false) private UUID recipeSnapshotId;
-    @Column(name = "recipe_usage_id", nullable = false, updatable = false) private UUID recipeUsageId;
+    @Column(name = "recipe_usage_id", updatable = false) private UUID recipeUsageId;
     @Column(name = "warehouse_id", nullable = false, updatable = false) private UUID warehouseId;
     @Column(name = "ingredient_id", nullable = false, updatable = false) private UUID ingredientId;
     @Column(nullable = false, precision = 14, scale = 3, updatable = false) private BigDecimal quantity;

@@ -17,7 +17,8 @@ public interface OrderInventoryAllocationCommand {
     void validate(UUID tenant, UUID orderId, List<LineState> lines);
 
     record AcceptedItem(UUID orderItemId, UUID recipeSnapshotId, String snapshotStatus,
-            BigDecimal orderQuantity, String orderUnit, List<Usage> usages) {
+            BigDecimal orderQuantity, String orderUnit, List<Usage> usages, boolean directStock) {
+        public AcceptedItem(UUID item,UUID snapshot,String status,BigDecimal quantity,String unit,List<Usage> usages) {this(item,snapshot,status,quantity,unit,usages,false);}
         public AcceptedItem { usages = List.copyOf(usages); }
     }
 

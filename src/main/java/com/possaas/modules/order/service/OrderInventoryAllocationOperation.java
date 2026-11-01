@@ -46,10 +46,10 @@ public class OrderInventoryAllocationOperation {
             snapshotPolicy.requireMatches(header, line);
             return new AcceptedItem(line.getId(), header.getId(), header.getSnapshotStatus().name(),
                     header.getOrderQuantitySnapshot(), header.getOrderUnitSnapshot(),
-                    details.getOrDefault(header.getId(), List.of()).stream().map(usage -> new Usage(
+                    Boolean.TRUE.equals(header.getDirectStockSnapshot()) ? List.of(new Usage(null,header.getMenuItemIdSnapshot(),null,line.getItemName(),header.getOrderUnitSnapshot(),header.getOrderQuantitySnapshot())) : details.getOrDefault(header.getId(), List.of()).stream().map(usage -> new Usage(
                         usage.getId(), usage.getIngredientId(), usage.getIngredientSkuSnapshot(),
                         usage.getIngredientNameSnapshot(), usage.getIngredientUnitSnapshot(),
-                        usage.getRequiredQuantity())).toList());
+                        usage.getRequiredQuantity())).toList(), Boolean.TRUE.equals(header.getDirectStockSnapshot()));
         }).toList();
         inventory.reserve(actor, order.getId(), decisions,
                 entitlement!=null && entitlement.hasFeature("INVENTORY_MANAGEMENT"),now,ip);

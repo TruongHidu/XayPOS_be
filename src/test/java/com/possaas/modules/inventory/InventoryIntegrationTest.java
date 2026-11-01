@@ -185,6 +185,14 @@ class InventoryIntegrationTest {
                 .error(400, "VALIDATION_ERROR");
         Result low = call(get("/api/v1/inventory/low-stock"), owner, ALL).expect(200);
         assertThat(low.body.at("/totalElements").asInt()).isEqualTo(1);
+        Result found = call(get(balancesUrl).param("q", "thịt"), owner, ALL).expect(200);
+        assertThat(found.body.at("/totalElements").asInt()).isEqualTo(1);
+        Result bySku = call(get(balancesUrl).param("q", "bee"), owner, ALL).expect(200);
+        assertThat(bySku.body.at("/totalElements").asInt()).isEqualTo(1);
+        Result wildcard = call(get(balancesUrl).param("q", "%_"), owner, ALL).expect(200);
+        assertThat(wildcard.body.at("/totalElements").asInt()).isZero();
+        Result lowFound = call(get("/api/v1/inventory/low-stock").param("q", "thịt"), owner, ALL).expect(200);
+        assertThat(lowFound.body.at("/totalElements").asInt()).isEqualTo(1);
 
         long rowsBefore = balanceRows(owner.getRestaurantId());
         call(get(balancesUrl), owner, ALL).expect(200);
@@ -263,6 +271,10 @@ class InventoryIntegrationTest {
         Result replay = call(post(STOCK_DOCUMENTS).header("Idempotency-Key", "receipt-001").content(body),
                 owner, ALL).expect(201);
         assertThat(replay.id()).isEqualTo(draft.id());
+        Result byNote = call(get(STOCK_DOCUMENTS).param("q", "đầu kỳ"), owner, ALL).expect(200);
+        assertThat(byNote.body.at("/totalElements").asInt()).isEqualTo(1);
+        Result noMatch = call(get(STOCK_DOCUMENTS).param("q", "%_"), owner, ALL).expect(200);
+        assertThat(noMatch.body.at("/totalElements").asInt()).isZero();
         call(post(STOCK_DOCUMENTS).header("Idempotency-Key", "receipt-001").content(body.replace("5.000", "6.000")),
                 owner, ALL).error(409, "IDEMPOTENCY_KEY_REUSED");
 

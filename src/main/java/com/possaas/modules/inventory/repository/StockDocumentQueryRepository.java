@@ -41,7 +41,7 @@ public class StockDocumentQueryRepository {
         Map<String, Object> params = new HashMap<>();
         params.put("restaurantId", restaurantId);
         if (search.q() != null && !search.q().isBlank()) {
-            from.append(" AND (lower(d.document_code) LIKE :q ESCAPE '\\\\' OR lower(coalesce(d.note,'')) LIKE :q ESCAPE '\\\\')");
+            from.append(" AND (lower(d.document_code) LIKE :q ESCAPE '\\' OR lower(coalesce(d.note,'')) LIKE :q ESCAPE '\\')");
             params.put("q", "%" + escape(search.q().trim().toLowerCase()) + "%");
         }
         if (search.type() != null) { from.append(" AND d.document_type=:type"); params.put("type", search.type().name()); }

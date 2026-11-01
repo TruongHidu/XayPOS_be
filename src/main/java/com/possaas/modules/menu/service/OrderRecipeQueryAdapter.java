@@ -36,6 +36,12 @@ public class OrderRecipeQueryAdapter implements ActiveOrderRecipeQuery {
                         com.possaas.modules.menu.entity.Item::isRecipeEnabled));
     }
 
+    @Override public Map<UUID,Boolean> findDirectStockSettings(UUID tenant,Collection<UUID> ids) {
+        if(ids.isEmpty()) return Map.of();
+        return items.findAllByRestaurantIdAndIdIn(tenant,ids).stream()
+            .filter(i->i.getItemType()==ItemType.MENU_ITEM && i.getDeletedAt()==null)
+            .collect(Collectors.toUnmodifiableMap(i->i.getId(),i->i.isTrackInventory()));
+    }
     @Override
     public Map<UUID, RecipeDefinition> findActive(UUID restaurantId, Collection<UUID> menuItemIds) {
         if (menuItemIds.isEmpty()) return Map.of();

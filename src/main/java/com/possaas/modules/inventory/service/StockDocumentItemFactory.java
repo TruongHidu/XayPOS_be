@@ -27,6 +27,7 @@ public class StockDocumentItemFactory {
         item.initialize(document.getRestaurantId(), document.getId(), ingredient.id(), ingredient.sku(),
                 ingredient.name(), ingredient.baseUnit(), validation.quantity(quantity), direction,
                 validation.cost(unitCost), validation.note(note), clock.instant());
+        item.captureItemType(ingredient.itemType());
         strategies.get(document.getDocumentType()).validateLine(item);
         return item;
     }

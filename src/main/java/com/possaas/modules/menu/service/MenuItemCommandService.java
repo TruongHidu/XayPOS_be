@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class MenuItemCommandService {
     private final MenuAccessService access;
+    private final MenuStockTrackingPolicy stockTracking;
+    private final com.possaas.modules.menu.application.port.IngredientInventoryAlertLifecycle inventoryAlerts;
     private final ItemRepository items;
     private final MenuItemFactory factory;
     private final MenuItemValidationPolicy validation;
@@ -33,13 +35,14 @@ public class MenuItemCommandService {
 
     public MenuItemResponse create(MenuRequests.CreateItem r, String ip) {
         var actor = access.require(true);
+        stockTracking.configure(actor.restaurantId(), Boolean.TRUE.equals(r.trackInventory()), Boolean.TRUE.equals(r.recipeEnabled()), Boolean.TRUE.equals(r.trackInventory()));
         access.assignableGroup(actor.restaurantId(), r.groupId());
         recipeApplication.requireNewDisabled(actor.restaurantId(), r.recipeEnabled());
         var cost = costs.create(r.costPrice(), r.costConfigured());
         var context = new ItemCreationContext(actor.restaurantId(), r.groupId(), validation.sku(r.sku()),
                 validation.required(r.name(), 150), validation.required(r.baseUnit(), 30),
                 validation.optional(r.description()), validation.image(r.imageUrl()), validation.price(r.salePrice()),
-                cost.price(), false, r.active() == null || r.active(), clock.instant(), cost.configured());
+                cost.price(), Boolean.TRUE.equals(r.trackInventory()), r.active() == null || r.active(), clock.instant(), cost.configured());
         var item = factory.create(ItemType.MENU_ITEM, context);
         items.saveAndFlush(item);
         audit.record(actor, "MENU_ITEM_CREATED", item, null, audit.snapshot(item), ip);
@@ -51,16 +54,20 @@ public class MenuItemCommandService {
         var item = access.item(actor.restaurantId(), id, false);
         if (r.name() == null && r.sku() == null && r.baseUnit() == null && r.description() == null
                 && r.imageUrl() == null && r.salePrice() == null && r.costPrice() == null
-                && r.costConfigured() == null && r.recipeEnabled() == null)
+                && r.costConfigured() == null && r.recipeEnabled() == null && r.trackInventory() == null)
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EMPTY_UPDATE_REQUEST", "No fields provided");
         lifecycle.requireVersion(item, r.expectedVersion());
+        boolean tracking=r.trackInventory()==null?item.isTrackInventory():r.trackInventory();
+        boolean recipe=r.recipeEnabled()==null?item.isRecipeEnabled():r.recipeEnabled();
+        stockTracking.configure(actor.restaurantId(),tracking,recipe,tracking && !item.isTrackInventory());
+        if(item.isTrackInventory() && !tracking) stockTracking.requireIdle(item,"STOCK_TRACKING_CHANGE_NOT_ALLOWED");
         var before = audit.snapshot(item);
         if (r.name() != null)
             item.setName(validation.required(r.name(), 150));
         if (r.baseUnit() != null) {
             String baseUnit = validation.required(r.baseUnit(), 30);
             if (!Objects.equals(item.getBaseUnit(), baseUnit))
-                recipeDependencies.requireMenuItemUnitChangeAllowed(actor.restaurantId(), id);
+                { stockTracking.requireIdle(item,"STOCK_ITEM_UNIT_CHANGE_NOT_ALLOWED"); recipeDependencies.requireMenuItemUnitChangeAllowed(actor.restaurantId(), id); }
             item.setBaseUnit(baseUnit);
         }
         if (r.sku() != null)
@@ -74,12 +81,14 @@ public class MenuItemCommandService {
         var cost = costs.update(item.getCostPrice(), item.isCostConfigured(), r.costPrice(), r.costConfigured());
         item.setCostPrice(cost.price());
         item.setCostConfigured(cost.configured());
+        item.setTrackInventory(tracking);
         if (r.recipeEnabled() != null) {
             if (r.recipeEnabled() && !item.isRecipeEnabled()) recipeApplication.requireCanEnable(item);
             item.setRecipeEnabled(r.recipeEnabled());
         }
         if (!before.equals(audit.snapshot(item)))
             persist(actor, item, "MENU_ITEM_UPDATED", before, ip);
+        if(r.trackInventory()!=null || r.baseUnit()!=null) inventoryAlerts.changed(actor,id,ip);
         return mapper.item(item);
     }
 
@@ -127,10 +136,12 @@ public class MenuItemCommandService {
         if (item.getDeletedAt() != null)
             return;
         lifecycle.requireVersion(item, version);
+        stockTracking.requireIdle(item,"STOCK_ITEM_DELETE_NOT_ALLOWED");
         recipeDependencies.requireMenuItemDeleteAllowed(actor.restaurantId(), id);
         var before = audit.snapshot(item);
         lifecycle.softDelete(item, clock.instant());
         persist(actor, item, "MENU_ITEM_DELETED", before, ip);
+        inventoryAlerts.changed(actor,id,ip);
     }
 
     private void persist(CurrentUser actor, Item item, String action, Map<String, Object> before, String ip) {

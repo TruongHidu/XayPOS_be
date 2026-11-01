@@ -115,7 +115,9 @@ class MenuIntegrationTest {
         verify(strategy).create(any());
         assertThat(item.body.path("sku").asText()).isEqualTo("COFFEE");
         assertThat(item.body.path("costPrice").decimalValue()).isEqualByComparingTo("0.00");
-        assertThat(item.body.toString()).doesNotContain("trackInventory", "metadata", "itemType");
+        assertThat(item.body.toString()).doesNotContain("metadata", "itemType");
+        assertThat(item.body.path("trackInventory").asBoolean()).isFalse();
+        assertThat(item.body.path("inventoryMode").asText()).isEqualTo("NONE");
         var changed = call(patch(path(item) + "/availability")
                 .content("{\"availabilityStatus\":\"OUT_OF_STOCK\",\"expectedVersion\":0}"));
         changed.expect(200);
@@ -474,7 +476,7 @@ class MenuIntegrationTest {
     void databaseChecksProtectMenuInvariants() throws Exception {
         var g = createGroup("Group");
         var i = createItem(g.id(), null);
-        for (String assignment : List.of("sale_price=-1", "cost_price=-1", "track_inventory=true",
+        for (String assignment : List.of("sale_price=-1", "cost_price=-1", "track_inventory=true,recipe_enabled=true",
                 "item_type='UNKNOWN'", "item_type='INGREDIENT'", "availability_status='UNKNOWN'",
                 "metadata='[]'::jsonb")) {
             assertThatThrownBy(() -> jdbc.update("update items set " + assignment + " where id=?", i.id()))

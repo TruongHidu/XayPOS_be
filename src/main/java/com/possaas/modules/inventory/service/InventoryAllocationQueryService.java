@@ -26,11 +26,14 @@ public class InventoryAllocationQueryService {
 
     public InventoryAllocationResponse find(UUID orderId, UUID itemId) {
         var actor = access.require(false);
-        if (!actor.hasPermission("ORDER_VIEW") || !actor.hasPermission("RECIPE_VIEW")
+        if (!actor.hasPermission("ORDER_VIEW")
                 || !actor.hasPermission("INVENTORY_VIEW"))
             throw new AccessDeniedException("Order, recipe and inventory view permissions are required");
         features.requireFeature(actor.restaurantId(), "ORDER_MANAGEMENT");
-        features.requireFeature(actor.restaurantId(), "RECIPE_MANAGEMENT");
+        if(!queries.isDirect(actor.restaurantId(),orderId,itemId)) {
+            if(!actor.hasPermission("RECIPE_VIEW")) throw new AccessDeniedException("Recipe view permission required");
+            features.requireFeature(actor.restaurantId(),"RECIPE_MANAGEMENT");
+        }
         var line = orderItems.find(actor.restaurantId(), orderId, itemId);
         allocations.validate(actor.restaurantId(), orderId, List.of(new OrderInventoryAllocationCommand.LineState(
                 line.orderItemId(), line.status(), line.submitted(), line.quantity(), line.unit())));

@@ -60,7 +60,7 @@ public class StockDocumentCommandService {
         }
         var warehouse = inventoryAccess.warehouse(actor.restaurantId(), request.warehouseId());
         requireActiveWarehouse(warehouse.isActive());
-        ensureDistinct(request.safeItems().stream().map(StockDocumentRequests.Line::ingredientId).toList());
+        ensureDistinct(request.safeItems().stream().map(StockDocumentRequests.Line::stockItemId).toList());
         StockDocument document = new StockDocument();
         document.initialize(actor.restaurantId(), warehouse.getId(), codes.generate(request.documentType()),
                 request.documentType(), key, hash, validation.note(request.note()), actor.userId(), clock.instant());
@@ -76,9 +76,9 @@ public class StockDocumentCommandService {
 
         if (!request.safeItems().isEmpty()) {
             var snapshots = ingredients.requireTrackedBatch(actor.restaurantId(),
-                    request.safeItems().stream().map(StockDocumentRequests.Line::ingredientId).toList());
+                    request.safeItems().stream().map(StockDocumentRequests.Line::stockItemId).toList());
             List<StockDocumentItem> created = request.safeItems().stream().map(line -> itemFactory.create(document,
-                    snapshots.get(line.ingredientId()), line.quantity(), line.unitCost(),
+                    requireLegacy(line.ingredientId(), snapshots.get(line.stockItemId())), line.quantity(), line.unitCost(),
                     line.adjustmentDirection(), line.note())).toList();
             items.saveAllAndFlush(created);
             recalculate(document, created);
@@ -110,9 +110,9 @@ public class StockDocumentCommandService {
         CurrentUser actor = access.mutationActor();
         StockDocument document = mutable(actor, documentId, request.expectedVersion());
         if (items.existsByRestaurantIdAndStockDocumentIdAndIngredientId(
-                actor.restaurantId(), documentId, request.ingredientId()))
+                actor.restaurantId(), documentId, request.stockItemId()))
             throw new ConflictException("DUPLICATE_STOCK_DOCUMENT_ITEM", "Ingredient already exists in document");
-        var ingredient = ingredients.requireTracked(actor.restaurantId(), request.ingredientId());
+        var ingredient = requireLegacy(request.ingredientId(), ingredients.requireTracked(actor.restaurantId(), request.stockItemId()));
         StockDocumentItem item = itemFactory.create(document, ingredient, request.quantity(), request.unitCost(),
                 request.adjustmentDirection(), request.note());
         items.saveAndFlush(item);
@@ -220,6 +220,10 @@ public class StockDocumentCommandService {
                         "STOCK_DOCUMENT_ITEM_NOT_FOUND", "Stock document item not found"));
     }
 
+    private static TrackedIngredientCatalog.TrackedIngredientSnapshot requireLegacy(UUID legacy, TrackedIngredientCatalog.TrackedIngredientSnapshot item) {
+        if(legacy!=null && !"INGREDIENT".equals(item.itemType())) throw new BusinessException(HttpStatus.BAD_REQUEST,"INVALID_STOCK_ITEM_REFERENCE","Use itemId for menu stock items");
+        return item;
+    }
     private static void ensureDistinct(List<UUID> ids) {
         if (new HashSet<>(ids).size() != ids.size())
             throw new ConflictException("DUPLICATE_STOCK_DOCUMENT_ITEM", "Ingredient is duplicated in document");

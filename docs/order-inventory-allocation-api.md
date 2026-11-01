@@ -1,6 +1,6 @@
 # Giữ chỗ và tiêu thụ nguyên liệu theo order — Giai đoạn 5
 
-> V38: RECIPE_USE.unitCost uses the exact frozen tracked usage price: known/zero is retained, unknown or legacy stays null. It never reads today's catalogue at consume. RECIPE_DISABLED still maps first to SKIPPED / SNAPSHOT_RECIPE_DISABLED without warehouse/reservations. Read the separate [historical reference-cost summary](order-reference-cost-snapshot-api.md).
+> V38: RECIPE_USE.unitCost uses the exact frozen tracked usage price: known/zero is retained, unknown or legacy stays null. It never reads today's catalogue at consume. For non-DIRECT items, RECIPE_DISABLED maps to SKIPPED / SNAPSHOT_RECIPE_DISABLED. V40 DIRECT items instead use their own frozen inventory decision and may reserve without a recipe. Read the separate [historical reference-cost summary](order-reference-cost-snapshot-api.md).
 
 Các API ORDER/KDS/QR giữ nguyên URL, body và quyền. Backend tự giữ chỗ khi món
 được chấp nhận, tiêu thụ khi bắt đầu thực hiện và giải phóng khi hủy PENDING.
@@ -32,7 +32,7 @@ giữ chỗ trong cùng transaction. Append vào OPEN gửi mọi dòng PENDING 
 append vào order đang phục vụ chỉ áp dụng dòng mới. DRAFT, sửa DRAFT, giỏ khách,
 QR pending/review/reject/cancel/expire và GET không giữ chỗ.
 
-Chỉ reserve khi có INVENTORY_MANAGEMENT lúc chấp nhận món, snapshot CAPTURED và
+Với nhánh RECIPE, chỉ reserve khi có INVENTORY_MANAGEMENT lúc chấp nhận món, snapshot CAPTURED và
 có usage trackInventory=true. Dùng nguyên requiredQuantity đã CEILING trong
 snapshot; không tính lại hao hụt hoặc đọc active recipe. Dòng không áp dụng vẫn
 có allocation SKIPPED với skipReason:
@@ -172,3 +172,6 @@ tồn, review/approve lại theo version/hash/quote guard hiện có.
 Đồng bộ FE: [order-inventory-allocation-fe-sync.md](order-inventory-allocation-fe-sync.md).
 Thiết kế và migration: [order-inventory-allocation-implementation.md](order-inventory-allocation-implementation.md).
 OpenAPI: [tenant-api.yaml](openapi/tenant-api.yaml).
+
+
+V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.

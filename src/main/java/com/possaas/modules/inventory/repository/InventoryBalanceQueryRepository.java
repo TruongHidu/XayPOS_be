@@ -41,7 +41,7 @@ public class InventoryBalanceQueryRepository {
                 LEFT JOIN inventory_balances b ON b.restaurant_id = i.restaurant_id
                     AND b.warehouse_id = w.id AND b.item_id = i.id
                 WHERE i.restaurant_id = :restaurantId
-                  AND i.item_type = 'INGREDIENT'
+                  AND (i.item_type IN ('INGREDIENT','MENU_ITEM') AND NOT i.recipe_enabled)
                   AND i.track_inventory = true
                   AND i.deleted_at IS NULL
                 """;
@@ -52,7 +52,7 @@ public class InventoryBalanceQueryRepository {
         parameters.put("offset", (long) search.page() * search.size());
         List<InventoryBalanceResponse> content = jdbc.query("""
                 SELECT b.id AS balance_id, w.id AS warehouse_id, w.code AS warehouse_code,
-                       i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
+                       i.item_type, i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
                        i.base_unit, i.is_active AS ingredient_active,
                        coalesce(b.quantity, 0.000) AS quantity,
                        coalesce(b.reserved_quantity, 0.000) AS reserved_quantity,
@@ -71,7 +71,7 @@ public class InventoryBalanceQueryRepository {
                 "ingredientId", ingredientId);
         List<InventoryBalanceResponse> rows = jdbc.query("""
                 SELECT b.id AS balance_id, w.id AS warehouse_id, w.code AS warehouse_code,
-                       i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
+                       i.item_type, i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
                        i.base_unit, i.is_active AS ingredient_active,
                        coalesce(b.quantity, 0.000) AS quantity,
                        coalesce(b.reserved_quantity, 0.000) AS reserved_quantity,
@@ -83,7 +83,7 @@ public class InventoryBalanceQueryRepository {
                 LEFT JOIN inventory_balances b ON b.restaurant_id = i.restaurant_id
                     AND b.warehouse_id = w.id AND b.item_id = i.id
                 WHERE i.restaurant_id = :restaurantId AND i.id = :ingredientId
-                  AND i.item_type = 'INGREDIENT' AND i.track_inventory = true
+                  AND (i.item_type IN ('INGREDIENT','MENU_ITEM') AND NOT i.recipe_enabled) AND i.track_inventory = true
                   AND i.deleted_at IS NULL
                 """, parameters, (rs, rowNum) -> map(rs));
         return rows.stream().findFirst();
@@ -96,7 +96,7 @@ public class InventoryBalanceQueryRepository {
                 JOIN items i ON i.id = b.item_id AND i.restaurant_id = b.restaurant_id
                 WHERE b.restaurant_id = :restaurantId
                   AND w.is_active = true AND w.deleted_at IS NULL
-                  AND i.item_type = 'INGREDIENT' AND i.track_inventory = true AND i.deleted_at IS NULL
+                  AND (i.item_type IN ('INGREDIENT','MENU_ITEM') AND NOT i.recipe_enabled) AND i.track_inventory = true AND i.deleted_at IS NULL
                   AND b.min_quantity > 0 AND b.quantity <= b.min_quantity
                 """;
         QueryParts parts = filters(from, restaurantId, search.warehouseId(), search, true);
@@ -106,7 +106,7 @@ public class InventoryBalanceQueryRepository {
         parameters.put("offset", (long) search.page() * search.size());
         List<InventoryBalanceResponse> content = jdbc.query("""
                 SELECT b.id AS balance_id, w.id AS warehouse_id, w.code AS warehouse_code,
-                       i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
+                       i.item_type, i.id AS ingredient_id, i.sku AS ingredient_sku, i.name AS ingredient_name,
                        i.base_unit, i.is_active AS ingredient_active,
                        b.quantity, b.reserved_quantity, b.min_quantity, b.version, b.created_at, b.updated_at
                 """ + parts.sql() + order + " LIMIT :limit OFFSET :offset", parameters,
@@ -129,7 +129,7 @@ public class InventoryBalanceQueryRepository {
             parameters.put("ingredientActive", search.ingredientActive());
         }
         if (search.q() != null && !search.q().isBlank()) {
-            sql.append(" AND (lower(i.name) LIKE :q ESCAPE '\\\\' OR lower(coalesce(i.sku,'')) LIKE :q ESCAPE '\\\\')");
+            sql.append(" AND (lower(i.name) LIKE :q ESCAPE '\\' OR lower(coalesce(i.sku,'')) LIKE :q ESCAPE '\\')");
             parameters.put("q", "%" + escape(search.q().trim().toLowerCase()) + "%");
         }
         return new QueryParts(sql.toString(), parameters);
@@ -155,7 +155,7 @@ public class InventoryBalanceQueryRepository {
                 balanceId != null,
                 rs.getObject("warehouse_id", UUID.class),
                 rs.getString("warehouse_code"),
-                rs.getObject("ingredient_id", UUID.class),
+                "INGREDIENT".equals(rs.getString("item_type")) ? rs.getObject("ingredient_id", UUID.class) : null,
                 rs.getString("ingredient_sku"),
                 rs.getString("ingredient_name"),
                 rs.getString("base_unit"),
@@ -167,7 +167,7 @@ public class InventoryBalanceQueryRepository {
                 min.signum() > 0 && quantity.compareTo(min) <= 0,
                 version,
                 instant(rs, "created_at"),
-                instant(rs, "updated_at"));
+                instant(rs, "updated_at"),rs.getObject("ingredient_id",UUID.class),rs.getString("item_type"));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

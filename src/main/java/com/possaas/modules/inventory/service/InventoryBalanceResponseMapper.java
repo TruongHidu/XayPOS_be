@@ -14,18 +14,18 @@ public class InventoryBalanceResponseMapper {
         BigDecimal quantity = balance.getQuantity().setScale(3);
         BigDecimal minimum = balance.getMinQuantity().setScale(3);
         return new InventoryBalanceResponse(
-                balance.getId(), true, warehouse.getId(), warehouse.getCode(), ingredient.id(), ingredient.sku(),
+                balance.getId(), true, warehouse.getId(), warehouse.getCode(), "INGREDIENT".equals(ingredient.itemType())?ingredient.id():null, ingredient.sku(),
                 ingredient.name(), ingredient.baseUnit(), ingredient.active(), quantity,
                 balance.getReservedQuantity().setScale(3), quantity.subtract(balance.getReservedQuantity()).setScale(3), minimum,
                 minimum.signum() > 0 && quantity.compareTo(minimum) <= 0,
-                balance.getVersion(), balance.getCreatedAt(), balance.getUpdatedAt());
+                balance.getVersion(), balance.getCreatedAt(), balance.getUpdatedAt(),ingredient.id(),ingredient.itemType());
     }
 
     public InventoryBalanceResponse logical(Warehouse warehouse, TrackedIngredientSnapshot ingredient) {
         BigDecimal zero = BigDecimal.ZERO.setScale(3);
         return new InventoryBalanceResponse(
-                null, false, warehouse.getId(), warehouse.getCode(), ingredient.id(), ingredient.sku(),
+                null, false, warehouse.getId(), warehouse.getCode(), "INGREDIENT".equals(ingredient.itemType())?ingredient.id():null, ingredient.sku(),
                 ingredient.name(), ingredient.baseUnit(), ingredient.active(), zero, zero, zero, zero, false,
-                null, null, null);
+                null, null, null,ingredient.id(),ingredient.itemType());
     }
 }

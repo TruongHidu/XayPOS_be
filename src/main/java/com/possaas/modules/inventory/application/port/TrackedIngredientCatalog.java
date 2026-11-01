@@ -17,6 +17,9 @@ public interface TrackedIngredientCatalog {
             String baseUnit,
             boolean active,
             boolean trackInventory,
-            boolean deleted) {
+            boolean deleted, String itemType) {
+        public TrackedIngredientSnapshot(UUID id,String sku,String name,String baseUnit,boolean active,boolean tracked,boolean deleted) {
+            this(id,sku,name,baseUnit,active,tracked,deleted,"INGREDIENT");
+        }
     }
 }

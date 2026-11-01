@@ -19,7 +19,7 @@ public class InventoryAllocationController {
     private final InventoryAllocationQueryService query;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORDER_VIEW') and hasAuthority('RECIPE_VIEW') and hasAuthority('INVENTORY_VIEW')")
+    @PreAuthorize("hasAuthority('ORDER_VIEW') and hasAuthority('INVENTORY_VIEW')")
     public ResponseEntity<InventoryAllocationResponse> find(@PathVariable UUID orderId, @PathVariable UUID orderItemId) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(query.find(orderId, orderItemId));
     }

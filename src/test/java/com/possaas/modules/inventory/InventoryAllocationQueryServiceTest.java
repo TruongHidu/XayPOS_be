@@ -41,7 +41,7 @@ class InventoryAllocationQueryServiceTest {
 
     @BeforeEach void authorize() { when(access.require(false)).thenReturn(actor(PERMISSIONS)); }
 
-    @ParameterizedTest @ValueSource(strings = {"ORDER_VIEW", "RECIPE_VIEW", "INVENTORY_VIEW"})
+    @ParameterizedTest @ValueSource(strings = {"ORDER_VIEW", "INVENTORY_VIEW"})
     void eachViewPermissionIsRequiredBeforeFeaturesOrRecipeDataAreRead(String missing) {
         var granted = new HashSet<>(PERMISSIONS); granted.remove(missing);
         when(access.require(false)).thenReturn(actor(granted));
@@ -65,7 +65,8 @@ class InventoryAllocationQueryServiceTest {
         verify(features).requireFeature(tenant, "ORDER_MANAGEMENT");
         if (missing.equals("RECIPE_MANAGEMENT")) verify(features).requireFeature(tenant, "RECIPE_MANAGEMENT");
         else verify(features, never()).requireFeature(tenant, "RECIPE_MANAGEMENT");
-        verifyNoInteractions(orderItems, queries, allocations);
+        verifyNoInteractions(orderItems, allocations);
+        if(missing.equals("RECIPE_MANAGEMENT")) verify(queries).isDirect(tenant,orderId,itemId); else verifyNoInteractions(queries);
     }
 
     @ParameterizedTest @ValueSource(strings = {"ORDER_NOT_FOUND", "ORDER_ITEM_NOT_FOUND"})
@@ -74,7 +75,8 @@ class InventoryAllocationQueryServiceTest {
         when(orderItems.find(tenant, orderId, itemId)).thenThrow(missing);
         assertThatThrownBy(() -> service.find(orderId, itemId)).isSameAs(missing);
         verify(orderItems).find(tenant, orderId, itemId);
-        verifyNoInteractions(queries, allocations);
+        verify(queries).isDirect(tenant,orderId,itemId);
+        verifyNoInteractions(allocations);
     }
 
     @Test void unsentLineReturnsResponseOnlyNotSubmittedWithoutCreatingInventoryData() {
@@ -140,7 +142,8 @@ class InventoryAllocationQueryServiceTest {
         var conflict = new ConflictException("INVENTORY_ALLOCATION_CONFLICT", "Invalid history");
         doThrow(conflict).when(allocations).validate(tenant, orderId, List.of(state(line)));
         assertThatThrownBy(() -> service.find(orderId, itemId)).isSameAs(conflict);
-        verifyNoInteractions(queries);
+        verify(queries).isDirect(tenant,orderId,itemId);
+        verifyNoMoreInteractions(queries);
         verify(allocations).validate(tenant, orderId, List.of(state(line)));
         verifyNoMoreInteractions(allocations);
     }

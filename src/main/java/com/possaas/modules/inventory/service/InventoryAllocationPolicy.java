@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class InventoryAllocationPolicy {
     public InventoryAllocationSkipReason skipReason(AcceptedItem item, boolean enabled) {
         if ("LEGACY_UNAVAILABLE".equals(item.snapshotStatus())) return InventoryAllocationSkipReason.LEGACY_UNAVAILABLE;
+        if(item.directStock()) return enabled ? null : InventoryAllocationSkipReason.INVENTORY_FEATURE_DISABLED;
         if ("RECIPE_DISABLED".equals(item.snapshotStatus())) return InventoryAllocationSkipReason.SNAPSHOT_RECIPE_DISABLED;
         if (!enabled) return InventoryAllocationSkipReason.INVENTORY_FEATURE_DISABLED;
         return switch (item.snapshotStatus()) {
@@ -26,7 +27,7 @@ public class InventoryAllocationPolicy {
     }
 
     public void matches(OrderItemInventoryAllocation allocation, UUID tenant, UUID order, AcceptedItem item) {
-        if (!allocation.getRestaurantId().equals(tenant) || !allocation.getOrderId().equals(order)
+        if (allocation.isDirectStockSnapshot()!=item.directStock() || !allocation.getRestaurantId().equals(tenant) || !allocation.getOrderId().equals(order)
                 || !allocation.getOrderItemId().equals(item.orderItemId())
                 || !Objects.equals(allocation.getRecipeSnapshotId(), item.recipeSnapshotId())
                 || allocation.getOrderQuantitySnapshot().compareTo(item.orderQuantity()) != 0
@@ -88,19 +89,19 @@ public class InventoryAllocationPolicy {
                     || !allocation.getWarehouseId().equals(detail.getWarehouseId())
                     || detail.getQuantity().signum() <= 0 || !ingredients.add(detail.getIngredientId())
                     || !usages.add(detail.getRecipeUsageId())) throw conflict();
-            BigDecimal expectedCost = usageUnitCost(allocation, detail, costs.get(detail.getRecipeUsageId()));
+            BigDecimal expectedCost = usageUnitCost(allocation, detail, costs.get(allocation.isDirectStockSnapshot()?allocation.getRecipeSnapshotId():detail.getRecipeUsageId()));
             InventoryTransaction transaction = ledger.get(detail.getId());
             if (allocation.getStatus() != InventoryAllocationStatus.CONSUMED) {
                 if (transaction != null) throw conflict();
             } else if (transaction == null || transaction.getSourceType() != InventorySourceType.ORDER_ITEM
-                    || transaction.getTransactionType() != InventoryTransactionType.RECIPE_USE
+                    || transaction.getTransactionType() != (allocation.isDirectStockSnapshot()?InventoryTransactionType.DIRECT_USE:InventoryTransactionType.RECIPE_USE)
                     || !allocation.getRestaurantId().equals(transaction.getRestaurantId())
                     || !allocation.getOrderId().equals(transaction.getOrderId())
                     || !allocation.getOrderItemId().equals(transaction.getOrderItemId())
                     || !detail.getWarehouseId().equals(transaction.getWarehouseId())
                     || !detail.getIngredientId().equals(transaction.getItemId())
                     || !detail.getId().equals(transaction.getReservationId())
-                    || !detail.getRecipeUsageId().equals(transaction.getRecipeUsageId())
+                    || !Objects.equals(detail.getRecipeUsageId(),transaction.getRecipeUsageId())
                     || transaction.getQuantityChange().compareTo(detail.getQuantity().negate()) != 0
                     || !detail.getIngredientUnitSnapshot().equals(transaction.getUnit())
                     || !sameCost(expectedCost, transaction.getUnitCost()) || transaction.getStockDocumentId() != null
@@ -113,10 +114,10 @@ public class InventoryAllocationPolicy {
     /** The usage decision is authoritative even when another usage made its header incomplete. */
     public BigDecimal usageUnitCost(OrderItemInventoryAllocation allocation, InventoryReservation reservation,
             UsageCost cost) {
-        if (cost == null || !allocation.getOrderId().equals(cost.orderId())
+        if (cost == null || (!allocation.isDirectStockSnapshot() && !allocation.getOrderId().equals(cost.orderId()))
                 || !allocation.getOrderItemId().equals(cost.orderItemId())
                 || !allocation.getRecipeSnapshotId().equals(cost.recipeSnapshotId())
-                || !reservation.getRecipeUsageId().equals(cost.recipeUsageId())
+                || !Objects.equals(reservation.getRecipeUsageId(),cost.recipeUsageId())
                 || !reservation.getIngredientId().equals(cost.ingredientId())
                 || !reservation.getIngredientUnitSnapshot().equals(cost.unit())
                 || cost.quantity() == null || reservation.getQuantity().compareTo(cost.quantity()) != 0)

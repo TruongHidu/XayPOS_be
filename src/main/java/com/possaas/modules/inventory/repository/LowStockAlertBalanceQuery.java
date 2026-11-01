@@ -15,7 +15,7 @@ public class LowStockAlertBalanceQuery {
         String sql="""
             SELECT b.warehouse_id,b.item_id,w.code,w.name AS warehouse_name,w.is_active,
                 w.deleted_at AS warehouse_deleted,i.sku,i.name AS ingredient_name,i.base_unit,
-                i.item_type,i.track_inventory,i.deleted_at AS ingredient_deleted,b.quantity,b.min_quantity
+                i.item_type,i.recipe_enabled,i.track_inventory,i.deleted_at AS ingredient_deleted,b.quantity,b.min_quantity
             FROM inventory_balances b
             JOIN warehouses w ON w.restaurant_id=b.restaurant_id AND w.id=b.warehouse_id
             JOIN items i ON i.restaurant_id=b.restaurant_id AND i.id=b.item_id
@@ -28,14 +28,15 @@ public class LowStockAlertBalanceQuery {
             rs.getObject("warehouse_id",UUID.class),rs.getObject("item_id",UUID.class),rs.getString("code"),
             rs.getString("warehouse_name"),rs.getBoolean("is_active"),rs.getTimestamp("warehouse_deleted")!=null,
             rs.getString("sku"),rs.getString("ingredient_name"),rs.getString("base_unit"),
-            "INGREDIENT".equals(rs.getString("item_type")) && rs.getBoolean("track_inventory"),
-            rs.getTimestamp("ingredient_deleted")!=null,rs.getBigDecimal("quantity"),rs.getBigDecimal("min_quantity")));
+            !rs.getBoolean("recipe_enabled") && rs.getBoolean("track_inventory"),
+            rs.getTimestamp("ingredient_deleted")!=null,rs.getBigDecimal("quantity"),rs.getBigDecimal("min_quantity"),rs.getString("item_type")));
     }
 
     public record Key(UUID warehouseId,UUID ingredientId) {}
     public record Balance(UUID warehouseId,UUID ingredientId,String warehouseCode,String warehouseName,
             boolean warehouseActive,boolean warehouseDeleted,String sku,String name,String unit,
-            boolean tracked,boolean ingredientDeleted,BigDecimal quantity,BigDecimal threshold) {
+            boolean tracked,boolean ingredientDeleted,BigDecimal quantity,BigDecimal threshold,String itemType) {
+        public Balance(UUID warehouseId,UUID ingredientId,String warehouseCode,String warehouseName,boolean warehouseActive,boolean warehouseDeleted,String sku,String name,String unit,boolean tracked,boolean ingredientDeleted,BigDecimal quantity,BigDecimal threshold) {this(warehouseId,ingredientId,warehouseCode,warehouseName,warehouseActive,warehouseDeleted,sku,name,unit,tracked,ingredientDeleted,quantity,threshold,"INGREDIENT");}
         public Key key() {return new Key(warehouseId,ingredientId);}
         public boolean eligible() {return warehouseActive && !warehouseDeleted && tracked && !ingredientDeleted;}
     }

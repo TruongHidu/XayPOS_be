@@ -563,6 +563,21 @@ class QrOrderIntegrationTest {
         assertThat(count("audit_logs")).isEqualTo(audits);inventoryReceipt(source,"100");approve(request,review(request),null,ALL).expect(200);
         assertThat(count("orders")).isEqualTo(1);assertThat(count("inventory_reservations")).isEqualTo(1);assertThat(events("ORDER_ITEM_INVENTORY_RESERVED")).isEqualTo(1);
     }
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void directQrAcceptanceUsesOwnStockWithoutRecipeFeature(boolean dine) throws Exception {
+        var codes=new ArrayList<>(FEATURES);codes.add("INVENTORY_MANAGEMENT");features(codes);
+        item=items.findById(item.getId()).orElseThrow();item.setTrackInventory(true);item.setRecipeEnabled(false);item=items.saveAndFlush(item);
+        var permissions=new HashSet<>(ALL);permissions.addAll(Set.of("WAREHOUSE_CREATE","INVENTORY_RECEIVE"));
+        var w=staff(post("/api/v1/inventory/warehouses"),Map.of("code","DIRECT","name","Direct"),permissions);w.expect(201);
+        var receipt=staff(post("/api/v1/inventory/stock-documents").header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("documentType","RECEIPT","warehouseId",w.body.path("id").asText(),"items",List.of(Map.of("itemId",item.getId(),"quantity",100,"unitCost",10))),permissions);receipt.expect(201);
+        staff(post("/api/v1/inventory/stock-documents/"+receipt.body.path("id").asText()+"/confirm"),Map.of("expectedVersion",receipt.body.path("version").asLong()),permissions).expect(200);
+        var pending=submit(mint(dine),"direct-qr",payload());pending.expect(201);var reviewed=review(pending);reviewed.expect(200);
+        assertThat(count("inventory_reservations")).isZero();
+        var accepted=approve(pending,reviewed,null,ALL);accepted.expect(200);approve(pending,reviewed,null,ALL).expect(200);
+        assertThat(count("inventory_reservations")).isEqualTo(1);assertThat(count("order_item_recipe_usages")).isZero();
+        assertThat(jdbc.queryForObject("select sum(reserved_quantity) from inventory_balances where restaurant_id=?",BigDecimal.class,restaurant.getId())).isEqualByComparingTo("1");
+        assertThat(jdbc.queryForObject("select direct_stock_snapshot from order_item_inventory_allocations where restaurant_id=?",Boolean.class,restaurant.getId())).isTrue();
+    }
     UUID inventoryFixture(String physical) throws Exception {
         var codes=new ArrayList<>(FEATURES);codes.add("RECIPE_MANAGEMENT");codes.add("INVENTORY_MANAGEMENT");features(codes);
         Recipe snapshotRecipe=qrRecipe(1,"100");UUID source=jdbc.queryForObject("select ingredient_id from recipe_items where recipe_id=?",UUID.class,snapshotRecipe.getId());

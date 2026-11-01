@@ -224,3 +224,6 @@ FE: [order-inventory-allocation-fe-sync.md](order-inventory-allocation-fe-sync.m
 - `docs/openapi/public-qr-order-api.yaml`
 - `docs/openapi/tenant-api.yaml`
 - `README.md`
+
+
+V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.

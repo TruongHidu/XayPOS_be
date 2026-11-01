@@ -5,5 +5,5 @@ public enum InventoryTransactionType {
     ISSUE,
     ADJUSTMENT_INCREASE,
     ADJUSTMENT_DECREASE,
-    RECIPE_USE
+    DIRECT_USE, RECIPE_USE
 }

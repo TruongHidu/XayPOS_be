@@ -16,6 +16,7 @@ public class StockAuditItem {
     @Column(name="restaurant_id",nullable=false,updatable=false) private UUID restaurantId;
     @Column(name="stock_audit_id",nullable=false,updatable=false) private UUID stockAuditId;
     @Column(name="ingredient_id",nullable=false,updatable=false) private UUID ingredientId;
+    @Column(name="item_type_snapshot",nullable=false,updatable=false,length=20) private String itemTypeSnapshot="INGREDIENT";
     @Column(name="ingredient_sku_snapshot",updatable=false,length=80) private String sku;
     @Column(name="ingredient_name_snapshot",nullable=false,updatable=false,length=150) private String name;
     @Column(name="unit_snapshot",nullable=false,updatable=false,length=30) private String unit;
@@ -28,7 +29,7 @@ public class StockAuditItem {
     @Column(name="updated_at",nullable=false) private Instant updatedAt;
 
     public StockAuditItem(StockAudit audit,TrackedIngredientSnapshot ingredient,BigDecimal quantity,BigDecimal cost,long movements,Instant now) {
-        restaurantId=audit.getRestaurantId();stockAuditId=audit.getId();ingredientId=ingredient.id();sku=ingredient.sku();
+        restaurantId=audit.getRestaurantId();stockAuditId=audit.getId();ingredientId=ingredient.id();itemTypeSnapshot=ingredient.itemType();sku=ingredient.sku();
         name=ingredient.name();unit=ingredient.baseUnit();systemQuantity=quantity;referenceUnitCostSnapshot=cost;
         movementCountSnapshot=movements;createdAt=now.truncatedTo(ChronoUnit.MICROS);updatedAt=createdAt;
     }

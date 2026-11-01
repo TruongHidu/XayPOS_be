@@ -29,6 +29,7 @@ public class InventoryTransactionQueryRepository {
                 LEFT JOIN stock_document_items si ON si.id=t.stock_document_item_id AND si.restaurant_id=t.restaurant_id
                 LEFT JOIN stock_documents d ON d.id=t.stock_document_id AND d.restaurant_id=t.restaurant_id
                 LEFT JOIN inventory_reservations r ON r.id=t.reservation_id AND r.restaurant_id=t.restaurant_id
+                LEFT JOIN order_item_inventory_allocations a ON a.restaurant_id=r.restaurant_id AND a.id=r.allocation_id
                 WHERE t.restaurant_id=:restaurantId
                 """);
         Map<String, Object> params = new HashMap<>();
@@ -49,7 +50,7 @@ public class InventoryTransactionQueryRepository {
         paged.put("limit", search.size());
         paged.put("offset", (long) search.page() * search.size());
         List<InventoryTransactionResponse> content = jdbc.query("""
-                SELECT t.id,t.warehouse_id,w.code AS warehouse_code,t.item_id,
+                SELECT CASE WHEN t.source_type='ORDER_ITEM' THEN CASE WHEN a.direct_stock_snapshot THEN 'MENU_ITEM' ELSE 'INGREDIENT' END ELSE si.item_type_snapshot END AS item_type,t.id,t.warehouse_id,w.code AS warehouse_code,t.item_id,
                        CASE WHEN t.source_type='ORDER_ITEM' THEN r.ingredient_sku_snapshot ELSE si.ingredient_sku END AS sku,
                        CASE WHEN t.source_type='ORDER_ITEM' THEN r.ingredient_name_snapshot ELSE si.ingredient_name END AS name,t.unit,
                        t.stock_document_id,d.document_code,d.document_type,t.transaction_type,
@@ -63,7 +64,7 @@ public class InventoryTransactionQueryRepository {
     private static InventoryTransactionResponse map(ResultSet rs) throws SQLException {
         return new InventoryTransactionResponse(
                 rs.getObject("id", UUID.class), rs.getObject("warehouse_id", UUID.class),
-                rs.getString("warehouse_code"), rs.getObject("item_id", UUID.class),
+                rs.getString("warehouse_code"), "MENU_ITEM".equals(rs.getString("item_type"))?null:rs.getObject("item_id", UUID.class),
                 rs.getString("sku"), rs.getString("name"), rs.getString("unit"),
                 rs.getObject("stock_document_id", UUID.class), rs.getString("document_code"),
                 rs.getString("document_type") == null ? null : StockDocumentType.valueOf(rs.getString("document_type")),
@@ -73,7 +74,7 @@ public class InventoryTransactionQueryRepository {
                 rs.getObject("created_by", UUID.class), rs.getTimestamp("created_at").toInstant(),
                 InventorySourceType.valueOf(rs.getString("source_type")), rs.getObject("order_id", UUID.class),
                 rs.getObject("order_item_id", UUID.class), rs.getObject("reservation_id", UUID.class),
-                rs.getObject("recipe_usage_id", UUID.class));
+                rs.getObject("recipe_usage_id", UUID.class),rs.getObject("item_id",UUID.class),rs.getString("item_type"));
     }
 
     public record PageResult(List<InventoryTransactionResponse> content, long totalElements) {}

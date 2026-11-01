@@ -30,6 +30,9 @@ public class StockDocumentItem {
     private UUID stockDocumentId;
     @Column(name = "ingredient_id", nullable = false)
     private UUID ingredientId;
+    @Column(name="item_type_snapshot",nullable=false,updatable=false,length=20)
+    private String itemTypeSnapshot = "INGREDIENT";
+    public void captureItemType(String type) { this.itemTypeSnapshot=type; }
     @Column(name = "ingredient_sku", length = 80)
     private String ingredientSku;
     @Column(name = "ingredient_name", nullable = false, length = 150)

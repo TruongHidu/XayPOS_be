@@ -151,3 +151,6 @@ ORDER_CHANGED. Không thêm realtime event hay API chỉnh snapshot.
 [Thiết kế và migration](order-reference-cost-snapshot-implementation.md) ·
 [Đồng bộ FE](order-reference-cost-snapshot-fe-sync.md) ·
 [OpenAPI ORDER](openapi/order-api.yaml)
+
+
+V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.

@@ -10,4 +10,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface OrderItemRecipeSnapshotRepository extends JpaRepository<OrderItemRecipeSnapshot, UUID> {
     List<OrderItemRecipeSnapshot> findAllByRestaurantIdAndOrderItemIdIn(UUID tenant, Collection<UUID> lineIds);
     Optional<OrderItemRecipeSnapshot> findByRestaurantIdAndOrderItemId(UUID tenant, UUID lineId);
+    java.util.List<OrderItemRecipeSnapshot> findAllByRestaurantIdAndIdIn(java.util.UUID tenant,java.util.Collection<java.util.UUID> ids);
 }

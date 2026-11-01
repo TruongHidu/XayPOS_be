@@ -17,6 +17,8 @@ public class OrderItemInventoryAllocation {
     @Column(name = "order_id", nullable = false, updatable = false) private UUID orderId;
     @Column(name = "order_item_id", nullable = false, updatable = false) private UUID orderItemId;
     @Column(name = "recipe_snapshot_id", updatable = false) private UUID recipeSnapshotId;
+    @Column(name="direct_stock_snapshot",nullable=false,updatable=false) private boolean directStockSnapshot;
+    public void captureDirectStock(boolean direct) {this.directStockSnapshot=direct;}
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private InventoryAllocationStatus status;
     @Enumerated(EnumType.STRING) @Column(name = "skip_reason", length = 40, updatable = false)
     private InventoryAllocationSkipReason skipReason;

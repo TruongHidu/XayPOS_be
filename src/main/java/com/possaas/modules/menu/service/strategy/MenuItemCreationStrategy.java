@@ -24,7 +24,7 @@ public class MenuItemCreationStrategy implements ItemCreationStrategy {
         Item item = new Item();
         item.initialize(c.restaurantId(), c.now());
         item.setItemType(ItemType.MENU_ITEM);
-        item.setTrackInventory(false);
+        item.setTrackInventory(c.trackInventory());
         item.setCostPrice(BigDecimal.ZERO);
         item.setMetadata(new LinkedHashMap<>());
         item.setAvailabilityStatus(AvailabilityStatus.AVAILABLE);

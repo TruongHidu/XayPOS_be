@@ -14,4 +14,6 @@ public record StockDocumentItemResponse(
         AdjustmentDirection adjustmentDirection,
         BigDecimal unitCost,
         BigDecimal totalCost,
-        String note) {}
+        String note, UUID itemId, String itemType) {
+    public StockDocumentItemResponse(UUID id,UUID ingredientId,String sku,String name,String unit,BigDecimal quantity,AdjustmentDirection direction,BigDecimal cost,BigDecimal total,String note) {this(id,ingredientId,sku,name,unit,quantity,direction,cost,total,note,ingredientId,"INGREDIENT");}
+}

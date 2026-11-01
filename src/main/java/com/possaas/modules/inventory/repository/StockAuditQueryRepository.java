@@ -70,9 +70,9 @@ public class StockAuditQueryRepository {
         page(params,search.getPage(),search.getSize());
         var content=jdbc.query("SELECT i.* FROM stock_audit_items i"+where
             +order(ITEM_SORT,search.getSortBy(),search.getDirection(),"i.id")+" LIMIT :limit OFFSET :offset",params,(rs,n)->new StockAuditItemResponse(
-                rs.getObject("id",UUID.class),rs.getObject("ingredient_id",UUID.class),rs.getString("ingredient_sku_snapshot"),
+                rs.getObject("id",UUID.class),"MENU_ITEM".equals(rs.getString("item_type_snapshot"))?null:rs.getObject("ingredient_id",UUID.class),rs.getString("ingredient_sku_snapshot"),
                 rs.getString("ingredient_name_snapshot"),rs.getString("unit_snapshot"),rs.getBigDecimal("system_quantity"),
-                rs.getBigDecimal("counted_quantity"),rs.getBigDecimal("difference_quantity"),rs.getBigDecimal("reference_unit_cost_snapshot"),rs.getString("note")));
+                rs.getBigDecimal("counted_quantity"),rs.getBigDecimal("difference_quantity"),rs.getBigDecimal("reference_unit_cost_snapshot"),rs.getString("note"),rs.getObject("ingredient_id",UUID.class),rs.getString("item_type_snapshot")));
         return new Page<>(content,total==null?0:total);
     }
 

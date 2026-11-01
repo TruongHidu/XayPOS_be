@@ -17,8 +17,8 @@ public class StockDocumentRequestHasher {
                 .append(request.warehouseId()).append('|')
                 .append(text(request.note())).append('|');
         request.safeItems().stream()
-                .sorted(Comparator.comparing(line -> line.ingredientId().toString()))
-                .forEach(line -> normalized.append(line.ingredientId()).append(':')
+                .sorted(Comparator.comparing(line -> line.stockItemId().toString()))
+                .forEach(line -> normalized.append(line.stockItemId()).append(':')
                         .append(number(line.quantity())).append(':')
                         .append(number(line.unitCost())).append(':')
                         .append(line.adjustmentDirection()).append(':')

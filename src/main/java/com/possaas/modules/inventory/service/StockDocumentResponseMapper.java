@@ -22,8 +22,8 @@ public class StockDocumentResponseMapper {
     }
 
     private StockDocumentItemResponse item(StockDocumentItem item) {
-        return new StockDocumentItemResponse(item.getId(), item.getIngredientId(), item.getIngredientSku(),
+        return new StockDocumentItemResponse(item.getId(), "INGREDIENT".equals(item.getItemTypeSnapshot()) ? item.getIngredientId() : null, item.getIngredientSku(),
                 item.getIngredientName(), item.getUnit(), item.getQuantity(), item.getAdjustmentDirection(),
-                item.getUnitCost(), item.getTotalCost(), item.getNote());
+                item.getUnitCost(), item.getTotalCost(), item.getNote(),item.getIngredientId(),item.getItemTypeSnapshot());
     }
 }

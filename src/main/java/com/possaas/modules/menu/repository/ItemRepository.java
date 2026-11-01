@@ -11,6 +11,11 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
     @Query("select i from Item i where i.restaurantId=:tenant and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT "
         + "and i.trackInventory=true and i.deletedAt is null order by i.id")
     List<Item> findAllTrackedIngredients(@Param("tenant") UUID tenant);
+    @Query("select i from Item i where i.restaurantId=:tenant and i.trackInventory=true and i.recipeEnabled=false and i.deletedAt is null order by i.id")
+    List<Item> findAllTrackedStockItems(@Param("tenant") UUID tenant);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Item i where i.restaurantId=:tenant and i.id in :ids order by i.id")
+    List<Item> findStockItemsForUpdate(@Param("tenant") UUID tenant,@Param("ids") Collection<UUID> ids);
     Optional<Item> findByIdAndRestaurantIdAndItemType(UUID id, UUID restaurantId, ItemType type);
     List<Item> findAllByRestaurantIdAndIdIn(UUID restaurantId, Collection<UUID> ids);
 

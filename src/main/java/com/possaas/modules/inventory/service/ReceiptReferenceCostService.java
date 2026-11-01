@@ -44,7 +44,7 @@ public class ReceiptReferenceCostService {
             if (previous == null)
                 throw new com.possaas.common.exception.ConflictException("INVALID_INVENTORY_COST_DATA", "Reference cost state is missing");
             if (quantity.signum() > 0 && !previous.configured()) {
-                audit.record(actor.restaurantId(), actor.userId(), "INGREDIENT_COST_RECALCULATION_SKIPPED", "items", id,
+                audit.record(actor.restaurantId(), actor.userId(), "MENU_ITEM".equals(item.getItemTypeSnapshot()) ? "MENU_ITEM_COST_RECALCULATION_SKIPPED" : "INGREDIENT_COST_RECALCULATION_SKIPPED", "items", id,
                         null, Map.of("sourceDocumentId", document.getId(), "reason", "UNCONFIGURED_OPENING_REFERENCE_COST"), ipAddress);
                 continue;
             }

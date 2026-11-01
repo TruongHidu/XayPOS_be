@@ -46,6 +46,8 @@ class LowStockAlertEventPublisherTest {
         Map<String, Object> expected = new LinkedHashMap<>();
         expected.put("warehouseId", alert.getWarehouseId());
         expected.put("ingredientId", alert.getItemId());
+        expected.put("itemId",alert.getItemId());
+        expected.put("itemType","INGREDIENT");
         expected.put("status", "OPEN");
         expected.put("resolutionReason", null);
         assertThat(envelope.payload()).containsExactlyInAnyOrderEntriesOf(expected);

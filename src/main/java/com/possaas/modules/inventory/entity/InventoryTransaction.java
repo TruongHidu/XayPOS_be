@@ -86,10 +86,10 @@ public class InventoryTransaction {
             InventoryReservation reservation, BigDecimal before, BigDecimal after, BigDecimal unitCost,
             UUID actor, Instant now) {
         InventoryTransaction transaction = new InventoryTransaction(allocation.getRestaurantId(),
-                reservation.getWarehouseId(), reservation.getIngredientId(), InventoryTransactionType.RECIPE_USE,
+                reservation.getWarehouseId(), reservation.getIngredientId(), allocation.isDirectStockSnapshot()?InventoryTransactionType.DIRECT_USE:InventoryTransactionType.RECIPE_USE,
                 null, null, reservation.getQuantity().negate(), before, after,
                 reservation.getIngredientUnitSnapshot(), unitCost,
-                "RECIPE_USE:" + allocation.getOrderItemId() + ":" + reservation.getIngredientId(), actor, now);
+                (allocation.isDirectStockSnapshot()?"DIRECT_USE:":"RECIPE_USE:") + allocation.getOrderItemId() + ":" + reservation.getIngredientId(), actor, now);
         transaction.sourceType = InventorySourceType.ORDER_ITEM;
         transaction.orderId = allocation.getOrderId(); transaction.orderItemId = allocation.getOrderItemId();
         transaction.reservationId = reservation.getId(); transaction.recipeUsageId = reservation.getRecipeUsageId();

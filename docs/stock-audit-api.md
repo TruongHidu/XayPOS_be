@@ -227,3 +227,6 @@ lưu `auditId`, `auditItemId` từ GET items và `version` mới nhất mỗi mu
 
 Không hỗ trợ unit conversion, freeze warehouse, tự rebase, partial confirm,
 reversal, xóa lịch sử, FIFO, actual COGS, realtime/push hoặc sửa package snapshot.
+
+
+V40: hỗ trợ MENU_ITEM theo dõi tồn trực tiếp. Response bổ sung itemId/itemType; ingredientId=null cho MENU_ITEM. Alert event payload bổ sung itemId/itemType, giữ envelope schemaVersion=1. Loại hàng được chốt trong snapshot cảnh báo/kiểm kê. Xem [hướng dẫn đồng bộ FE](direct-stock-menu-items-fe-sync.md).

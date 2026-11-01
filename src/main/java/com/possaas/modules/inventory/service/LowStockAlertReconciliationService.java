@@ -64,10 +64,12 @@ public class LowStockAlertReconciliationService {
                     before.put(alert.getId(),audit.snapshot(alert));alert.resolve(reason,now);resolved.add(alert);alert=null;
                 }
             }
-            if (alert==null && balance.eligible() && policy.low(balance.quantity(),balance.threshold()))
-                created.add(new LowStockAlert(actor.restaurantId(),balance.warehouseId(),balance.ingredientId(),
+            if (alert==null && balance.eligible() && policy.low(balance.quantity(),balance.threshold())) {
+                var opened=new LowStockAlert(actor.restaurantId(),balance.warehouseId(),balance.ingredientId(),
                     balance.warehouseCode(),balance.warehouseName(),balance.sku(),balance.name(),balance.unit(),
-                    balance.quantity(),balance.threshold(),now));
+                    balance.quantity(),balance.threshold(),now);
+                opened.captureItemType(balance.itemType());created.add(opened);
+            }
         }
         // Release the partial unique slot before opening a new-unit episode.
         persistence.save(resolved);persistence.save(created);

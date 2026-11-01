@@ -39,6 +39,7 @@ public class StockAuditAdjustmentOperation {
             var item=new StockDocumentItem();item.initialize(actor.restaurantId(),document.getId(),row.getIngredientId(),
                 row.getSku(),row.getName(),row.getUnit(),row.difference().abs(),row.difference().signum()>0?
                     AdjustmentDirection.INCREASE:AdjustmentDirection.DECREASE,row.getReferenceUnitCostSnapshot(),row.getNote(),now);
+            item.captureItemType(row.getItemTypeSnapshot());
             return item;
         }).toList();
         items.saveAllAndFlush(lines);document.updateTotals(lines.size(),quantity,cost,now);documents.saveAndFlush(document);

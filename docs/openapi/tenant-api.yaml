@@ -7,6 +7,32 @@ security:
   -
     bearerAuth: []
 paths:
+  /api/v1/inventory/stock-items:
+    get:
+      operationId: searchTrackedStockItems
+      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. Tenant-scoped paginated stock picker; supports tracked INGREDIENT and direct MENU_ITEM. No price or customer data."
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: itemType, in: query, schema: {type: string, enum: [INGREDIENT, MENU_ITEM]}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: "PageResponse content: itemId, itemType, sku, name, baseUnit, active. Cache-Control no-store."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content: {type: array, items: {type: object, properties: {itemId: {type: string, format: uuid}, itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}, sku: {type: string, nullable: true}, name: {type: string}, baseUnit: {type: string}, active: {type: boolean}}}}
+                  page: {type: integer}
+                  size: {type: integer}
+                  totalElements: {type: integer, format: int64}
+                  totalPages: {type: integer}
+        '400': {description: Invalid filter or pagination}
+        '401': {description: Unauthorized}
+        '403': {description: Missing permission, feature or tenant}
   "/api/v1/inventory/audits": {"get":{"tags":["Inventory stock audits"],"operationId":"listStockAudits","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. Read-only header totals; no embedded items. createdFrom inclusive, createdTo exclusive; from must be before to. Literal substring q.","security":[{"bearerAuth":[]}],"parameters":[{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"status","in":"query","schema":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]}},{"name":"createdFrom","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"createdTo","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt","startedAt","updatedAt","auditCode"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditPage"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"post":{"tags":["Inventory stock audits"],"operationId":"createStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. Creates header only, no stock snapshot. Same key/payload replays; different payload returns IDEMPOTENCY_KEY_REUSED.","security":[{"bearerAuth":[]}],"parameters":[{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","maxLength":100}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditCreate"}}}},"responses":{"201":{"description":"DRAFT created or idempotent replay","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
   "/api/v1/inventory/audits/{auditId}": {"get":{"tags":["Inventory stock audits"],"operationId":"getStockAudit","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"patch":{"tags":["Inventory stock audits"],"operationId":"updateStockAudit","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditNote"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
   "/api/v1/inventory/audits/{auditId}/items": {"get":{"tags":["Inventory stock audits"],"operationId":"listStockAuditItems","description":"Requires INVENTORY_VIEW, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. ","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"q","in":"query","schema":{"type":"string","maxLength":100}},{"name":"counted","in":"query","schema":{"type":"boolean"}},{"name":"differenceOnly","in":"query","schema":{"type":"boolean","default":false}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["name","sku","systemQuantity","countedQuantity","differenceQuantity"],"default":"name"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"asc"}}],"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditItemPage"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}},"patch":{"tags":["Inventory stock audits"],"operationId":"countStockAuditItems","description":"Requires INVENTORY_VIEW and STOCK_AUDIT_MANAGE, INVENTORY_MANAGEMENT and STOCK_AUDIT. Tenant derived from JWT. COUNTING only. Up to 100 unique auditItemId per request. Atomic batch, one header version increment for changes; no-op still checks expectedVersion. Null count is invalid, zero is counted. Omitted/null line note preserves, blank clears.","security":[{"bearerAuth":[]}],"parameters":[{"name":"auditId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditCounts"}}}},"responses":{"200":{"description":"Current persisted result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StockAuditDetail"}}}},"400":{"description":"Invalid input or reserved idempotency namespace","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"Unauthenticated or inactive account","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"Missing permission, feature, effective subscription or active tenant","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"STOCK_AUDIT_NOT_FOUND / STOCK_AUDIT_ITEM_NOT_FOUND","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"Invalid transition, concurrent update, incomplete/stale snapshot, warehouse in progress/inactive, reserved stock invariant or adjustment overflow","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}}}
@@ -80,7 +106,7 @@ paths:
     get:
       tags: ["Inventory"]
       operationId: "getOrderItemInventoryAllocation"
-      description: "Requires ORDER_VIEW, RECIPE_VIEW and INVENTORY_VIEW plus effective ORDER_MANAGEMENT, RECIPE_MANAGEMENT and INVENTORY_MANAGEMENT. Existing account/restaurant/subscription guards apply. Tenant derives from JWT; item must belong to this order. Read-only persisted allocation and ingredient snapshots; no live recipe lookup, mutation or actual order cost. DRAFT returns response-only NOT_SUBMITTED; durable SKIPPED retains its reason. Public QR has no access."
+      description: "Requires ORDER_VIEW and INVENTORY_VIEW plus effective ORDER_MANAGEMENT and INVENTORY_MANAGEMENT. Non-DIRECT history additionally requires RECIPE_VIEW and RECIPE_MANAGEMENT. DIRECT accepted history and unsent DIRECT items do not require recipe access. Existing account/restaurant/subscription guards apply. Tenant derives from JWT; item must belong to this order. Read-only persisted allocation and ingredient snapshots; no live recipe lookup, mutation or actual order cost. DRAFT returns response-only NOT_SUBMITTED; durable SKIPPED retains its reason. Public QR has no access."
       security: [{bearerAuth: []}]
       parameters:
         - {name: "orderId", in: "path", required: true, schema: {type: "string", format: "uuid"}}
@@ -240,7 +266,7 @@ paths:
     get:
       tags: ["Inventory"]
       operationId: "listInventoryTransactions"
-      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. Read-only append-only ledger from STOCK_DOCUMENT or ORDER_ITEM snapshots. RECIPE_USE is negative physical usage with null document fields. V38 unitCost equals the exact frozen tracked usage reference price: known or configured zero is retained; unknown/legacy remains null. Never read today's catalogue at consume or update old ledger. An INCOMPLETE header can still have known-price tracked usages. This is not guaranteed actual COGS or order profit; tracked ledger excludes MANUAL/untracked costs. Null is not zero. Pagination/sorting occur in the database."
+      description: "Requires INVENTORY_VIEW and INVENTORY_MANAGEMENT. Read-only append-only ledger from STOCK_DOCUMENT or ORDER_ITEM snapshots. DIRECT_USE consumes the sold item using frozen non-recipe cost; recipeUsageId is null. RECIPE_USE is negative physical usage with null document fields. V38 unitCost equals the exact frozen tracked usage reference price: known or configured zero is retained; unknown/legacy remains null. Never read today's catalogue at consume or update old ledger. An INCOMPLETE header can still have known-price tracked usages. This is not guaranteed actual COGS or order profit; tracked ledger excludes MANUAL/untracked costs. Null is not zero. Pagination/sorting occur in the database."
       parameters: [{"name":"warehouseId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"ingredientId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"documentId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"sourceType","in":"query","schema":{"$ref":"#/components/schemas/InventoryTransactionSourceType"}},{"name":"orderId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"orderItemId","in":"query","schema":{"type":"string","format":"uuid"}},{"name":"transactionType","in":"query","schema":{"$ref":"#/components/schemas/InventoryTransactionType"}},{"name":"createdFrom","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"createdTo","in":"query","schema":{"type":"string","format":"date-time"}},{"name":"page","in":"query","schema":{"type":"integer","minimum":0,"default":0}},{"name":"size","in":"query","schema":{"type":"integer","minimum":1,"maximum":100,"default":20}},{"name":"sortBy","in":"query","schema":{"type":"string","enum":["createdAt"],"default":"createdAt"}},{"name":"direction","in":"query","schema":{"type":"string","enum":["asc","desc"],"default":"desc"}}]
       responses: {"200":{"description":"Transaction page","content":{"application/json":{"schema":{"$ref":"#/components/schemas/InventoryTransactionPage"}}}}}
   "/api/v1/table-sessions/{sessionId}/transfer":
@@ -2179,7 +2205,7 @@ components:
     StockAuditCounts: {"type":"object","additionalProperties":false,"required":["expectedVersion","items"],"properties":{"expectedVersion":{"type":"integer","format":"int64","minimum":0},"items":{"type":"array","minItems":1,"maxItems":100,"items":{"$ref":"#/components/schemas/StockAuditCountLine"}}}}
     StockAuditSummary: {"type":"object","additionalProperties":false,"required":["id","auditCode","warehouseId","warehouseCode","warehouseName","status","note","itemCount","countedItemCount","changedItemCount","adjustmentDocumentId","adjustmentDocumentCode","version","createdAt","startedAt","updatedAt"],"properties":{"id":{"type":"string","format":"uuid"},"auditCode":{"type":"string"},"warehouseId":{"type":"string","format":"uuid"},"warehouseCode":{"type":"string"},"warehouseName":{"type":"string"},"status":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]},"note":{"type":"string","nullable":true},"itemCount":{"type":"integer","format":"int64","minimum":0},"countedItemCount":{"type":"integer","format":"int64","minimum":0},"changedItemCount":{"type":"integer","format":"int64","minimum":0},"adjustmentDocumentId":{"type":"string","format":"uuid","nullable":true},"adjustmentDocumentCode":{"type":"string","nullable":true},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"startedAt":{"type":"string","format":"date-time","nullable":true},"updatedAt":{"type":"string","format":"date-time"}}}
     StockAuditDetail: {"type":"object","additionalProperties":false,"required":["id","auditCode","warehouseId","warehouseCode","warehouseName","status","note","itemCount","countedItemCount","changedItemCount","adjustmentDocumentId","adjustmentDocumentCode","version","createdAt","startedAt","updatedAt","createdBy","startedBy","confirmedBy","cancelledBy","confirmedAt","cancelledAt"],"properties":{"id":{"type":"string","format":"uuid"},"auditCode":{"type":"string"},"warehouseId":{"type":"string","format":"uuid"},"warehouseCode":{"type":"string"},"warehouseName":{"type":"string"},"status":{"type":"string","enum":["DRAFT","COUNTING","CONFIRMED","CANCELLED"]},"note":{"type":"string","nullable":true},"itemCount":{"type":"integer","format":"int64","minimum":0},"countedItemCount":{"type":"integer","format":"int64","minimum":0},"changedItemCount":{"type":"integer","format":"int64","minimum":0},"adjustmentDocumentId":{"type":"string","format":"uuid","nullable":true},"adjustmentDocumentCode":{"type":"string","nullable":true},"version":{"type":"integer","format":"int64","minimum":0},"createdAt":{"type":"string","format":"date-time"},"startedAt":{"type":"string","format":"date-time","nullable":true},"updatedAt":{"type":"string","format":"date-time"},"createdBy":{"type":"string","format":"uuid"},"startedBy":{"type":"string","format":"uuid","nullable":true},"confirmedBy":{"type":"string","format":"uuid","nullable":true},"cancelledBy":{"type":"string","format":"uuid","nullable":true},"confirmedAt":{"type":"string","format":"date-time","nullable":true},"cancelledAt":{"type":"string","format":"date-time","nullable":true}}}
-    StockAuditItem: {"type":"object","additionalProperties":false,"required":["id","ingredientId","sku","name","unit","systemQuantity","countedQuantity","differenceQuantity","referenceUnitCostSnapshot","note"],"properties":{"id":{"type":"string","format":"uuid"},"ingredientId":{"type":"string","format":"uuid"},"sku":{"type":"string","nullable":true},"name":{"type":"string"},"unit":{"type":"string"},"systemQuantity":{"type":"number"},"countedQuantity":{"type":"number","nullable":true},"differenceQuantity":{"type":"number","nullable":true},"referenceUnitCostSnapshot":{"type":"number","minimum":0,"description":"Start-time reference cost, not actual COGS. Zero is valid."},"note":{"type":"string","nullable":true}}}
+    StockAuditItem: {"type":"object","additionalProperties":false,"required":["id","ingredientId","sku","name","unit","systemQuantity","countedQuantity","differenceQuantity","referenceUnitCostSnapshot","note"],"properties": {itemId: {type: string, format: uuid}, itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}, "id":{"type":"string","format":"uuid"},"ingredientId":{"type":"string","format":"uuid","nullable":true},"sku":{"type":"string","nullable":true},"name":{"type":"string"},"unit":{"type":"string"},"systemQuantity":{"type":"number"},"countedQuantity":{"type":"number","nullable":true},"differenceQuantity":{"type":"number","nullable":true},"referenceUnitCostSnapshot":{"type":"number","minimum":0,"description":"Start-time reference cost, not actual COGS. Zero is valid."},"note":{"type":"string","nullable":true}}}
     StockAuditPage: {"type":"object","additionalProperties":false,"required":["content","page","size","totalElements","totalPages"],"properties":{"content":{"type":"array","items":{"$ref":"#/components/schemas/StockAuditSummary"}},"page":{"type":"integer","format":"int64","minimum":0},"size":{"type":"integer","minimum":1,"maximum":100},"totalElements":{"type":"integer","format":"int64","minimum":0},"totalPages":{"type":"integer","format":"int64","minimum":0}}}
     StockAuditItemPage: {"type":"object","additionalProperties":false,"required":["content","page","size","totalElements","totalPages"],"properties":{"content":{"type":"array","items":{"$ref":"#/components/schemas/StockAuditItem"}},"page":{"type":"integer","format":"int64","minimum":0},"size":{"type":"integer","minimum":1,"maximum":100},"totalElements":{"type":"integer","format":"int64","minimum":0},"totalPages":{"type":"integer","format":"int64","minimum":0}}}
     LowStockAlertAcknowledge:
@@ -2203,11 +2229,13 @@ components:
       description: "Trigger fields are immutable. Low means minQuantity>0 and physical quantity<=minQuantity, not available stock. Inactive tracked ingredients are included. Live metrics are null for ineligible/missing sources or a changed unit. A change to live stock does not increment this episode's version. V34 baseline triggeredAt means upgrade-time detection, not historical crossing time."
       required: ["id", "warehouseId", "warehouseCode", "warehouseName", "ingredientId", "ingredientName", "unit", "status", "quantityAtTrigger", "thresholdQuantity", "triggeredAt", "version", "createdAt", "updatedAt"]
       properties:
+        itemId: {type: string, format: uuid}
+        itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}
         id: {type: "string", format: "uuid", readOnly: true}
         warehouseId: {type: "string", format: "uuid", readOnly: true}
         warehouseCode: {type: "string", readOnly: true}
         warehouseName: {type: "string", readOnly: true}
-        ingredientId: {type: "string", format: "uuid", readOnly: true}
+        ingredientId: {type: "string", format: "uuid", readOnly: true, nullable: true}
         ingredientSku: {type: "string", nullable: true, readOnly: true}
         ingredientName: {type: "string", readOnly: true}
         unit: {type: "string", readOnly: true}
@@ -2281,11 +2309,13 @@ components:
       additionalProperties: false
       required: ["configured","warehouseId","warehouseCode","ingredientId","ingredientName","baseUnit","ingredientActive","quantity","reservedQuantity","availableQuantity","minQuantity","lowStock"]
       properties:
+        itemId: {type: string, format: uuid}
+        itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}
         balanceId: {type: "string", format: "uuid", nullable: true}
         configured: {type: "boolean"}
         warehouseId: {type: "string", format: "uuid"}
         warehouseCode: {type: "string"}
-        ingredientId: {type: "string", format: "uuid"}
+        ingredientId: {type: "string", format: "uuid", nullable: true}
         ingredientSku: {type: "string", nullable: true}
         ingredientName: {type: "string"}
         baseUnit: {type: "string"}
@@ -2317,13 +2347,15 @@ components:
     StockDocumentType: {type: "string", enum: ["RECEIPT","ISSUE","ADJUSTMENT"]}
     StockDocumentStatus: {type: "string", enum: ["DRAFT","CONFIRMED","CANCELLED"]}
     AdjustmentDirection: {type: "string", enum: ["INCREASE","DECREASE"], nullable: true}
-    InventoryTransactionType: {type: "string", enum: ["RECEIPT","ISSUE","ADJUSTMENT_INCREASE","ADJUSTMENT_DECREASE","RECIPE_USE"]}
+    InventoryTransactionType: {type: "string", enum: ["RECEIPT","ISSUE","ADJUSTMENT_INCREASE","ADJUSTMENT_DECREASE","RECIPE_USE","DIRECT_USE"]}
     InventoryTransactionSourceType: {type: "string", enum: ["STOCK_DOCUMENT","ORDER_ITEM"]}
     OrderItemInventoryAllocation:
       type: "object"
       additionalProperties: false
       required: ["orderId","orderItemId","status","ingredients"]
       properties:
+        directStockSnapshot: {type: boolean}
+        inventoryMode: {type: string, nullable: true, enum: [DIRECT], description: "DIRECT when captured; null for the existing non-direct/legacy representation."}
         allocationId: {type: "string", format: "uuid", nullable: true}
         orderId: {type: "string", format: "uuid"}
         orderItemId: {type: "string", format: "uuid"}
@@ -2340,18 +2372,21 @@ components:
       additionalProperties: false
       required: ["reservationId","recipeUsageId","ingredientId","name","unit","quantity"]
       properties:
+        itemId: {type: string, format: uuid}
+        itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}
         reservationId: {type: "string", format: "uuid"}
-        recipeUsageId: {type: "string", format: "uuid"}
-        ingredientId: {type: "string", format: "uuid"}
+        recipeUsageId: {type: "string", format: "uuid", nullable: true}
+        ingredientId: {type: "string", format: "uuid", nullable: true}
         sku: {type: "string", nullable: true}
         name: {type: "string"}
         unit: {type: "string"}
-        quantity: {type: "number", format: "decimal", readOnly: true, description: "Original tracked recipe usage requiredQuantity; no recalculation"}
+        quantity: {type: "number", format: "decimal", readOnly: true, description: "Frozen demand: recipe requiredQuantity or DIRECT accepted item quantity; no recalculation"}
     StockDocumentLineInput:
       type: "object"
       additionalProperties: false
-      required: ["ingredientId","quantity"]
-      properties: {ingredientId: {type: "string", format: "uuid"}, quantity: {type: "number", exclusiveMinimum: 0, multipleOf: 0.001}, unitCost: {type: "number", minimum: 0, multipleOf: 0.01, default: 0}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, note: {type: "string", maxLength: 1000, nullable: true}}
+      required: ["quantity"]
+      anyOf: [{required: [itemId]}, {required: [ingredientId]}]
+      properties: {itemId: {type: string, format: uuid, description: "Generic stock item ID. Use for tracked MENU_ITEM; ingredientId remains supported for INGREDIENT."}, ingredientId: {type: "string", format: "uuid"}, quantity: {type: "number", exclusiveMinimum: 0, multipleOf: 0.001}, unitCost: {type: "number", minimum: 0, multipleOf: 0.01, default: 0}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, note: {type: "string", maxLength: 1000, nullable: true}}
     StockDocumentCreate:
       type: "object"
       additionalProperties: false
@@ -2380,7 +2415,7 @@ components:
       type: "object"
       additionalProperties: false
       required: ["id","ingredientId","ingredientName","unit","quantity","unitCost","totalCost"]
-      properties: {id: {type: "string", format: "uuid"}, ingredientId: {type: "string", format: "uuid"}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, quantity: {type: "number"}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, unitCost: {type: "number"}, totalCost: {type: "number"}, note: {type: "string", nullable: true}}
+      properties: {itemId: {type: string, format: uuid}, itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}, id: {type: "string", format: "uuid"}, ingredientId: {type: "string", format: "uuid", nullable: true}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, quantity: {type: "number"}, adjustmentDirection: {"$ref":"#/components/schemas/AdjustmentDirection"}, unitCost: {type: "number"}, totalCost: {type: "number"}, note: {type: "string", nullable: true}}
     StockDocumentSummary:
       type: "object"
       additionalProperties: false
@@ -2398,7 +2433,7 @@ components:
       type: "object"
       additionalProperties: false
       required: ["transactionId","sourceType","warehouseId","warehouseCode","ingredientId","ingredientName","unit","stockDocumentId","documentCode","documentType","transactionType","quantityChange","beforeQuantity","afterQuantity","unitCost","createdBy","createdAt"]
-      properties: {transactionId: {type: "string", format: "uuid"}, sourceType: {$ref: "#/components/schemas/InventoryTransactionSourceType"}, orderId: {type: "string", format: "uuid", nullable: true}, orderItemId: {type: "string", format: "uuid", nullable: true}, reservationId: {type: "string", format: "uuid", nullable: true}, recipeUsageId: {type: "string", format: "uuid", nullable: true}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, ingredientId: {type: "string", format: "uuid"}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, stockDocumentId: {type: "string", format: "uuid", nullable: true}, documentCode: {type: "string", nullable: true}, documentType: {type: "string", nullable: true, enum: ["RECEIPT","ISSUE","ADJUSTMENT"]}, transactionType: {"$ref":"#/components/schemas/InventoryTransactionType"}, quantityChange: {type: "number"}, beforeQuantity: {type: "number", description: "Physical quantity before movement"}, afterQuantity: {type: "number", description: "Physical quantity after movement"}, unitCost: {type: "number", nullable: true, description: "RECIPE_USE uses its exact frozen usage reference price, including configured zero; unknown/legacy is null. Never actual COGS by implication. Stock-document rows retain their original valid cost."}, createdBy: {type: "string", format: "uuid"}, createdAt: {type: "string", format: "date-time"}}
+      properties: {itemId: {type: string, format: uuid}, itemType: {type: string, enum: [INGREDIENT, MENU_ITEM]}, transactionId: {type: "string", format: "uuid"}, sourceType: {$ref: "#/components/schemas/InventoryTransactionSourceType"}, orderId: {type: "string", format: "uuid", nullable: true}, orderItemId: {type: "string", format: "uuid", nullable: true}, reservationId: {type: "string", format: "uuid", nullable: true}, recipeUsageId: {type: "string", format: "uuid", nullable: true}, warehouseId: {type: "string", format: "uuid"}, warehouseCode: {type: "string"}, ingredientId: {type: "string", format: "uuid", nullable: true}, ingredientSku: {type: "string", nullable: true}, ingredientName: {type: "string"}, unit: {type: "string"}, stockDocumentId: {type: "string", format: "uuid", nullable: true}, documentCode: {type: "string", nullable: true}, documentType: {type: "string", nullable: true, enum: ["RECEIPT","ISSUE","ADJUSTMENT"]}, transactionType: {"$ref":"#/components/schemas/InventoryTransactionType"}, quantityChange: {type: "number"}, beforeQuantity: {type: "number", description: "Physical quantity before movement"}, afterQuantity: {type: "number", description: "Physical quantity after movement"}, unitCost: {type: "number", nullable: true, description: "RECIPE_USE uses its exact frozen usage reference price, including configured zero; unknown/legacy is null. Never actual COGS by implication. Stock-document rows retain their original valid cost."}, createdBy: {type: "string", format: "uuid"}, createdAt: {type: "string", format: "date-time"}}
     InventoryTransactionPage:
       type: "object"
       required: ["content","page","size","totalElements","totalPages"]
@@ -2540,6 +2575,7 @@ components:
       "type": "object"
       "additionalProperties": false
       "properties":
+        "trackInventory": {type: boolean, default: false, description: "DIRECT tracking; requires INVENTORY_MANAGEMENT when enabling. Mutually exclusive with recipeEnabled."}
         "groupId":
           "type": "string"
           "format": "uuid"
@@ -2590,6 +2626,7 @@ components:
       "type": "object"
       "additionalProperties": false
       "properties":
+        "trackInventory": {type: boolean, nullable: true, description: "Omitted/null keeps tracking unchanged. Cannot disable with stock, reservation or DRAFT document."}
         "name":
           "type": "string"
           "maxLength": 150
@@ -2704,6 +2741,8 @@ components:
       "type": "object"
       "additionalProperties": false
       "properties":
+        "trackInventory": {type: boolean}
+        "inventoryMode": {type: string, readOnly: true, enum: [NONE, DIRECT, RECIPE]}
         "id":
           "type": "string"
           "format": "uuid"
