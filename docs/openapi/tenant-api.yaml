@@ -690,6 +690,46 @@ paths:
             "application/json":
               "schema":
                 "$ref": "#/components/schemas/Error"
+  "/api/v1/menu/images":
+    "post":
+      "tags": ["Menu"]
+      "operationId": "uploadMenuImage"
+      "description": "Requires MENU_CREATE or MENU_UPDATE. Tenant comes only from JWT. Requires active account/restaurant, active subscription and MENU_MANAGEMENT in its immutable snapshot. Accepts one JPG, PNG or WebP image up to 5 MB, checked by content. The returned URL is then saved through imageUrl on the menu item."
+      "requestBody":
+        "required": true
+        "content":
+          "multipart/form-data":
+            "schema":
+              "type": "object"
+              "required": ["file"]
+              "properties":
+                "file":
+                  "type": "string"
+                  "format": "binary"
+      "responses":
+        "201":
+          "description": "Uploaded"
+          "content":
+            "application/json":
+              "schema":
+                "type": "object"
+                "required": ["url"]
+                "properties":
+                  "url":
+                    "type": "string"
+                    "format": "uri"
+        "400":
+          "description": "VALIDATION_ERROR or INVALID_IMAGE"
+        "401":
+          "description": "UNAUTHORIZED"
+        "403":
+          "description": "FORBIDDEN or a subscription feature error"
+        "413":
+          "description": "IMAGE_TOO_LARGE"
+        "502":
+          "description": "IMAGE_UPLOAD_FAILED"
+        "503":
+          "description": "IMAGE_STORAGE_NOT_CONFIGURED"
   "/api/v1/menu/items":
     "get":
       "tags": ["Menu"]

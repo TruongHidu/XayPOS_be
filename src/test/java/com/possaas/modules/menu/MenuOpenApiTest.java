@@ -38,7 +38,7 @@ class MenuOpenApiTest {
                     });
                 }
             });
-            assertThat(menuOperations).hasSize(14);
+            assertThat(menuOperations).hasSize(15).contains("uploadMenuImage");
             assertThat(ingredientOperations).hasSize(6);
             assertThat(recipeOperations).hasSize(7).contains("estimateRecipeCost");
             verifyReferences(root, root);

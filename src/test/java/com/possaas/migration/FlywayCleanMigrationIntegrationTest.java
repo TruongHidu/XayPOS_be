@@ -62,8 +62,13 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("40");
-            assertThat(countTables(schema)).isEqualTo(43);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("41");
+            assertThat(countTables(schema)).isEqualTo(46);
+            assertThat(tableExists(schema, "subscription_purchases")).isTrue();
+            assertThat(tableExists(schema, "subscription_payment_attempts")).isTrue();
+            assertThat(tableExists(schema, "subscription_payment_events")).isTrue();
+            assertThat(indexExists(schema, "uq_sp_open_restaurant")).isTrue();
+            assertThat(indexExists(schema, "uq_spa_pending")).isTrue();
             assertThat(tableExists(schema, "cashbook_categories")).isTrue();
             assertThat(tableExists(schema, "cashbook_expenses")).isTrue();
             assertThat(tableExists(schema, "stock_audits")).isTrue();

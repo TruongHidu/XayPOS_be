@@ -39,13 +39,14 @@ class SubscriptionCommandServiceClockTest {
     @Mock RestaurantSubscriptionRepository subscriptions;
     @Mock FeatureSnapshotFactory snapshots;
     @Mock AuditService audits;
+    @Mock com.possaas.modules.subscription.application.port.SubscriptionPurchaseConflictGuard purchaseGuard;
     private SubscriptionCommandService commands;
 
     @BeforeEach
     void setUp() {
         SubscriptionExpirationService expiration = new SubscriptionExpirationService(restaurants, subscriptions, audits, clock);
         commands = new SubscriptionCommandService(restaurants, packages, subscriptions, snapshots,
-            new SubscriptionValidityPolicy(clock), new SubscriptionMapper(), expiration, audits, clock);
+            new SubscriptionValidityPolicy(clock), new SubscriptionMapper(), expiration, audits, clock, purchaseGuard);
         when(restaurants.findByIdForUpdate(restaurantId)).thenReturn(Optional.of(new Restaurant()));
     }
 

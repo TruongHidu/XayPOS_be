@@ -35,6 +35,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -78,6 +79,8 @@ class MenuIntegrationTest {
     MenuItemCreationStrategy strategy;
     @MockitoSpyBean
     AuditService audit;
+    @MockitoBean
+    com.possaas.infrastructure.storage.ImageStorage imageStorage;
     private final List<UUID> tenants = new ArrayList<>();
     private User owner;
     private static final Set<String> ALL = Set.of("MENU_VIEW", "MENU_CREATE", "MENU_UPDATE", "MENU_DELETE",
@@ -127,6 +130,26 @@ class MenuIntegrationTest {
         assertThat(loaded.getAvailabilityStatus()).isEqualTo(AvailabilityStatus.OUT_OF_STOCK);
         assertThat(loaded.getCostPrice()).isEqualByComparingTo("0");
         assertThat(loaded.getMetadata()).isEmpty();
+    }
+
+    @Test
+    void imageUploadNeedsAWritePermissionAndStaysInTheTenantsFolder() throws Exception {
+        when(imageStorage.upload(any(), any())).thenReturn("https://cdn.test/a.jpg");
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "a.jpg", "image/jpeg", jpeg);
+        String denied = tokens.createAccessToken(new CurrentUser(owner.getId(), owner.getRestaurantId(),
+                owner.getEmail(), "MANAGER", Set.of("MENU_VIEW")));
+        assertThat(mvc.perform(multipart("/api/v1/menu/images").file(file)
+                .header("Authorization", "Bearer " + denied)).andReturn().getResponse().getStatus()).isEqualTo(403);
+        verify(imageStorage, never()).upload(any(), any());
+
+        String allowed = tokens.createAccessToken(new CurrentUser(owner.getId(), owner.getRestaurantId(),
+                owner.getEmail(), "MANAGER", Set.of("MENU_UPDATE")));
+        var response = mvc.perform(multipart("/api/v1/menu/images").file(file)
+                .header("Authorization", "Bearer " + allowed)).andReturn().getResponse();
+        assertThat(response.getStatus()).describedAs(response.getContentAsString()).isEqualTo(201);
+        assertThat(json.readTree(response.getContentAsString()).path("url").asText()).isEqualTo("https://cdn.test/a.jpg");
+        verify(imageStorage).upload(jpeg, owner.getRestaurantId() + "/menu");
     }
 
     @Test

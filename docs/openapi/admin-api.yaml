@@ -327,6 +327,8 @@ paths:
         Due ACTIVE rows are reconciled to EXPIRED first. Existing ACTIVE requires change-package;
         existing PENDING must be activated or cancelled. The package must exist and be active.
         Records SUBSCRIPTION_CREATED on success. Renewal, self-service payment, billing and payment gateways are not supported.
+        V41: an open SaaS purchase returns 409 SUBSCRIPTION_PURCHASE_IN_PROGRESS,
+        even when new purchases are disabled. Reconcile due pending purchases under the restaurant lock.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -359,7 +361,7 @@ paths:
         "404":
           $ref: "#/components/responses/RestaurantOrPackageNotFound"
         "409":
-          $ref: "#/components/responses/SubscriptionConflict"
+          $ref: "#/components/responses/SubscriptionPurchaseAssignmentConflict"
 
   /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}:
     get:
@@ -400,6 +402,8 @@ paths:
         row and frees the one-active constraint. Any unexpired ACTIVE row returns
         `409 SUBSCRIPTION_OVERLAP`, including future-start rows. endAt <= now returns
         `409 SUBSCRIPTION_PERIOD_EXPIRED`; activating ACTIVE again returns SUBSCRIPTION_ALREADY_ACTIVE.
+        V41: an open SaaS purchase returns 409 SUBSCRIPTION_PURCHASE_IN_PROGRESS,
+        even when new purchases are disabled. Reconcile due pending purchases under the restaurant lock.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -420,7 +424,7 @@ paths:
         "404":
           $ref: "#/components/responses/RestaurantSubscriptionOrPackageNotFound"
         "409":
-          $ref: "#/components/responses/SubscriptionConflict"
+          $ref: "#/components/responses/SubscriptionPurchaseAssignmentConflict"
 
   /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/change-package:
     post:
@@ -433,6 +437,8 @@ paths:
         same transaction with startAt = now; historical snapshots are not modified.
         The target package must be active and different; the same package returns
         `409 SAME_PACKAGE_CHANGE_NOT_ALLOWED`. Renewal is not supported.
+        V41: an open SaaS purchase returns 409 SUBSCRIPTION_PURCHASE_IN_PROGRESS,
+        even when new purchases are disabled. Reconcile due pending purchases under the restaurant lock.
       x-required-permission: SUBSCRIPTION_MANAGE
       parameters:
         - $ref: "#/components/parameters/RestaurantId"
@@ -465,7 +471,7 @@ paths:
         "404":
           $ref: "#/components/responses/RestaurantOrPackageNotFound"
         "409":
-          $ref: "#/components/responses/SubscriptionConflict"
+          $ref: "#/components/responses/SubscriptionPurchaseAssignmentConflict"
 
   /admin/restaurants/{restaurantId}/subscriptions/{subscriptionId}/cancel:
     post:
@@ -1174,6 +1180,66 @@ components:
               value: {success: false, code: PACKAGE_FEATURE_ALREADY_EXISTS, message: Feature is already assigned to this package, fieldErrors: {}, timestamp: "2026-08-27T00:00:00Z"}
             concurrent:
               value: {success: false, code: CONCURRENT_PACKAGE_UPDATE, message: Catalog update conflicts with the current data, fieldErrors: {}, timestamp: "2026-09-27T00:00:00Z"}
+
+    SubscriptionPurchaseAssignmentConflict:
+      description: 'HTTP 409 business or persistence conflict. Codes include SUBSCRIPTION_ALREADY_ACTIVE, SUBSCRIPTION_PENDING_EXISTS,
+        SUBSCRIPTION_OVERLAP, SUBSCRIPTION_NOT_ACTIVE, SUBSCRIPTION_PERIOD_EXPIRED, SAME_PACKAGE_CHANGE_NOT_ALLOWED,
+        INVALID_SUBSCRIPTION_TRANSITION and CONCURRENT_SUBSCRIPTION_UPDATE. V41: SUBSCRIPTION_PURCHASE_IN_PROGRESS blocks
+        assignment, activation and package changes while a purchase is open.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            overlap:
+              value:
+                success: false
+                code: SUBSCRIPTION_OVERLAP
+                message: Restaurant already has an active subscription
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            pendingExists:
+              value:
+                success: false
+                code: SUBSCRIPTION_PENDING_EXISTS
+                message: Activate or cancel the existing pending subscription
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            samePackage:
+              value:
+                success: false
+                code: SAME_PACKAGE_CHANGE_NOT_ALLOWED
+                message: Renewal is not supported
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            transition:
+              value:
+                success: false
+                code: INVALID_SUBSCRIPTION_TRANSITION
+                message: Invalid subscription transition
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            notActive:
+              value:
+                success: false
+                code: SUBSCRIPTION_NOT_ACTIVE
+                message: The selected subscription is not active
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            concurrent:
+              value:
+                success: false
+                code: CONCURRENT_SUBSCRIPTION_UPDATE
+                message: Subscription was changed concurrently
+                fieldErrors: {}
+                timestamp: '2026-08-27T00:00:00Z'
+            purchaseInProgress:
+              value:
+                success: false
+                code: SUBSCRIPTION_PURCHASE_IN_PROGRESS
+                message: Resolve the open package purchase before assigning a subscription
+                fieldErrors: {}
+                timestamp: '2026-11-01T03:00:00Z'
 
   schemas:
     AdminRoleSummaryResponse:

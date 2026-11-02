@@ -4,6 +4,7 @@ import com.possaas.common.exception.BusinessException;
 import com.possaas.common.exception.ResourceNotFoundException;
 import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.restaurant.repository.RestaurantRepository;
+import com.possaas.modules.subscription.application.port.SubscriptionPurchaseConflictGuard;
 import com.possaas.modules.subscription.domain.SubscriptionFeatureSnapshot;
 import com.possaas.modules.subscription.domain.SubscriptionValidityPolicy;
 import com.possaas.modules.subscription.dto.ChangePackageRequest;
@@ -39,6 +40,7 @@ public class SubscriptionCommandService {
     private final SubscriptionExpirationService expirationService;
     private final AuditService auditService;
     private final Clock clock;
+    private final SubscriptionPurchaseConflictGuard purchaseGuard;
 
     @Transactional
     public SubscriptionResponse create(
@@ -48,6 +50,7 @@ public class SubscriptionCommandService {
         String ipAddress
     ) {
         lockRestaurant(restaurantId);
+        purchaseGuard.assertNoOpenPurchase(restaurantId, clock.instant());
         subscriptionRepository.findActiveForUpdate(restaurantId).ifPresent(active -> {
             if (!expirationService.expireIfDue(active)) {
                 throw conflict("SUBSCRIPTION_ALREADY_ACTIVE", "Use change-package for an active subscription");
@@ -96,6 +99,7 @@ public class SubscriptionCommandService {
         String ipAddress
     ) {
         lockRestaurant(restaurantId);
+        purchaseGuard.assertNoOpenPurchase(restaurantId, clock.instant());
         RestaurantSubscription subscription = requireSubscription(restaurantId, subscriptionId);
         if (subscription.getStatus() == SubscriptionStatus.ACTIVE) {
             throw conflict("SUBSCRIPTION_ALREADY_ACTIVE", "Subscription is already active");
@@ -147,6 +151,7 @@ public class SubscriptionCommandService {
     ) {
         expirationService.reconcileByIdIfDue(restaurantId, subscriptionId);
         lockRestaurant(restaurantId);
+        purchaseGuard.assertNoOpenPurchase(restaurantId, clock.instant());
         RestaurantSubscription current = subscriptionRepository.findActiveForUpdate(restaurantId)
             .filter(subscription -> subscription.getId().equals(subscriptionId))
             .orElseThrow(() -> new BusinessException(

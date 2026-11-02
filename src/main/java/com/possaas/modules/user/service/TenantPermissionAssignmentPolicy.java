@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 public class TenantPermissionAssignmentPolicy {
     private static final Set<String> MODULES = Set.of("MENU", "TABLE", "ORDER", "KITCHEN", "PAYMENT", "STAFF", "INVENTORY", "REPORT", "AI", "CASHBOOK");
     private static final Set<String> FORBIDDEN = Set.of("ADMIN_DASHBOARD_VIEW", "RESTAURANT_VIEW", "RESTAURANT_MANAGE",
-        "AUDIT_VIEW", "PACKAGE_VIEW", "PACKAGE_MANAGE", "SUBSCRIPTION_VIEW", "SUBSCRIPTION_MANAGE");
+        "AUDIT_VIEW", "PACKAGE_VIEW", "PACKAGE_MANAGE", "SUBSCRIPTION_VIEW", "SUBSCRIPTION_MANAGE",
+        "SUBSCRIPTION_PURCHASE_VIEW", "SUBSCRIPTION_PURCHASE_CREATE", "SUBSCRIPTION_PURCHASE_CANCEL", "SUBSCRIPTION_PAYMENT_REVIEW");
 
     public boolean isAssignable(Permission p) { return p.isActive() && MODULES.contains(p.getModule()) && !FORBIDDEN.contains(p.getCode()); }
 

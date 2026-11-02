@@ -1,5 +1,11 @@
 # SUPER_ADMIN API
 
+## Phối hợp purchase SaaS với gán subscription — V41
+
+Create/activate/change-package subscription giữ URL/body/security cũ. Sau restaurant write lock, guard do module subscription sở hữu kiểm tra open purchase. PENDING_PAYMENT còn hạn, PAID hoặc REVIEW_REQUIRED trả409 SUBSCRIPTION_PURCHASE_IN_PROGRESS; không tự cancel purchase hoặc subscription để ép gán gói. Pending purchase quá hạn được reconcile trong transaction, rồi tiếp tục nếu không còn blocker. Guard vẫn chạy khi SUBSCRIPTION_PURCHASE_ACCEPT_NEW=false. Admin cancel subscription giữ rule cũ.
+
+Guard có MVCC touch restaurant để buyer REPEATABLE_READ đang chờ lock phải retry snapshot mới; updated_at restaurant phản ánh phối hợp thành công, request rollback không để lại touch/audit thành công. Chi tiết [thiết kế](subscription-purchase-design.md), [API OWNER](subscription-purchase-api.md). SUBSCRIPTION_PAYMENT_REVIEW đã seed cho system SUPER_ADMIN, nhưng API payment review vẫn PLANNED.
+
 ## Tài khoản thuộc nhà hàng (read-only)
 
 `GET /api/v1/admin/restaurants/{restaurantId}/users` trả `PageResponse<AdminRestaurantUserResponse>`.

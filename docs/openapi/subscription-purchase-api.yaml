@@ -1,0 +1,4271 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: POS SaaS Subscription Purchase — Phase 2
+  version: 0.2.0
+  description: Phase2 đã hiện thực 5 API onboarding/purchase/read/cancel và migration V41. Phase3 attempts/QR, Phase4 webhook/activation
+    và Phase5 admin review vẫn PLANNED. Mặc định accept-new=false; chưa có thanh toán SaaS chạy thật. Xem subscription-purchase-api.md
+    và thiết kế/test plan/FE sync. Ví dụ tài khoản/QR là DEMO, không dùng chuyển tiền.
+x-implementation-status: PARTIALLY_IMPLEMENTED
+servers:
+- url: http://localhost:8080/api/v1
+  description: Base URL local; chỉ năm operation IMPLEMENTED đã có runtime, các operation Phase3–5 vẫn PLANNED.
+tags:
+- name: Subscription purchase
+- name: SePay subscription webhook
+- name: Subscription payment review
+security:
+- bearerAuth: []
+paths:
+  /subscriptions/onboarding:
+    get:
+      operationId: getSubscriptionOnboarding
+      summary: '[IMPLEMENTED] Trạng thái đăng ký/mua gói của OWNER'
+      description: '200 khi owner chưa có subscription. Subscription và purchase/review độc lập. GET project ACTIVE quá endAt
+        thành subscriptionState EXPIRED nhưng currentSubscription.status giữ ACTIVE; không ghi expiry/audit. canPurchase/allowedActions
+        chỉ gợi ý. Feature flag off không chặn đọc. CurrentPurchase chọn open purchase kể cả stale PENDING_PAYMENT; displayStatus
+        cho biết expiry. Review count độc lập cả khi đã ACTIVE. Phase2 chưa có API attempt/QR: allowedActions không quảng
+        bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+      tags:
+      - Subscription purchase
+      x-implementation-status: IMPLEMENTED
+      x-target-phase: 2
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_VIEW
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Read-only; không reconcile/write/audit trên GET.
+      parameters: []
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingResponse'
+              examples:
+                noSubscription:
+                  value:
+                    subscriptionState: NONE
+                    currentSubscription: null
+                    currentPurchase: null
+                    unresolvedPaymentReviewCount: 0
+                    canPurchase: true
+                    blockedReason: null
+                    allowedActions:
+                    - CREATE_PURCHASE
+                    serverTime: '2026-11-01T03:00:00Z'
+                activeWithExtraPaymentReview:
+                  value:
+                    subscriptionState: ACTIVE
+                    currentSubscription:
+                      id: 44444444-4444-4444-8444-444444444444
+                      status: ACTIVE
+                      effective: true
+                      packageCode: PRO
+                      startAt: '2026-11-01T03:06:00Z'
+                      endAt: '2026-12-01T03:06:00Z'
+                      activatedAt: '2026-11-01T03:06:00Z'
+                    currentPurchase: null
+                    unresolvedPaymentReviewCount: 1
+                    canPurchase: false
+                    blockedReason: SUBSCRIPTION_ALREADY_ACTIVE
+                    allowedActions:
+                    - OPEN_APP
+                    serverTime: '2026-11-01T03:10:00Z'
+                waitingPayment:
+                  value:
+                    subscriptionState: NONE
+                    currentSubscription: null
+                    currentPurchase:
+                      id: 11111111-1111-4111-8111-111111111111
+                      status: PENDING_PAYMENT
+                      displayStatus: PENDING_PAYMENT
+                      quote:
+                        schemaVersion: 1
+                        packageId: 66666666-6666-4666-8666-666666666666
+                        packageCode: PRO
+                        packageName: Pro
+                        priceAmount: 399000
+                        currencyCode: VND
+                        billingCycleMonths: 1
+                        features:
+                        - code: MENU_MANAGEMENT
+                          limits: {}
+                        - code: RECIPE_MANAGEMENT
+                          limits: {}
+                        maxStaff: 30
+                        quotedAt: '2026-11-01T03:00:00Z'
+                        expiresAt: '2026-11-01T03:15:00Z'
+                        billingZoneId: Asia/Ho_Chi_Minh
+                      subscriptionId: null
+                      paidAt: null
+                      activatedAt: null
+                      cancelledAt: null
+                      closedAt: null
+                      reviewReason: null
+                      allowedActions:
+                      - VIEW_PURCHASE
+                      - CANCEL_PURCHASE
+                      createdAt: '2026-11-01T03:00:00Z'
+                      updatedAt: '2026-11-01T03:00:00Z'
+                      version: 0
+                      serverTime: '2026-11-01T03:00:00Z'
+                    unresolvedPaymentReviewCount: 0
+                    canPurchase: false
+                    blockedReason: PURCHASE_IN_PROGRESS
+                    allowedActions:
+                    - VIEW_PURCHASE
+                    - CANCEL_PURCHASE
+                    serverTime: '2026-11-01T03:00:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /subscription-purchases:
+    post:
+      operationId: createSubscriptionPurchase
+      summary: '[IMPLEMENTED] Tạo purchase và quote bất biến'
+      description: 'Body chỉ packageCode; unknown fields400. Chuẩn hóa trim/uppercase. Restaurant lock, REPEATABLE_READ quote;
+        reconcile due ACTIVE/open purchase trước ý định mới. Chặn ACTIVE/PENDING/open purchase. 201 insert mới,200 replay
+        original body. Same key khác canonical payload409. Replay sau ACTIVATED vẫn200 trước active eligibility. Flag off
+        chỉ chặn ý định mới, không chặn replay. Không tạo subscription PENDING. Phase2 chưa có API attempt/QR: allowedActions
+        không quảng bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login
+        lại.'
+      tags:
+      - Subscription purchase
+      x-implementation-status: IMPLEMENTED
+      x-target-phase: 2
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_CREATE
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Theo description; guard trước replay và business mutation.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Bắt buộc. Cùng ý định phải dùng lại key sau timeout/reload; scope tenant+command. Access guard trước
+          replay, replay trước eligibility.
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 100
+          pattern: ^[A-Za-z0-9._:-]+$
+      responses:
+        '201':
+          description: Mới tạo; Idempotency-Replayed=false.
+          headers:
+            Idempotency-Replayed:
+              description: false=insert mới; true=replay original body.
+              schema:
+                type: boolean
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseView'
+              examples:
+                created:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: PENDING_PAYMENT
+                    displayStatus: PENDING_PAYMENT
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: null
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - VIEW_PURCHASE
+                    - CANCEL_PURCHASE
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:00:00Z'
+        '200':
+          description: Original creation body; Idempotency-Replayed=true; GET để biết trạng thái mới.
+          headers:
+            Idempotency-Replayed:
+              description: false=insert mới; true=replay original body.
+              schema:
+                type: boolean
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseView'
+              examples:
+                replayed:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: PENDING_PAYMENT
+                    displayStatus: PENDING_PAYMENT
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: null
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - VIEW_PURCHASE
+                    - CANCEL_PURCHASE
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:00:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range. INVALID_REQUEST_BODY:
+            JSON lỗi, sai kiểu hoặc unknown business field.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_REQUEST_BODY:
+                  value:
+                    success: false
+                    code: INVALID_REQUEST_BODY
+                    message: JSON lỗi, sai kiểu hoặc unknown business field.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PACKAGE_NOT_FOUND: Package không tồn tại hoặc inactive tại quote mới.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PACKAGE_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PACKAGE_NOT_FOUND
+                    message: Package không tồn tại hoặc inactive tại quote mới.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '409':
+          description: 'SUBSCRIPTION_ALREADY_ACTIVE: Đang có subscription ACTIVE chưa hết hạn, kể cả future ACTIVE; MVP không
+            renewal/change. SUBSCRIPTION_PENDING_EXISTS: Subscription PENDING của admin phải activate/cancel trước. PURCHASE_IN_PROGRESS:
+            Đã có purchase mở; đọc onboarding/current purchase để tiếp tục. PURCHASE_REVIEW_REQUIRED: Purchase đang cần admin
+            đối soát; không thu tiền lần nữa. IDEMPOTENCY_KEY_REUSED: Cùng key khác canonical request hoặc purchaseId. CONCURRENT_SUBSCRIPTION_UPDATE:
+            Version/constraint/serialization conflict; GET lại, retry ý định cũ bằng key cũ.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SUBSCRIPTION_ALREADY_ACTIVE:
+                  value:
+                    success: false
+                    code: SUBSCRIPTION_ALREADY_ACTIVE
+                    message: Đang có subscription ACTIVE chưa hết hạn, kể cả future ACTIVE; MVP không renewal/change.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                SUBSCRIPTION_PENDING_EXISTS:
+                  value:
+                    success: false
+                    code: SUBSCRIPTION_PENDING_EXISTS
+                    message: Subscription PENDING của admin phải activate/cancel trước.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PURCHASE_IN_PROGRESS:
+                  value:
+                    success: false
+                    code: PURCHASE_IN_PROGRESS
+                    message: Đã có purchase mở; đọc onboarding/current purchase để tiếp tục.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PURCHASE_REVIEW_REQUIRED:
+                  value:
+                    success: false
+                    code: PURCHASE_REVIEW_REQUIRED
+                    message: Purchase đang cần admin đối soát; không thu tiền lần nữa.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                IDEMPOTENCY_KEY_REUSED:
+                  value:
+                    success: false
+                    code: IDEMPOTENCY_KEY_REUSED
+                    message: Cùng key khác canonical request hoặc purchaseId.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                CONCURRENT_SUBSCRIPTION_UPDATE:
+                  value:
+                    success: false
+                    code: CONCURRENT_SUBSCRIPTION_UPDATE
+                    message: Version/constraint/serialization conflict; GET lại, retry ý định cũ bằng key cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '422':
+          description: 'PACKAGE_NOT_PURCHASABLE: Gói giá <=0, tiền không nguyên VND hoặc currency không hỗ trợ.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PACKAGE_NOT_PURCHASABLE:
+                  value:
+                    success: false
+                    code: PACKAGE_NOT_PURCHASABLE
+                    message: Gói giá <=0, tiền không nguyên VND hoặc currency không hỗ trợ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'PURCHASE_UNAVAILABLE: đang tắt nhận ý định mới; đọc/replay/cancel vẫn hoạt động.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: PURCHASE_UNAVAILABLE
+                    message: Tạm dừng nhận ý định mua mới; read/replay/webhook/recovery cũ vẫn hoạt động.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseRequest'
+            examples:
+              pro:
+                value:
+                  packageCode: PRO
+    get:
+      operationId: listSubscriptionPurchases
+      summary: '[IMPLEMENTED] Lịch sử purchase của tenant'
+      description: 'PageResponse; fixed sort createdAt DESC,id DESC. createdFrom inclusive,createdTo exclusive UTC; from<to,
+        tối đa366ngày nếu đủ hai đầu. Không nhận restaurantId; query unknown restaurantId không đổi scope. GET không write/reconcile;
+        status filter dùng trạng thái đã lưu, displayStatus có thể khác. Phase2 chưa có API attempt/QR: allowedActions không
+        quảng bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+      tags:
+      - Subscription purchase
+      x-implementation-status: IMPLEMENTED
+      x-target-phase: 2
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_VIEW
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Read-only; không reconcile/write/audit trên GET.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: Filter stored status.
+        schema:
+          $ref: '#/components/schemas/PurchaseStatus'
+      - name: createdFrom
+        in: query
+        required: false
+        description: Inclusive UTC.
+        schema:
+          type: string
+          format: date-time
+          pattern: Z$
+      - name: createdTo
+        in: query
+        required: false
+        description: Exclusive UTC.
+        schema:
+          type: string
+          format: date-time
+          pattern: Z$
+      - name: page
+        in: query
+        required: false
+        description: Zero-based page.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: PageResponse convention hiện có.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchasePage'
+              examples:
+                page:
+                  value:
+                    content:
+                    - id: 11111111-1111-4111-8111-111111111111
+                      status: PENDING_PAYMENT
+                      displayStatus: PENDING_PAYMENT
+                      quote:
+                        schemaVersion: 1
+                        packageId: 66666666-6666-4666-8666-666666666666
+                        packageCode: PRO
+                        packageName: Pro
+                        priceAmount: 399000
+                        currencyCode: VND
+                        billingCycleMonths: 1
+                        features:
+                        - code: MENU_MANAGEMENT
+                          limits: {}
+                        - code: RECIPE_MANAGEMENT
+                          limits: {}
+                        maxStaff: 30
+                        quotedAt: '2026-11-01T03:00:00Z'
+                        expiresAt: '2026-11-01T03:15:00Z'
+                        billingZoneId: Asia/Ho_Chi_Minh
+                      subscriptionId: null
+                      paidAt: null
+                      activatedAt: null
+                      cancelledAt: null
+                      closedAt: null
+                      reviewReason: null
+                      allowedActions:
+                      - VIEW_PURCHASE
+                      - CANCEL_PURCHASE
+                      createdAt: '2026-11-01T03:00:00Z'
+                      updatedAt: '2026-11-01T03:00:00Z'
+                      version: 0
+                      serverTime: '2026-11-01T03:00:00Z'
+                    page: 0
+                    size: 20
+                    totalElements: 1
+                    totalPages: 1
+                empty:
+                  value:
+                    content: []
+                    page: 0
+                    size: 20
+                    totalElements: 0
+                    totalPages: 0
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /subscription-purchases/{purchaseId}:
+    get:
+      operationId: getSubscriptionPurchase
+      summary: '[IMPLEMENTED] Đọc trạng thái purchase để polling/recovery'
+      description: 'Scoped tenant404; không raw provider payload. GET không audit/reconcile. PENDING_PAYMENT quá hạn project
+        displayStatus EXPIRED. PAID không biến EXPIRED khi activation retry sau quote expiry. ACTIVATED có subscriptionId;
+        không yêu cầu trả tiền lại. Polling mỗi3–5giây có backoff. Phase2 chưa có API attempt/QR: allowedActions không quảng
+        bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+      tags:
+      - Subscription purchase
+      x-implementation-status: IMPLEMENTED
+      x-target-phase: 2
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_VIEW
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Read-only; không reconcile/write/audit trên GET.
+      parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        description: Purchase thuộc tenant từ principal, khác tenant trả404.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseView'
+              examples:
+                pending:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: PENDING_PAYMENT
+                    displayStatus: PENDING_PAYMENT
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: null
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - VIEW_PURCHASE
+                    - CANCEL_PURCHASE
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:00:00Z'
+                paidActivationPending:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: PAID
+                    displayStatus: PAID
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: '2026-11-01T03:05:00Z'
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - WAIT_ACTIVATION
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:06:00Z'
+                    version: 1
+                    serverTime: '2026-11-01T03:06:00Z'
+                activated:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: ACTIVATED
+                    displayStatus: ACTIVATED
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: 44444444-4444-4444-8444-444444444444
+                    paidAt: '2026-11-01T03:05:00Z'
+                    activatedAt: '2026-11-01T03:06:00Z'
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - OPEN_APP
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:06:00Z'
+                    version: 2
+                    serverTime: '2026-11-01T03:06:00Z'
+                projectedExpiry:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: PENDING_PAYMENT
+                    displayStatus: EXPIRED
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: null
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - CREATE_PURCHASE
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:15:00Z'
+                paidButReviewRequired:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: REVIEW_REQUIRED
+                    displayStatus: REVIEW_REQUIRED
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: '2026-11-01T03:05:00Z'
+                    activatedAt: null
+                    cancelledAt: null
+                    closedAt: null
+                    reviewReason: SUBSCRIPTION_CONFLICT
+                    allowedActions:
+                    - CONTACT_SUPPORT
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:06:00Z'
+                    version: 1
+                    serverTime: '2026-11-01T03:06:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PURCHASE_NOT_FOUND: Purchase không tồn tại hoặc không thuộc tenant.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PURCHASE_NOT_FOUND
+                    message: Purchase không tồn tại hoặc không thuộc tenant.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /subscription-purchases/{purchaseId}/payment-attempts:
+    post:
+      operationId: createSubscriptionPaymentAttempt
+      summary: '[PLANNED] Tạo QR attempt cho purchase còn hạn'
+      description: JSON {}. Key scope tenant+CREATE_PAYMENT_ATTEMPT, fingerprint gồm purchaseId. Cùng key replay200 original
+        attempt kể cả sau expiry; FE GET trước hiển thị QR. Key mới khi đã có PENDING trả409 PAYMENT_ATTEMPT_PENDING, không
+        tạo attempt thứ hai. Attempt.expiresAt bằng quote.expiresAt; không kéo dài hạn. Instructions account nền tảng; QR
+        mẫu chỉ DEMO. Phase3 chưa có webhook thì không bật public purchase flow production.
+      tags:
+      - Subscription purchase
+      x-implementation-status: PLANNED
+      x-target-phase: 3
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_CREATE
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Theo description; guard trước replay và business mutation.
+      parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        description: Purchase thuộc tenant từ principal, khác tenant trả404.
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Bắt buộc. Cùng ý định phải dùng lại key sau timeout/reload; scope tenant+command. Access guard trước
+          replay, replay trước eligibility.
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 100
+          pattern: ^[A-Za-z0-9._:-]+$
+      responses:
+        '201':
+          description: Idempotency-Replayed=false.
+          headers:
+            Idempotency-Replayed:
+              description: false=insert mới; true=replay original body.
+              schema:
+                type: boolean
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentAttemptView'
+              examples:
+                created:
+                  value:
+                    id: 22222222-2222-4222-8222-222222222222
+                    purchaseId: 11111111-1111-4111-8111-111111111111
+                    status: PENDING
+                    displayStatus: PENDING
+                    provider: SEPAY
+                    referenceCode: PS0123456789ABCDEF01234567
+                    amount: 399000
+                    currencyCode: VND
+                    expiresAt: '2026-11-01T03:15:00Z'
+                    instructions:
+                      bankCode: DEMO_BANK
+                      accountNumber: '0000000000'
+                      accountName: DEMO POS SAAS
+                      transferContent: PS0123456789ABCDEF01234567
+                      qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
+                    paidAt: null
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:00:00Z'
+        '200':
+          description: Idempotency-Replayed=true; original body có thể đã cũ.
+          headers:
+            Idempotency-Replayed:
+              description: false=insert mới; true=replay original body.
+              schema:
+                type: boolean
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentAttemptView'
+              examples:
+                replayed:
+                  value:
+                    id: 22222222-2222-4222-8222-222222222222
+                    purchaseId: 11111111-1111-4111-8111-111111111111
+                    status: PENDING
+                    displayStatus: PENDING
+                    provider: SEPAY
+                    referenceCode: PS0123456789ABCDEF01234567
+                    amount: 399000
+                    currencyCode: VND
+                    expiresAt: '2026-11-01T03:15:00Z'
+                    instructions:
+                      bankCode: DEMO_BANK
+                      accountNumber: '0000000000'
+                      accountName: DEMO POS SAAS
+                      transferContent: PS0123456789ABCDEF01234567
+                      qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
+                    paidAt: null
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:00:00Z'
+                    version: 0
+                    serverTime: '2026-11-01T03:00:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range. INVALID_REQUEST_BODY:
+            JSON lỗi, sai kiểu hoặc unknown business field.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_REQUEST_BODY:
+                  value:
+                    success: false
+                    code: INVALID_REQUEST_BODY
+                    message: JSON lỗi, sai kiểu hoặc unknown business field.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PURCHASE_NOT_FOUND: Purchase không tồn tại hoặc không thuộc tenant.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PURCHASE_NOT_FOUND
+                    message: Purchase không tồn tại hoặc không thuộc tenant.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '409':
+          description: 'PURCHASE_PERIOD_EXPIRED: Quote đã hết hạn, cần purchase mới; không gia hạn quote cũ. PURCHASE_REVIEW_REQUIRED:
+            Purchase đang cần admin đối soát; không thu tiền lần nữa. PAYMENT_ATTEMPT_PENDING: Key mới nhưng đã có attempt
+            PENDING; GET current để tiếp tục. PAYMENT_ATTEMPT_NOT_ALLOWED: Purchase không ở trạng thái cho phép tạo attempt.
+            IDEMPOTENCY_KEY_REUSED: Cùng key khác canonical request hoặc purchaseId. CONCURRENT_SUBSCRIPTION_UPDATE: Version/constraint/serialization
+            conflict; GET lại, retry ý định cũ bằng key cũ.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_PERIOD_EXPIRED:
+                  value:
+                    success: false
+                    code: PURCHASE_PERIOD_EXPIRED
+                    message: Quote đã hết hạn, cần purchase mới; không gia hạn quote cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PURCHASE_REVIEW_REQUIRED:
+                  value:
+                    success: false
+                    code: PURCHASE_REVIEW_REQUIRED
+                    message: Purchase đang cần admin đối soát; không thu tiền lần nữa.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PAYMENT_ATTEMPT_PENDING:
+                  value:
+                    success: false
+                    code: PAYMENT_ATTEMPT_PENDING
+                    message: Key mới nhưng đã có attempt PENDING; GET current để tiếp tục.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PAYMENT_ATTEMPT_NOT_ALLOWED:
+                  value:
+                    success: false
+                    code: PAYMENT_ATTEMPT_NOT_ALLOWED
+                    message: Purchase không ở trạng thái cho phép tạo attempt.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                IDEMPOTENCY_KEY_REUSED:
+                  value:
+                    success: false
+                    code: IDEMPOTENCY_KEY_REUSED
+                    message: Cùng key khác canonical request hoặc purchaseId.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                CONCURRENT_SUBSCRIPTION_UPDATE:
+                  value:
+                    success: false
+                    code: CONCURRENT_SUBSCRIPTION_UPDATE
+                    message: Version/constraint/serialization conflict; GET lại, retry ý định cũ bằng key cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '429':
+          description: 'RATE_LIMITED: Quá giới hạn; chờ Retry-After giây.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            Retry-After:
+              description: Số giây đợi trước retry.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  value:
+                    success: false
+                    code: RATE_LIMITED
+                    message: Quá giới hạn; chờ Retry-After giây.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'PURCHASE_UNAVAILABLE: Tạm dừng nhận ý định mua mới; read/replay/webhook/recovery cũ vẫn hoạt động.
+            PAYMENT_PROVIDER_UNAVAILABLE: Không thể chuẩn bị hướng dẫn thanh toán/config provider. SERVICE_UNAVAILABLE: Lỗi
+            hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: PURCHASE_UNAVAILABLE
+                    message: Tạm dừng nhận ý định mua mới; read/replay/webhook/recovery cũ vẫn hoạt động.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PAYMENT_PROVIDER_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: PAYMENT_PROVIDER_UNAVAILABLE
+                    message: Không thể chuẩn bị hướng dẫn thanh toán/config provider.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                SERVICE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: SERVICE_UNAVAILABLE
+                    message: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAttemptRequest'
+            examples:
+              empty:
+                value: {}
+  /subscription-purchases/{purchaseId}/payment-attempts/current:
+    get:
+      operationId: getCurrentSubscriptionPaymentAttempt
+      summary: '[PLANNED] Lấy attempt mới nhất để khôi phục QR/trạng thái'
+      description: 200 paymentAttempt=null nếu chưa từng có attempt; purchase không thuộc tenant404. Lấy mới nhất kể cả SUCCESS/FAILED/EXPIRED/CANCELLED,
+        không chỉ PENDING. PENDING quá hạn project displayStatus EXPIRED, không ghi DB. Không tạo QR/attempt mới trên GET;
+        không hiển thị QR mời trả nếu purchase PAID/review/activated.
+      tags:
+      - Subscription purchase
+      x-implementation-status: PLANNED
+      x-target-phase: 3
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_VIEW
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Read-only; không reconcile/write/audit trên GET.
+      parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        description: Purchase thuộc tenant từ principal, khác tenant trả404.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAttemptResponse'
+              examples:
+                pending:
+                  value:
+                    paymentAttempt:
+                      id: 22222222-2222-4222-8222-222222222222
+                      purchaseId: 11111111-1111-4111-8111-111111111111
+                      status: PENDING
+                      displayStatus: PENDING
+                      provider: SEPAY
+                      referenceCode: PS0123456789ABCDEF01234567
+                      amount: 399000
+                      currencyCode: VND
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      instructions:
+                        bankCode: DEMO_BANK
+                        accountNumber: '0000000000'
+                        accountName: DEMO POS SAAS
+                        transferContent: PS0123456789ABCDEF01234567
+                        qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
+                      paidAt: null
+                      createdAt: '2026-11-01T03:00:00Z'
+                      updatedAt: '2026-11-01T03:00:00Z'
+                      version: 0
+                      serverTime: '2026-11-01T03:00:00Z'
+                    serverTime: '2026-11-01T03:00:00Z'
+                none:
+                  value:
+                    paymentAttempt: null
+                    serverTime: '2026-11-01T03:00:00Z'
+                receivedPayment:
+                  value:
+                    paymentAttempt:
+                      id: 22222222-2222-4222-8222-222222222222
+                      purchaseId: 11111111-1111-4111-8111-111111111111
+                      status: SUCCESS
+                      displayStatus: SUCCESS
+                      provider: SEPAY
+                      referenceCode: PS0123456789ABCDEF01234567
+                      amount: 399000
+                      currencyCode: VND
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      instructions:
+                        bankCode: DEMO_BANK
+                        accountNumber: '0000000000'
+                        accountName: DEMO POS SAAS
+                        transferContent: PS0123456789ABCDEF01234567
+                        qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
+                      paidAt: '2026-11-01T03:05:00Z'
+                      createdAt: '2026-11-01T03:00:00Z'
+                      updatedAt: '2026-11-01T03:05:05Z'
+                      version: 1
+                      serverTime: '2026-11-01T03:06:00Z'
+                    serverTime: '2026-11-01T03:06:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PURCHASE_NOT_FOUND: Purchase không tồn tại hoặc không thuộc tenant.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PURCHASE_NOT_FOUND
+                    message: Purchase không tồn tại hoặc không thuộc tenant.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '429':
+          description: 'RATE_LIMITED: Quá giới hạn; chờ Retry-After giây.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            Retry-After:
+              description: Số giây đợi trước retry.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  value:
+                    success: false
+                    code: RATE_LIMITED
+                    message: Quá giới hạn; chờ Retry-After giây.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'SERVICE_UNAVAILABLE: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency
+            key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: SERVICE_UNAVAILABLE
+                    message: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /subscription-purchases/{purchaseId}/cancel:
+    post:
+      operationId: cancelSubscriptionPurchase
+      summary: '[IMPLEMENTED] Hủy purchase chưa thanh toán'
+      description: 'expectedVersion bắt buộc; reason optional. PENDING_PAYMENT còn hạn chưa matched payment mới cancel được.
+        CANCELLED trả200 no-op trước check version, không audit lần hai. PAID/ACTIVATED/REVIEW_REQUIRED/CLOSED409 PURCHASE_CANNOT_CANCEL.
+        EXPIRED409 PURCHASE_PERIOD_EXPIRED. Cancel và settlement cùng restaurant lock; nếu cancel thắng tiền đến sau vẫn lưu
+        review. Không cần Idempotency-Key. Phase2 chưa có API attempt/QR: allowedActions không quảng bá CREATE_PAYMENT_ATTEMPT.
+        Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+      tags:
+      - Subscription purchase
+      x-implementation-status: IMPLEMENTED
+      x-target-phase: 2
+      x-required-permissions:
+      - SUBSCRIPTION_PURCHASE_CANCEL
+      x-required-role: OWNER
+      security:
+      - bearerAuth: []
+      x-tenant-policy: Principal tenant only; cross-tenant UUID=404.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Theo description; guard trước replay và business mutation.
+      parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        description: Purchase thuộc tenant từ principal, khác tenant trả404.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseView'
+              examples:
+                cancelledOrAlreadyCancelled:
+                  value:
+                    id: 11111111-1111-4111-8111-111111111111
+                    status: CANCELLED
+                    displayStatus: CANCELLED
+                    quote:
+                      schemaVersion: 1
+                      packageId: 66666666-6666-4666-8666-666666666666
+                      packageCode: PRO
+                      packageName: Pro
+                      priceAmount: 399000
+                      currencyCode: VND
+                      billingCycleMonths: 1
+                      features:
+                      - code: MENU_MANAGEMENT
+                        limits: {}
+                      - code: RECIPE_MANAGEMENT
+                        limits: {}
+                      maxStaff: 30
+                      quotedAt: '2026-11-01T03:00:00Z'
+                      expiresAt: '2026-11-01T03:15:00Z'
+                      billingZoneId: Asia/Ho_Chi_Minh
+                    subscriptionId: null
+                    paidAt: null
+                    activatedAt: null
+                    cancelledAt: '2026-11-01T03:03:00Z'
+                    closedAt: null
+                    reviewReason: null
+                    allowedActions:
+                    - CREATE_PURCHASE
+                    createdAt: '2026-11-01T03:00:00Z'
+                    updatedAt: '2026-11-01T03:03:00Z'
+                    version: 1
+                    serverTime: '2026-11-01T03:03:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range. INVALID_REQUEST_BODY:
+            JSON lỗi, sai kiểu hoặc unknown business field.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_REQUEST_BODY:
+                  value:
+                    success: false
+                    code: INVALID_REQUEST_BODY
+                    message: JSON lỗi, sai kiểu hoặc unknown business field.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PURCHASE_NOT_FOUND: Purchase không tồn tại hoặc không thuộc tenant.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PURCHASE_NOT_FOUND
+                    message: Purchase không tồn tại hoặc không thuộc tenant.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '409':
+          description: 'PURCHASE_PERIOD_EXPIRED: Quote đã hết hạn, cần purchase mới; không gia hạn quote cũ. PURCHASE_CANNOT_CANCEL:
+            Đã trả tiền/activated/review/closed nên không thể cancel như chưa trả. CONCURRENT_SUBSCRIPTION_UPDATE: Version/constraint/serialization
+            conflict; GET lại, retry ý định cũ bằng key cũ.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PURCHASE_PERIOD_EXPIRED:
+                  value:
+                    success: false
+                    code: PURCHASE_PERIOD_EXPIRED
+                    message: Quote đã hết hạn, cần purchase mới; không gia hạn quote cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                PURCHASE_CANNOT_CANCEL:
+                  value:
+                    success: false
+                    code: PURCHASE_CANNOT_CANCEL
+                    message: Đã trả tiền/activated/review/closed nên không thể cancel như chưa trả.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                CONCURRENT_SUBSCRIPTION_UPDATE:
+                  value:
+                    success: false
+                    code: CONCURRENT_SUBSCRIPTION_UPDATE
+                    message: Version/constraint/serialization conflict; GET lại, retry ý định cũ bằng key cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelPurchaseRequest'
+            examples:
+              cancel:
+                value:
+                  expectedVersion: 0
+                  reason: Chọn nhầm gói
+  /webhooks/subscriptions/sepay:
+    post:
+      operationId: receiveSepaySubscriptionWebhook
+      summary: '[PLANNED] Nhận giao dịch SePay với HMAC riêng'
+      description: Xác thực HMAC-SHA256 trên timestamp.rawBody, constant-time compare, ±300giây theo Clock. JSON tối đa64KiB.
+        Không JWT và không phải public không xác thực. Parse sau verify. ACK200 success=true chỉ sau inbox commit hoặc xác
+        nhận durable duplicate. Duplicate đang PROCESSING vẫn ACK nhưng worker tiếp tục. Trả503 nếu chưa lưu được; tuyệt đối
+        không202 cho provider. Financial match/activation chạy durable worker, không chờ trong request. Nội dung và bank account
+        được kiểm tra lại khi settlement; chữ ký hợp lệ không đồng nghĩa đã PAID. HMAC header mẫu không phải chữ ký dùng được.
+      tags:
+      - SePay subscription webhook
+      x-implementation-status: PLANNED
+      x-target-phase: 4
+      x-required-permissions: []
+      x-required-role: PROVIDER_HMAC
+      security:
+      - sepayHmac: []
+      x-tenant-policy: Derive from trusted platform account config + immutable attempt reference, never JWT/restaurantId client.
+      x-cache-policy: 'Cache-Control: no-store.'
+      x-idempotency-policy: DB unique provider/account/transaction; no client Idempotency-Key. Canonical bank identity + independent
+        webhook/API aliases.
+      parameters:
+      - name: X-SePay-Timestamp
+        in: header
+        required: true
+        description: Unix seconds lúc ký, không phải bank transactionDate; lệch tối đa300giây.
+        schema:
+          type: string
+          pattern: ^[0-9]{10,12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SepayWebhookPayload'
+            examples:
+              incomingDemo:
+                value:
+                  id: 92704
+                  gateway: Vietcombank
+                  transactionDate: '2026-11-01 10:05:00'
+                  accountNumber: '0000000000'
+                  subAccount: ''
+                  code: PS0123456789ABCDEF01234567
+                  content: PS0123456789ABCDEF01234567
+                  transferType: in
+                  description: DEMO subscription transfer
+                  transferAmount: 399000
+                  accumulated: 399000
+                  referenceCode: DEMOFT0001
+      responses:
+        '200':
+          description: Chỉ xác nhận đã nhận bền vững; không khẳng định subscription activated.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SepayAck'
+              examples:
+                durablyReceivedOrDuplicate:
+                  value:
+                    success: true
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range. INVALID_REQUEST_BODY:
+            JSON lỗi, sai kiểu hoặc unknown business field.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_REQUEST_BODY:
+                  value:
+                    success: false
+                    code: INVALID_REQUEST_BODY
+                    message: JSON lỗi, sai kiểu hoặc unknown business field.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'WEBHOOK_AUTHENTICATION_FAILED: Thiếu/sai HMAC, không coi là trusted financial event. WEBHOOK_TIMESTAMP_INVALID:
+            Timestamp chữ ký thiếu/sai/lệch quá300giây; khác transactionDate.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                WEBHOOK_AUTHENTICATION_FAILED:
+                  value:
+                    success: false
+                    code: WEBHOOK_AUTHENTICATION_FAILED
+                    message: Thiếu/sai HMAC, không coi là trusted financial event.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                WEBHOOK_TIMESTAMP_INVALID:
+                  value:
+                    success: false
+                    code: WEBHOOK_TIMESTAMP_INVALID
+                    message: Timestamp chữ ký thiếu/sai/lệch quá300giây; khác transactionDate.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'WEBHOOK_PERSISTENCE_UNAVAILABLE: Chưa commit inbox, provider phải retry; tuyệt đối không ACK200.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                WEBHOOK_PERSISTENCE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: WEBHOOK_PERSISTENCE_UNAVAILABLE
+                    message: Chưa commit inbox, provider phải retry; tuyệt đối không ACK200.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '413':
+          description: Payload vượt64KiB; không coi là durable event.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooLarge:
+                  value:
+                    success: false
+                    code: WEBHOOK_PAYLOAD_TOO_LARGE
+                    message: Webhook payload too large
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /admin/subscription-payment-events:
+    get:
+      operationId: listSubscriptionPaymentEvents
+      summary: '[PLANNED] Danh sách sự kiện và khoản tiền cần đối soát'
+      description: System SUPER_ADMIN + permission; không phải restaurant OWNER. PageResponse, sort receivedAt DESC,id DESC.
+        receivedFrom inclusive/receivedTo exclusive UTC, from<to,max366ngày nếu đủ hai đầu. Status filter dùng state. Data
+        masked/allowlist, không trả raw payload/secret. Event unmatched có tenant/purchase/attempt null; event thừa vẫn tồn
+        tại dù purchase ACTIVATED.
+      tags:
+      - Subscription payment review
+      x-implementation-status: PLANNED
+      x-target-phase: 5
+      x-required-permissions:
+      - SUBSCRIPTION_PAYMENT_REVIEW
+      x-required-role: SYSTEM_SUPER_ADMIN
+      security:
+      - bearerAuth: []
+      x-tenant-policy: System SUPER_ADMIN restaurantId=null; system-wide query.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Read-only; không reconcile/write/audit trên GET.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: Filter event.state.
+        schema:
+          $ref: '#/components/schemas/EventStatus'
+      - name: reviewReason
+        in: query
+        required: false
+        description: Filter reason.
+        schema:
+          $ref: '#/components/schemas/ReviewReason'
+      - name: restaurantId
+        in: query
+        required: false
+        description: Admin-only tenant filter.
+        schema:
+          type: string
+          format: uuid
+      - name: purchaseId
+        in: query
+        required: false
+        description: Admin-only purchase filter.
+        schema:
+          type: string
+          format: uuid
+      - name: receivedFrom
+        in: query
+        required: false
+        description: Inclusive UTC.
+        schema:
+          type: string
+          format: date-time
+          pattern: Z$
+      - name: receivedTo
+        in: query
+        required: false
+        description: Exclusive UTC.
+        schema:
+          type: string
+          format: date-time
+          pattern: Z$
+      - name: page
+        in: query
+        required: false
+        description: Zero-based page.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: PageResponse convention hiện có.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEventPage'
+              examples:
+                reviewPage:
+                  value:
+                    content:
+                    - id: 33333333-3333-4333-8333-333333333333
+                      provider: SEPAY
+                      providerAccountKey: platform-demo-vnd
+                      providerTransactionId: BANK:DEMOFT0001
+                      providerWebhookId: 92704
+                      providerApiTransactionId: null
+                      source: WEBHOOK
+                      restaurantId: 55555555-5555-4555-8555-555555555555
+                      purchaseId: 11111111-1111-4111-8111-111111111111
+                      attemptId: 22222222-2222-4222-8222-222222222222
+                      amount: 398000
+                      currencyCode: VND
+                      direction: in
+                      receiverAccountMasked: '******0000'
+                      paymentReference: PS0123456789ABCDEF01234567
+                      state: REVIEW_REQUIRED
+                      reviewReason: AMOUNT_MISMATCH
+                      occurredAt: '2026-11-01T03:05:00Z'
+                      receivedAt: '2026-11-01T03:05:05Z'
+                      processedAt: null
+                      retryCount: 0
+                      nextAttemptAt: null
+                      reviewedBy: null
+                      reviewedAt: null
+                      reviewNote: null
+                      resolutionReference: null
+                      version: 1
+                      serverTime: '2026-11-01T03:05:06Z'
+                    page: 0
+                    size: 20
+                    totalElements: 1
+                    totalPages: 1
+                empty:
+                  value:
+                    content: []
+                    page: 0
+                    size: 20
+                    totalElements: 0
+                    totalPages: 0
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '429':
+          description: 'RATE_LIMITED: Quá giới hạn; chờ Retry-After giây.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            Retry-After:
+              description: Số giây đợi trước retry.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  value:
+                    success: false
+                    code: RATE_LIMITED
+                    message: Quá giới hạn; chờ Retry-After giây.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'SERVICE_UNAVAILABLE: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency
+            key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: SERVICE_UNAVAILABLE
+                    message: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+  /admin/subscription-payment-events/{eventId}/reconcile:
+    post:
+      operationId: reconcileSubscriptionPaymentEvent
+      summary: '[PLANNED] Yêu cầu đối soát lại hoặc đóng xử lý ngoài hệ thống'
+      description: Chỉ event REVIEW_REQUIRED và expectedVersion hiện tại. RECHECK queue RETRY_PENDING trả202, không khẳng
+        định đã trả/activated; cùng settlement guard, không sửa amount/ref/tenant. CLOSE_OFFLINE cần reason tối thiểu10ký
+        tự và resolutionReference, trả200 CLOSED. Không tạo refund/tiền giả; purchase REVIEW_REQUIRED chỉ CLOSED khi không
+        còn event review/retry/processing liên quan, giữ mọi paid evidence. Purchase ACTIVATED không đổi. Retry request sau
+        timeout GET list và kiểm tra version; stale version409, không audit lần hai. Không Idempotency-Key, không đường tắt
+        force PAID.
+      tags:
+      - Subscription payment review
+      x-implementation-status: PLANNED
+      x-target-phase: 5
+      x-required-permissions:
+      - SUBSCRIPTION_PAYMENT_REVIEW
+      x-required-role: SYSTEM_SUPER_ADMIN
+      security:
+      - bearerAuth: []
+      x-tenant-policy: System SUPER_ADMIN restaurantId=null; system-wide query.
+      x-cache-policy: 'Cache-Control: no-store; Vary: Authorization.'
+      x-idempotency-policy: Theo description; guard trước replay và business mutation.
+      parameters:
+      - name: eventId
+        in: path
+        required: true
+        description: Event system-wide, chỉ system SUPER_ADMIN có quyền review.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '202':
+          description: Đã queue, chưa phải settlement thành công.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEventView'
+              examples:
+                queued:
+                  value:
+                    id: 33333333-3333-4333-8333-333333333333
+                    provider: SEPAY
+                    providerAccountKey: platform-demo-vnd
+                    providerTransactionId: BANK:DEMOFT0001
+                    providerWebhookId: 92704
+                    providerApiTransactionId: null
+                    source: WEBHOOK
+                    restaurantId: 55555555-5555-4555-8555-555555555555
+                    purchaseId: 11111111-1111-4111-8111-111111111111
+                    attemptId: 22222222-2222-4222-8222-222222222222
+                    amount: 398000
+                    currencyCode: VND
+                    direction: in
+                    receiverAccountMasked: '******0000'
+                    paymentReference: PS0123456789ABCDEF01234567
+                    state: RETRY_PENDING
+                    reviewReason: AMOUNT_MISMATCH
+                    occurredAt: '2026-11-01T03:05:00Z'
+                    receivedAt: '2026-11-01T03:05:05Z'
+                    processedAt: null
+                    retryCount: 0
+                    nextAttemptAt: '2026-11-01T03:08:00Z'
+                    reviewedBy: 77777777-7777-4777-8777-777777777777
+                    reviewedAt: '2026-11-01T03:08:00Z'
+                    reviewNote: Đã kiểm tra chứng từ, yêu cầu đối soát lại
+                    resolutionReference: null
+                    version: 2
+                    serverTime: '2026-11-01T03:08:00Z'
+        '200':
+          description: Đã đóng xử lý ngoài hệ thống, không có refund tự động.
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEventView'
+              examples:
+                closed:
+                  value:
+                    id: 33333333-3333-4333-8333-333333333333
+                    provider: SEPAY
+                    providerAccountKey: platform-demo-vnd
+                    providerTransactionId: BANK:DEMOFT0001
+                    providerWebhookId: 92704
+                    providerApiTransactionId: null
+                    source: WEBHOOK
+                    restaurantId: 55555555-5555-4555-8555-555555555555
+                    purchaseId: 11111111-1111-4111-8111-111111111111
+                    attemptId: 22222222-2222-4222-8222-222222222222
+                    amount: 398000
+                    currencyCode: VND
+                    direction: in
+                    receiverAccountMasked: '******0000'
+                    paymentReference: PS0123456789ABCDEF01234567
+                    state: CLOSED
+                    reviewReason: AMOUNT_MISMATCH
+                    occurredAt: '2026-11-01T03:05:00Z'
+                    receivedAt: '2026-11-01T03:05:05Z'
+                    processedAt: null
+                    retryCount: 0
+                    nextAttemptAt: null
+                    reviewedBy: 77777777-7777-4777-8777-777777777777
+                    reviewedAt: '2026-11-01T03:08:00Z'
+                    reviewNote: Đã xử lý khoản tiền ngoài hệ thống theo biên bản DEMO
+                    resolutionReference: DEMO-SUPPORT-001
+                    version: 2
+                    serverTime: '2026-11-01T03:08:00Z'
+        '400':
+          description: 'VALIDATION_ERROR: Thiếu/sai header, query, path UUID, body field hoặc range. INVALID_REQUEST_BODY:
+            JSON lỗi, sai kiểu hoặc unknown business field.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  value:
+                    success: false
+                    code: VALIDATION_ERROR
+                    message: Thiếu/sai header, query, path UUID, body field hoặc range.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_REQUEST_BODY:
+                  value:
+                    success: false
+                    code: INVALID_REQUEST_BODY
+                    message: JSON lỗi, sai kiểu hoặc unknown business field.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '401':
+          description: 'UNAUTHORIZED: Thiếu/không hợp lệ access token. ACCOUNT_INACTIVE: Account không còn hợp lệ; convention
+            UserAccountStatusFilter hiện có.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            WWW-Authenticate:
+              description: Bearer cho owner/admin; HMAC cho webhook.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    success: false
+                    code: UNAUTHORIZED
+                    message: Thiếu/không hợp lệ access token.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                ACCOUNT_INACTIVE:
+                  value:
+                    success: false
+                    code: ACCOUNT_INACTIVE
+                    message: Account không còn hợp lệ; convention UserAccountStatusFilter hiện có.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '403':
+          description: 'FORBIDDEN: Sai role hoặc thiếu permission. RESTAURANT_INACTIVE: Restaurant inactive/suspended/không
+            hợp lệ; không bypass tenant guard.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FORBIDDEN:
+                  value:
+                    success: false
+                    code: FORBIDDEN
+                    message: Sai role hoặc thiếu permission.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                RESTAURANT_INACTIVE:
+                  value:
+                    success: false
+                    code: RESTAURANT_INACTIVE
+                    message: Restaurant inactive/suspended/không hợp lệ; không bypass tenant guard.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '404':
+          description: 'PAYMENT_EVENT_NOT_FOUND: Event không tồn tại trong system admin scope.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PAYMENT_EVENT_NOT_FOUND:
+                  value:
+                    success: false
+                    code: PAYMENT_EVENT_NOT_FOUND
+                    message: Event không tồn tại trong system admin scope.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '409':
+          description: 'CONCURRENT_SUBSCRIPTION_UPDATE: Version/constraint/serialization conflict; GET lại, retry ý định cũ
+            bằng key cũ. INVALID_PAYMENT_EVENT_TRANSITION: Event không ở REVIEW_REQUIRED hoặc version/action không hợp lệ.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                CONCURRENT_SUBSCRIPTION_UPDATE:
+                  value:
+                    success: false
+                    code: CONCURRENT_SUBSCRIPTION_UPDATE
+                    message: Version/constraint/serialization conflict; GET lại, retry ý định cũ bằng key cũ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+                INVALID_PAYMENT_EVENT_TRANSITION:
+                  value:
+                    success: false
+                    code: INVALID_PAYMENT_EVENT_TRANSITION
+                    message: Event không ở REVIEW_REQUIRED hoặc version/action không hợp lệ.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '429':
+          description: 'RATE_LIMITED: Quá giới hạn; chờ Retry-After giây.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+            Retry-After:
+              description: Số giây đợi trước retry.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                RATE_LIMITED:
+                  value:
+                    success: false
+                    code: RATE_LIMITED
+                    message: Quá giới hạn; chờ Retry-After giây.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '500':
+          description: 'INTERNAL_ERROR: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation
+            timeout/lỗi cần GET/retry đúng key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INTERNAL_ERROR:
+                  value:
+                    success: false
+                    code: INTERNAL_ERROR
+                    message: Lỗi ngoài dự kiến theo GlobalExceptionHandler; không tiết lộ chi tiết nội bộ. Mutation timeout/lỗi
+                      cần GET/retry đúng key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+        '503':
+          description: 'SERVICE_UNAVAILABLE: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency
+            key.'
+          headers:
+            Cache-Control:
+              description: Luôn no-store.
+              schema:
+                type: string
+                const: no-store
+            Vary:
+              description: Vary chứa Authorization; có thể kèm các header CORS khác.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  value:
+                    success: false
+                    code: SERVICE_UNAVAILABLE
+                    message: Lỗi hạ tầng tạm thời, không khẳng định mutation đã thất bại; retry đúng idempotency key.
+                    fieldErrors: {}
+                    timestamp: '2026-11-01T03:00:00Z'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcileEventRequest'
+            examples:
+              recheck:
+                value:
+                  action: RECHECK
+                  expectedVersion: 1
+                  reason: Đã kiểm tra chứng từ, yêu cầu đối soát lại
+              closeOffline:
+                value:
+                  action: CLOSE_OFFLINE
+                  expectedVersion: 1
+                  reason: Đã xử lý khoản tiền ngoài hệ thống theo biên bản DEMO
+                  resolutionReference: DEMO-SUPPORT-001
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token hiện có; OWNER đúng tenant hoặc system SUPER_ADMIN tùy endpoint.
+    sepayHmac:
+      type: apiKey
+      in: header
+      name: X-SePay-Signature
+      description: sha256=<64hex> = HMAC-SHA256(secret, timestamp + . + rawBody). X-SePay-Timestamp bắt buộc, Clock ±300s.
+        Không bearerAuth. Xác minh đúng thuật toán trước parse, apiKey ở đây chỉ mô tả nơi chứa chữ ký.
+  schemas:
+    PurchaseStatus:
+      type: string
+      enum:
+      - PENDING_PAYMENT
+      - PAID
+      - ACTIVATED
+      - EXPIRED
+      - CANCELLED
+      - REVIEW_REQUIRED
+      - CLOSED
+    AttemptStatus:
+      type: string
+      enum:
+      - PENDING
+      - SUCCESS
+      - FAILED
+      - EXPIRED
+      - CANCELLED
+    EventStatus:
+      type: string
+      enum:
+      - RECEIVED
+      - PROCESSING
+      - RETRY_PENDING
+      - PROCESSED
+      - REVIEW_REQUIRED
+      - CLOSED
+    SubscriptionState:
+      type: string
+      enum:
+      - NONE
+      - PENDING
+      - ACTIVE
+      - EXPIRED
+      - CANCELLED
+    Action:
+      type: string
+      enum:
+      - CREATE_PURCHASE
+      - VIEW_PURCHASE
+      - CREATE_PAYMENT_ATTEMPT
+      - CANCEL_PURCHASE
+      - WAIT_PAYMENT
+      - WAIT_ACTIVATION
+      - CONTACT_SUPPORT
+      - OPEN_APP
+    BlockedReason:
+      type: string
+      enum:
+      - PURCHASE_UNAVAILABLE
+      - PURCHASE_PERMISSION_REQUIRED
+      - SUBSCRIPTION_ALREADY_ACTIVE
+      - SUBSCRIPTION_PENDING_EXISTS
+      - PURCHASE_REVIEW_REQUIRED
+      - PURCHASE_IN_PROGRESS
+    ReviewReason:
+      type: string
+      enum:
+      - AMOUNT_MISMATCH
+      - REFERENCE_UNMATCHED
+      - REFERENCE_AMBIGUOUS
+      - ACCOUNT_MISMATCH
+      - OUTGOING_TRANSFER
+      - DUPLICATE_PAYMENT
+      - PURCHASE_CANCELLED
+      - PAYMENT_OUTSIDE_WINDOW
+      - SUBSCRIPTION_CONFLICT
+      - RESTAURANT_UNAVAILABLE
+      - IDENTITY_UNCERTAIN
+      - IDENTITY_CONFLICT
+      - TECHNICAL_RETRY_EXHAUSTED
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        success:
+          type: boolean
+          const: false
+        code:
+          type: string
+          maxLength: 100
+        message:
+          type: string
+          maxLength: 1000
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map field→message; {} khi không có lỗi field, theo handler/filter hiện có.
+        timestamp:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - success
+      - code
+      - message
+      - fieldErrors
+      - timestamp
+    FeatureGrant:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          maxLength: 100
+          minLength: 1
+        limits:
+          type: object
+          additionalProperties: true
+          description: Giới hạn feature từ catalog, không có maxStaff tại đây.
+      required:
+      - code
+      - limits
+    PurchaseQuote:
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        packageId:
+          type: string
+          format: uuid
+        packageCode:
+          type: string
+          maxLength: 50
+          minLength: 1
+        packageName:
+          type: string
+          maxLength: 100
+          minLength: 1
+        priceAmount:
+          type: integer
+          minimum: 1
+          maximum: 999999999999
+          description: VND nguyên đồng; BigDecimal/NUMERIC(14,2) ở server; không float, không nhận giá từ FE.
+        currencyCode:
+          type: string
+          const: VND
+        billingCycleMonths:
+          type: integer
+          minimum: 1
+          maximum: 32767
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeatureGrant'
+          uniqueItems: true
+        maxStaff:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 9223372036854775807
+          description: Top-level package limit; null=unlimited.
+        quotedAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        billingZoneId:
+          type: string
+          const: Asia/Ho_Chi_Minh
+      required:
+      - schemaVersion
+      - packageId
+      - packageCode
+      - packageName
+      - priceAmount
+      - currencyCode
+      - billingCycleMonths
+      - features
+      - maxStaff
+      - quotedAt
+      - expiresAt
+      - billingZoneId
+    SubscriptionSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACTIVE
+          - EXPIRED
+          - CANCELLED
+        effective:
+          type: boolean
+        packageCode:
+          type: string
+          maxLength: 50
+        startAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        endAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        activatedAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+      required:
+      - id
+      - status
+      - effective
+      - packageCode
+      - startAt
+      - endAt
+      - activatedAt
+    PurchaseView:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PurchaseStatus'
+        displayStatus:
+          $ref: '#/components/schemas/PurchaseStatus'
+        quote:
+          $ref: '#/components/schemas/PurchaseQuote'
+        subscriptionId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        paidAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        activatedAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        cancelledAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        closedAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        reviewReason:
+          oneOf:
+          - $ref: '#/components/schemas/ReviewReason'
+          - type: 'null'
+        allowedActions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Action'
+        createdAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        serverTime:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - id
+      - status
+      - displayStatus
+      - quote
+      - subscriptionId
+      - paidAt
+      - activatedAt
+      - cancelledAt
+      - closedAt
+      - reviewReason
+      - allowedActions
+      - createdAt
+      - updatedAt
+      - version
+      - serverTime
+      description: status đã lưu; displayStatus project expiry cho PENDING_PAYMENT, không ghi DB. Replay trả body insert cũ;
+        gọi GET để lấy hiện tại.
+      allOf:
+      - if:
+          properties:
+            status:
+              const: ACTIVATED
+          required:
+          - status
+        then:
+          properties:
+            subscriptionId:
+              type: string
+              format: uuid
+            paidAt:
+              type: string
+              format: date-time
+              pattern: Z$
+            activatedAt:
+              type: string
+              format: date-time
+              pattern: Z$
+      - if:
+          properties:
+            status:
+              const: PAID
+          required:
+          - status
+        then:
+          properties:
+            paidAt:
+              type: string
+              format: date-time
+              pattern: Z$
+            subscriptionId:
+              type: 'null'
+            activatedAt:
+              type: 'null'
+      - if:
+          properties:
+            status:
+              enum:
+              - PENDING_PAYMENT
+              - EXPIRED
+              - CANCELLED
+          required:
+          - status
+        then:
+          properties:
+            paidAt:
+              type: 'null'
+            subscriptionId:
+              type: 'null'
+            activatedAt:
+              type: 'null'
+      - if:
+          properties:
+            status:
+              const: CANCELLED
+          required:
+          - status
+        then:
+          properties:
+            cancelledAt:
+              type: string
+              format: date-time
+              pattern: Z$
+      - if:
+          properties:
+            status:
+              const: CLOSED
+          required:
+          - status
+        then:
+          properties:
+            closedAt:
+              type: string
+              format: date-time
+              pattern: Z$
+      - if:
+          properties:
+            status:
+              const: REVIEW_REQUIRED
+          required:
+          - status
+        then:
+          properties:
+            reviewReason:
+              $ref: '#/components/schemas/ReviewReason'
+      - if:
+          properties:
+            status:
+              const: PENDING_PAYMENT
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - PENDING_PAYMENT
+              - EXPIRED
+      - if:
+          properties:
+            status:
+              const: PAID
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - PAID
+      - if:
+          properties:
+            status:
+              const: ACTIVATED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - ACTIVATED
+      - if:
+          properties:
+            status:
+              const: EXPIRED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - EXPIRED
+      - if:
+          properties:
+            status:
+              const: CANCELLED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - CANCELLED
+      - if:
+          properties:
+            status:
+              const: REVIEW_REQUIRED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - REVIEW_REQUIRED
+      - if:
+          properties:
+            status:
+              const: CLOSED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - CLOSED
+    PaymentInstructions:
+      type: object
+      additionalProperties: false
+      properties:
+        bankCode:
+          type: string
+          maxLength: 30
+          minLength: 1
+        accountNumber:
+          type: string
+          maxLength: 100
+          minLength: 1
+        accountName:
+          type: string
+          maxLength: 150
+          minLength: 1
+        transferContent:
+          type: string
+          pattern: ^PS[0-9A-F]{24}$
+        qrPayload:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          description: VietQR payload do adapter tạo, FE render QR offline. Giá trị trong ví dụ là DEMO, không dùng chuyển
+            tiền.
+      required:
+      - bankCode
+      - accountNumber
+      - accountName
+      - transferContent
+      - qrPayload
+    PaymentAttemptView:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchaseId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AttemptStatus'
+        displayStatus:
+          $ref: '#/components/schemas/AttemptStatus'
+        provider:
+          type: string
+          const: SEPAY
+        referenceCode:
+          type: string
+          pattern: ^PS[0-9A-F]{24}$
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 999999999999
+          description: VND nguyên đồng; BigDecimal/NUMERIC(14,2) ở server; không float, không nhận giá từ FE.
+        currencyCode:
+          type: string
+          const: VND
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        instructions:
+          $ref: '#/components/schemas/PaymentInstructions'
+        paidAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        serverTime:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - id
+      - purchaseId
+      - status
+      - displayStatus
+      - provider
+      - referenceCode
+      - amount
+      - currencyCode
+      - expiresAt
+      - instructions
+      - paidAt
+      - createdAt
+      - updatedAt
+      - version
+      - serverTime
+      description: instructions là snapshot hướng dẫn cũ, chỉ hiển thị QR để trả khi status/displayStatus PENDING và purchase
+        còn hợp lệ; SUCCESS không phải lời mời trả thêm.
+      allOf:
+      - if:
+          properties:
+            status:
+              const: SUCCESS
+          required:
+          - status
+        then:
+          properties:
+            paidAt:
+              type: string
+              format: date-time
+              pattern: Z$
+      - if:
+          properties:
+            status:
+              const: PENDING
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - PENDING
+              - EXPIRED
+            paidAt:
+              type: 'null'
+      - if:
+          properties:
+            status:
+              const: SUCCESS
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - SUCCESS
+      - if:
+          properties:
+            status:
+              const: FAILED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - FAILED
+            paidAt:
+              type: 'null'
+      - if:
+          properties:
+            status:
+              const: EXPIRED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - EXPIRED
+            paidAt:
+              type: 'null'
+      - if:
+          properties:
+            status:
+              const: CANCELLED
+          required:
+          - status
+        then:
+          properties:
+            displayStatus:
+              enum:
+              - CANCELLED
+            paidAt:
+              type: 'null'
+    CurrentAttemptResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        paymentAttempt:
+          oneOf:
+          - $ref: '#/components/schemas/PaymentAttemptView'
+          - type: 'null'
+        serverTime:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - paymentAttempt
+      - serverTime
+      description: Attempt mới nhất của purchase theo createdAt DESC,id DESC, có thể terminal; null khi chưa từng tạo. Không
+        chỉ query status=PENDING.
+    OnboardingResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        subscriptionState:
+          $ref: '#/components/schemas/SubscriptionState'
+        currentSubscription:
+          oneOf:
+          - $ref: '#/components/schemas/SubscriptionSummary'
+          - type: 'null'
+        currentPurchase:
+          oneOf:
+          - $ref: '#/components/schemas/PurchaseView'
+          - type: 'null'
+        unresolvedPaymentReviewCount:
+          type: integer
+          minimum: 0
+        canPurchase:
+          type: boolean
+        blockedReason:
+          oneOf:
+          - $ref: '#/components/schemas/BlockedReason'
+          - type: 'null'
+        allowedActions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Action'
+        serverTime:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - subscriptionState
+      - currentSubscription
+      - currentPurchase
+      - unresolvedPaymentReviewCount
+      - canPurchase
+      - blockedReason
+      - allowedActions
+      - serverTime
+      allOf:
+      - if:
+          properties:
+            canPurchase:
+              const: true
+          required:
+          - canPurchase
+        then:
+          properties:
+            blockedReason:
+              type: 'null'
+      - if:
+          properties:
+            canPurchase:
+              const: false
+          required:
+          - canPurchase
+        then:
+          properties:
+            blockedReason:
+              $ref: '#/components/schemas/BlockedReason'
+    CreatePurchaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        packageCode:
+          type: string
+          maxLength: 50
+          minLength: 1
+          pattern: ^\s*[A-Za-z0-9_-]+\s*$
+          description: Trim và uppercase trước lookup/fingerprint. Chỉ server quyết định giá, tenant, quyền lợi và kỳ sử dụng.
+      required:
+      - packageCode
+    CreateAttemptRequest:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    CancelPurchaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+      required:
+      - expectedVersion
+    ReconcileEventRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+          enum:
+          - RECHECK
+          - CLOSE_OFFLINE
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          maxLength: 1000
+          minLength: 10
+        resolutionReference:
+          type: string
+          maxLength: 200
+          minLength: 3
+      required:
+      - action
+      - expectedVersion
+      - reason
+      allOf:
+      - if:
+          properties:
+            action:
+              const: CLOSE_OFFLINE
+          required:
+          - action
+        then:
+          required:
+          - resolutionReference
+    PaymentEventView:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          const: SEPAY
+        providerAccountKey:
+          type: string
+          maxLength: 100
+        providerTransactionId:
+          type: string
+          maxLength: 180
+        providerWebhookId:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 9223372036854775807
+        providerApiTransactionId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        source:
+          type: string
+          enum:
+          - WEBHOOK
+          - RECONCILIATION
+        restaurantId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        purchaseId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        attemptId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 999999999999
+          description: VND nguyên đồng; BigDecimal/NUMERIC(14,2) ở server; không float, không nhận giá từ FE.
+        currencyCode:
+          type: string
+          const: VND
+        direction:
+          type: string
+          enum:
+          - in
+          - out
+        receiverAccountMasked:
+          type: string
+          maxLength: 100
+        paymentReference:
+          type:
+          - string
+          - 'null'
+          maxLength: 40
+        state:
+          $ref: '#/components/schemas/EventStatus'
+        reviewReason:
+          oneOf:
+          - $ref: '#/components/schemas/ReviewReason'
+          - type: 'null'
+        occurredAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        receivedAt:
+          type: string
+          format: date-time
+          pattern: Z$
+        processedAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        retryCount:
+          type: integer
+          minimum: 0
+        nextAttemptAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        reviewedBy:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        reviewedAt:
+          oneOf:
+          - type: string
+            format: date-time
+            pattern: Z$
+          - type: 'null'
+        reviewNote:
+          type:
+          - string
+          - 'null'
+          maxLength: 1000
+        resolutionReference:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        serverTime:
+          type: string
+          format: date-time
+          pattern: Z$
+      required:
+      - id
+      - provider
+      - providerAccountKey
+      - providerTransactionId
+      - providerWebhookId
+      - providerApiTransactionId
+      - source
+      - restaurantId
+      - purchaseId
+      - attemptId
+      - amount
+      - currencyCode
+      - direction
+      - receiverAccountMasked
+      - paymentReference
+      - state
+      - reviewReason
+      - occurredAt
+      - receivedAt
+      - processedAt
+      - retryCount
+      - nextAttemptAt
+      - reviewedBy
+      - reviewedAt
+      - reviewNote
+      - resolutionReference
+      - version
+      - serverTime
+      description: Admin DTO allowlist; không raw payload, bank secret, Authorization hay webhook signature.
+      allOf:
+      - if:
+          properties:
+            state:
+              const: REVIEW_REQUIRED
+          required:
+          - state
+        then:
+          properties:
+            reviewReason:
+              $ref: '#/components/schemas/ReviewReason'
+      - if:
+          properties:
+            state:
+              const: CLOSED
+          required:
+          - state
+        then:
+          properties:
+            reviewedBy:
+              type: string
+              format: uuid
+            reviewedAt:
+              type: string
+              format: date-time
+              pattern: Z$
+            reviewNote:
+              type: string
+              maxLength: 1000
+              minLength: 10
+            resolutionReference:
+              type: string
+              maxLength: 200
+              minLength: 3
+    PurchasePage:
+      type: object
+      additionalProperties: false
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseView'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+      required:
+      - content
+      - page
+      - size
+      - totalElements
+      - totalPages
+    PaymentEventPage:
+      type: object
+      additionalProperties: false
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentEventView'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+      required:
+      - content
+      - page
+      - size
+      - totalElements
+      - totalPages
+    SepayWebhookPayload:
+      type: object
+      additionalProperties: true
+      description: Provider schema riêng; cho phép field mới của SePay, chỉ normalize allowlist. Verify raw bytes trước parse.
+        Không dùng strict unknown-field policy của owner request.
+      required:
+      - id
+      - gateway
+      - transactionDate
+      - accountNumber
+      - subAccount
+      - code
+      - content
+      - transferType
+      - description
+      - transferAmount
+      - accumulated
+      - referenceCode
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          maximum: 9223372036854775807
+        gateway:
+          type: string
+          maxLength: 100
+          minLength: 1
+        transactionDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$
+          description: Giờ Asia/Ho_Chi_Minh; còn phải validate ngày lịch thật.
+        accountNumber:
+          type: string
+          maxLength: 100
+          minLength: 1
+        subAccount:
+          type: string
+          maxLength: 100
+        code:
+          type:
+          - string
+          - 'null'
+          maxLength: 100
+        content:
+          type: string
+          maxLength: 4000
+        transferType:
+          type: string
+          enum:
+          - in
+          - out
+        description:
+          type: string
+          maxLength: 4000
+        transferAmount:
+          type: integer
+          minimum: 1
+          maximum: 999999999999
+          description: VND nguyên đồng; BigDecimal/NUMERIC(14,2) ở server; không float, không nhận giá từ FE.
+        accumulated:
+          type: integer
+          minimum: 0
+        referenceCode:
+          type: string
+          maxLength: 150
+    SepayAck:
+      type: object
+      additionalProperties: false
+      properties:
+        success:
+          type: boolean
+          const: true
+      required:
+      - success

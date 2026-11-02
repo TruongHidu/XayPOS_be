@@ -197,6 +197,8 @@ Ví dụ đăng ký:
 
 JWT secret nằm ở `app.jwt.secret`; khi triển khai thật phải đặt `JWT_SECRET` riêng (tối thiểu 32 byte). CORS được cấu hình bằng `CORS_ALLOWED_ORIGINS`.
 
+Ảnh món được tải lên Cloudinary qua `POST /api/v1/menu/images`. Đặt `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (và tùy chọn `CLOUDINARY_FOLDER`, mặc định `pos-saas`) ở phía server; thiếu cấu hình thì API trả 503 `IMAGE_STORAGE_NOT_CONFIGURED`.
+
 ## Cấu trúc
 
 Mã nguồn nằm dưới namespace `com.possaas`, được chia thành `common`, `config`, `modules`, `infrastructure` và `jobs`. Migration đặt tại `src/main/resources/db/migration`.
@@ -315,3 +317,19 @@ V39 bổ sung sổ thu chi từ payment SUCCESS và phiếu chi POSTED; tạo/vo
 nhập kho không tự ghi chi; dòng tiền không phải lợi nhuận. Currency receipt mới
 được chốt khi tạo, lịch sử cũ giữ UNKNOWN. Xem [API](docs/cashbook-api.md),
 [OpenAPI](docs/openapi/cashbook-api.yaml), [FE sync](docs/cashbook-fe-sync.md).
+
+
+## Subscription purchase — Phase 2
+
+V41 thêm schema/permission và năm API OWNER purchase/onboarding/read/cancel.
+**QR, SePay webhook, settlement và activation từ purchase chưa triển khai.** Xem [thiết kế](docs/subscription-purchase-design.md),
+[OpenAPI dự kiến](docs/openapi/subscription-purchase-api.yaml),
+[test plan](docs/subscription-purchase-test-plan.md) và
+[hướng dẫn FE](docs/subscription-purchase-fe-sync.md). API đăng ký hiện tại tiếp tục
+tạo OWNER + restaurant, không tạo subscription mặc định.
+
+Mặc định `subscription-purchase.accept-new=false`; local/test có thể bật
+`SUBSCRIPTION_PURCHASE_ACCEPT_NEW=true`. Xem [API/Postman Phase2](docs/subscription-purchase-api.md).
+Admin gán/kích hoạt/đổi gói bị open purchase chặn bằng409 SUBSCRIPTION_PURCHASE_IN_PROGRESS.
+
+Kết quả triển khai và kiểm thử: [Phase2 implementation](docs/subscription-purchase-phase2-implementation.md).

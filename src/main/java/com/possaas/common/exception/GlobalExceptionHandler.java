@@ -15,6 +15,9 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -40,6 +43,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
         MethodArgumentTypeMismatchException.class,
         MissingServletRequestParameterException.class,
+        MissingServletRequestPartException.class,
+        MultipartException.class,
         HandlerMethodValidationException.class
     })
     ResponseEntity<ErrorResponse> invalidRequestParameter(Exception ex) {
@@ -47,6 +52,17 @@ public class GlobalExceptionHandler {
             false,
             "VALIDATION_ERROR",
             "Request validation failed",
+            Map.of(),
+            Instant.now()
+        ));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ErrorResponse> uploadTooLarge(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(413).body(new ErrorResponse(
+            false,
+            "IMAGE_TOO_LARGE",
+            "Uploaded file is too large",
             Map.of(),
             Instant.now()
         ));
