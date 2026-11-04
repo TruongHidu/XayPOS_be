@@ -1,6 +1,6 @@
 # Mua gói POS SaaS — thiết kế và triển khai Giai đoạn 2
 
-Ngày đối chiếu: 2026-11-01. **Phase2 IMPLEMENTED:** năm API purchase/onboarding và schema/permission V41. **Phase3–5 PLANNED:** QR, webhook, payment/activation và review chưa hoạt động. Mục1 ghi lại baseline trước Phase2; mục12 mô tả implementation. Contract máy đọc: [OpenAPI](openapi/subscription-purchase-api.yaml); [test plan](subscription-purchase-test-plan.md); [FE sync](subscription-purchase-fe-sync.md).
+Ngày đối chiếu: 2026-11-01. **Phase2 IMPLEMENTED:** năm API purchase/onboarding và schema/permission V41. **Phase3 IMPLEMENTED (2026-11-02):** payment attempt, mã chuyển khoản, QR SePay/VietQR offline, V42 và job expire purchase, xem [Phase3](subscription-purchase-phase3-implementation.md). **Phase4 IMPLEMENTED (2026-11-02):** webhook SePay HMAC, inbox, worker đối chiếu PAID và kích hoạt gói qua port `PurchasedSubscriptionActivation`, xem [Phase4](subscription-purchase-phase4-implementation.md). **Phase5 PLANNED:** đối soát API SePay và API admin review. Mục1 ghi lại baseline trước Phase2; mục12 mô tả implementation. Contract máy đọc: [OpenAPI](openapi/subscription-purchase-api.yaml); [test plan](subscription-purchase-test-plan.md); [FE sync](subscription-purchase-fe-sync.md).
 
 ## 1. Baseline trước Giai đoạn 2 đã xác minh
 
@@ -211,7 +211,7 @@ Constraints/indexes: UNIQUE(id,restaurant_id); UNIQUE(id,restaurant_id,expires_a
 
 Constraints/indexes: UNIQUE(id,restaurant_id,purchase_id); UNIQUE(restaurant_id,idempotency_key) (scope CREATE_PAYMENT_ATTEMPT, path có trong fingerprint); partial UNIQUE(purchase_id) WHERE status='PENDING'; partial UNIQUE(purchase_id) WHERE status='SUCCESS' (MVP chỉ chấp nhận một lần trả đủ cho purchase); UNIQUE(reference_code); FK `(purchase_id,restaurant_id,expires_at)` -> purchase `(id,restaurant_id,expires_at)` bảo đảm cùng tenant và không vượt hạn. DEFERRABLE constraint trigger kiểm tra amount/currency bằng purchase khi insert; financial fields immutable nên không drift. Check status, expiresAt>createdAt, SUCCESS có paidAt/successfulEventId; UNIQUE(successful_event_id) non-null. Index `(purchase_id,created_at DESC,id DESC)`, `(status,expires_at)`.
 
-Reference format: `PS` + 24 ký tự hex uppercase từ secure random96bit; ví dụ `PS0123456789ABCDEF01234567`. Unique constraint + retry collision, không dùng restaurantId tăng dần. QR này chứa tài khoản và reference, không phải secret cấp entitlement. MVP generate payload VietQR qua adapter offline và FE render QR từ `qrPayload`, không đưa token vào QR; không lưu ảnh hosted có secret. Nếu provider phải gọi HTTP khi triển khai, prepare outside lock rồi revalidate transaction, không giữ lock chờ HTTP.
+Reference format (V42): `PS` + 20 ký tự hex uppercase từ secure random 80bit; ví dụ `PS0123456789ABCDEF0123`. Tổng 22 ký tự để vừa trường Purpose of Transaction (EMVCo tag 62-08, tối đa 25 ký tự) của VietQR; SePay cấu hình tiền tố `PS`, hậu tố 20 ký tự. Unique constraint + retry collision, không dùng restaurantId tăng dần. QR này chứa tài khoản và reference, không phải secret cấp entitlement. MVP generate payload VietQR qua adapter offline và FE render QR từ `qrPayload`, không đưa token vào QR; không lưu ảnh hosted có secret. Nếu provider phải gọi HTTP khi triển khai, prepare outside lock rồi revalidate transaction, không giữ lock chờ HTTP.
 
 ### subscription_payment_events
 
@@ -295,7 +295,7 @@ Provider API đối soát là API v2, id UUID, reference_number riêng; adapter 
 | Reload/đổi thiết bị | GET onboarding/list/detail/current; không auto POST mới; restore theo server resource. Không cần giữ mật khẩu hoặc raw token trong QR. |
 | Event identity/fingerprint bất nhất | IDENTITY_CONFLICT/IDENTITY_UNCERTAIN; không overwrite evidence. Admin review; không khẳng định hai nguồn khác ID là hai khoản tiền thật. |
 
-Reference extraction: uppercase ASCII, tách token theo ranh giới, đúng `PS[0-9A-F]{24}`; code nếu có phải khớp token content. Zero token →UNMATCHED, >1 khác nhau →AMBIGUOUS, không substring/fuzzy match. Tìm attempt historical đúng reference, không tìm purchase mới nhất theo amount.
+Reference extraction: uppercase ASCII, tách token theo ranh giới, đúng `PS[0-9A-F]{20}`; code nếu có phải khớp token content. Zero token →UNMATCHED, >1 khác nhau →AMBIGUOUS, không substring/fuzzy match. Tìm attempt historical đúng reference, không tìm purchase mới nhất theo amount.
 
 ## 10. Onboarding projection và API/error
 
@@ -311,8 +311,8 @@ Toàn bộ10 operations và schema/error cụ thể nằm trong OpenAPI. Các nh
 |---|---|---|
 | 1 — tài liệu | Bốn file hiện tại | OpenAPI validate, refs/examples đúng, chỉ docs thay đổi |
 | 2 — purchase/onboarding | IMPLEMENTED: V41, bốn permission, command/query/access/quote, admin guard, idempotency và năm API create/read/cancel/onboarding | Không cần subscription để mua; concurrency tenant/key/quote; không expose API QR chưa hỗ trợ |
-| 3 — attempt/QR | PLANNED: runtime attempt trên schema đã có, offline provider adapter, create/current QR, permission/featureflag, expiry command | Reference unique, một PENDING, no lock HTTP, khôi phục reload |
-| 4 — verified payment/activation | Event inbox, HMAC, worker, settlement+activation port, durable PAID retry | ACK sau commit; rollback recover; exact quote grants; không cấp trùng |
+| 3 — attempt/QR | IMPLEMENTED: V42, port `PaymentInstructionProvider` + adapter SePay offline (VietQR payload + qr.sepay.vn), create/current attempt, featureflag, expiry command và job | Reference unique, một PENDING, no lock HTTP, khôi phục reload |
+| 4 — verified payment/activation | IMPLEMENTED: event inbox, HMAC, worker, settlement+activation port, durable PAID retry | ACK sau commit; rollback recover; exact quote grants; không cấp trùng |
 | 5 — vận hành | Jobs expiry/reconciliation/review, admin API, late payment, audit history/metrics | Không bỏ tiền muộn, CLOSE_OFFLINE có evidence, identity chéo nguồn đúng |
 | 6 — web | Theo FE sync, flags chỉ bật khi Phase2–5 sẵn sàng | E2E đăng ký→mua→activate/recover, không tự gọi API planned trước release |
 | 7 — release | Maven toàn bộ integration + Flyway clean/upgrade + concurrency + failure injection + web E2E | Test plan pass thực tế, backup/rollback deployment; tắt nhận mới vẫn xử lý tiền cũ |

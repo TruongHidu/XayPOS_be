@@ -14,11 +14,11 @@ import com.possaas.modules.subscriptionpurchase.dto.PurchaseRequests;
 import com.possaas.modules.subscriptionpurchase.dto.PurchaseResponses;
 import com.possaas.modules.subscriptionpurchase.entity.PurchaseStatus;
 import com.possaas.modules.subscriptionpurchase.entity.SubscriptionPurchase;
+import com.possaas.modules.subscriptionpurchase.repository.SubscriptionPaymentAttemptRepository;
 import com.possaas.modules.subscriptionpurchase.repository.SubscriptionPurchaseRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -42,6 +42,7 @@ public class PurchaseCommandService {
     private final PurchaseQuoteFactory quotes;
     private final PurchaseExpirationService expiration;
     private final SubscriptionPurchaseRepository purchases;
+    private final SubscriptionPaymentAttemptRepository attempts;
     private final RestaurantSubscriptionRepository subscriptions;
     private final SubscriptionExpirationService subscriptionExpiration;
     private final SubscriptionValidityPolicy validity;
@@ -53,11 +54,12 @@ public class PurchaseCommandService {
 
     public PurchaseCommandService(PurchaseAccessPolicy access, PurchaseProperties settings, PurchaseEligibilityPolicy eligibility,
         PurchaseQuoteFactory quotes, PurchaseExpirationService expiration, SubscriptionPurchaseRepository purchases,
+        SubscriptionPaymentAttemptRepository attempts,
         RestaurantSubscriptionRepository subscriptions, SubscriptionExpirationService subscriptionExpiration,
         SubscriptionValidityPolicy validity, PurchaseResponseMapper mapper, AuditService audits, Clock clock,
         PlatformTransactionManager transactions) {
         this.access=access; this.settings=settings; this.eligibility=eligibility; this.quotes=quotes; this.expiration=expiration;
-        this.purchases=purchases; this.subscriptions=subscriptions; this.subscriptionExpiration=subscriptionExpiration;
+        this.purchases=purchases; this.attempts=attempts; this.subscriptions=subscriptions; this.subscriptionExpiration=subscriptionExpiration;
         this.validity=validity; this.mapper=mapper; this.audits=audits; this.clock=clock;
         createTransaction = new TransactionTemplate(transactions);
         createTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
@@ -80,16 +82,16 @@ public class PurchaseCommandService {
             try { return createTransaction.execute(tx -> createLocked(actor, code, key, hash, ip)); }
             catch (RuntimeException failure) {
                 if (failure instanceof BusinessException) throw failure;
-                if ("23505".equals(sqlState(failure))) {
+                if (PurchaseDbFailures.uniqueViolation(failure)) {
                     var winner = purchases.findByRestaurantIdAndIdempotencyKey(actor.restaurantId(), key);
                     if (winner.isPresent()) return replay(winner.get(), hash);
                     var open = purchases.findOpen(actor.restaurantId());
                     if (open.isPresent()) throw conflict(open.get().getStatus() == PurchaseStatus.REVIEW_REQUIRED
                         ? "PURCHASE_REVIEW_REQUIRED" : "PURCHASE_IN_PROGRESS");
                 }
-                if (failure instanceof DataIntegrityViolationException && !"23505".equals(sqlState(failure)))
+                if (failure instanceof DataIntegrityViolationException && !PurchaseDbFailures.uniqueViolation(failure))
                     throw conflict("CONCURRENT_SUBSCRIPTION_UPDATE");
-                if (!retryable(failure)) throw failure;
+                if (!PurchaseDbFailures.retryable(failure)) throw failure;
                 if (attempt == 2) throw conflict("CONCURRENT_SUBSCRIPTION_UPDATE");
             }
         }
@@ -133,8 +135,8 @@ public class PurchaseCommandService {
                     if (p.getStatus() == PurchaseStatus.EXPIRED || p.isDue(now)) throw conflict("PURCHASE_PERIOD_EXPIRED");
                     if (p.getStatus() != PurchaseStatus.PENDING_PAYMENT || p.getPaidAt() != null) throw conflict("PURCHASE_CANNOT_CANCEL");
                     if (p.getVersion() != request.expectedVersion()) throw conflict("CONCURRENT_SUBSCRIPTION_UPDATE");
-                    purchases.lockPendingAttempts(actor.restaurantId(), id);
-                    purchases.endPendingAttempts(actor.restaurantId(), id, "CANCELLED", now);
+                    attempts.lockPending(actor.restaurantId(), id);
+                    attempts.endPending(actor.restaurantId(), id, "CANCELLED", now);
                     p.cancel(now, request.reason() == null ? null : request.reason().trim());
                     purchases.flush();
                     audits.record(actor.restaurantId(), actor.userId(), "SUBSCRIPTION_PURCHASE_CANCELLED", "subscription_purchases", id,
@@ -160,14 +162,5 @@ public class PurchaseCommandService {
     private static String hash(String code) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(("{\"packageCode\":\"" + code + "\"}").getBytes(StandardCharsets.UTF_8))); }
         catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-    }
-    private static String sqlState(Throwable failure) {
-        for (Throwable cause=failure; cause!=null; cause=cause.getCause()) if (cause instanceof SQLException sql) return sql.getSQLState();
-        return null;
-    }
-    private static boolean retryable(RuntimeException failure) {
-        String state = sqlState(failure);
-        return failure instanceof ConcurrencyFailureException || "40001".equals(state) || "40P01".equals(state)
-            || "55P03".equals(state) || "23505".equals(state);
     }
 }

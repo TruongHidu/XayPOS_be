@@ -12,14 +12,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-@Component
+@Component @RequiredArgsConstructor
 public class PurchaseResponseMapper {
+    private final PaymentAttemptAvailability payments;
+
     public List<String> actions(PurchaseStatus status, CurrentUser actor, boolean canPurchase, boolean effective) {
         List<String> actions = new ArrayList<>();
         if (status == PurchaseStatus.PENDING_PAYMENT) {
             actions.add("VIEW_PURCHASE");
+            if (actor.hasPermission(PurchaseAccessPolicy.CREATE) && payments.available()) actions.add("CREATE_PAYMENT_ATTEMPT");
             if (actor.hasPermission(PurchaseAccessPolicy.CANCEL)) actions.add("CANCEL_PURCHASE");
         } else if (status == PurchaseStatus.PAID) actions.add("WAIT_ACTIVATION");
         else if (status == PurchaseStatus.REVIEW_REQUIRED || status == PurchaseStatus.CLOSED) actions.add("CONTACT_SUPPORT");

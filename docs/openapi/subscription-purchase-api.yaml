@@ -1,15 +1,15 @@
 openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
-  title: POS SaaS Subscription Purchase — Phase 2
-  version: 0.2.0
-  description: Phase2 đã hiện thực 5 API onboarding/purchase/read/cancel và migration V41. Phase3 attempts/QR, Phase4 webhook/activation
-    và Phase5 admin review vẫn PLANNED. Mặc định accept-new=false; chưa có thanh toán SaaS chạy thật. Xem subscription-purchase-api.md
+  title: POS SaaS Subscription Purchase — Phase 4
+  version: 0.4.0
+  description: Phase2 đã hiện thực 5 API onboarding/purchase/read/cancel và migration V41. Phase3 đã hiện thực 2 API payment attempt/QR
+    SePay và V42 (mã PS + 20 HEX). Phase4 đã hiện thực webhook SePay HMAC, worker đối chiếu PAID và kích hoạt gói từ quote. Phase5 đối soát API và admin review vẫn PLANNED. Mặc định accept-new=false; chưa có thanh toán SaaS chạy thật. Xem subscription-purchase-api.md
     và thiết kế/test plan/FE sync. Ví dụ tài khoản/QR là DEMO, không dùng chuyển tiền.
 x-implementation-status: PARTIALLY_IMPLEMENTED
 servers:
 - url: http://localhost:8080/api/v1
-  description: Base URL local; chỉ năm operation IMPLEMENTED đã có runtime, các operation Phase3–5 vẫn PLANNED.
+  description: Base URL local; tám operation IMPLEMENTED đã có runtime, hai operation admin review Phase5 vẫn PLANNED.
 tags:
 - name: Subscription purchase
 - name: SePay subscription webhook
@@ -24,8 +24,7 @@ paths:
       description: '200 khi owner chưa có subscription. Subscription và purchase/review độc lập. GET project ACTIVE quá endAt
         thành subscriptionState EXPIRED nhưng currentSubscription.status giữ ACTIVE; không ghi expiry/audit. canPurchase/allowedActions
         chỉ gợi ý. Feature flag off không chặn đọc. CurrentPurchase chọn open purchase kể cả stale PENDING_PAYMENT; displayStatus
-        cho biết expiry. Review count độc lập cả khi đã ACTIVE. Phase2 chưa có API attempt/QR: allowedActions không quảng
-        bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+        cho biết expiry. Review count độc lập cả khi đã ACTIVE. allowedActions chỉ có CREATE_PAYMENT_ATTEMPT khi purchase PENDING_PAYMENT, owner có quyền CREATE, accept-new bật và SePay đã cấu hình. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
       tags:
       - Subscription purchase
       x-implementation-status: IMPLEMENTED
@@ -256,8 +255,7 @@ paths:
       description: 'Body chỉ packageCode; unknown fields400. Chuẩn hóa trim/uppercase. Restaurant lock, REPEATABLE_READ quote;
         reconcile due ACTIVE/open purchase trước ý định mới. Chặn ACTIVE/PENDING/open purchase. 201 insert mới,200 replay
         original body. Same key khác canonical payload409. Replay sau ACTIVATED vẫn200 trước active eligibility. Flag off
-        chỉ chặn ý định mới, không chặn replay. Không tạo subscription PENDING. Phase2 chưa có API attempt/QR: allowedActions
-        không quảng bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login
+        chỉ chặn ý định mới, không chặn replay. Không tạo subscription PENDING. allowedActions chỉ có CREATE_PAYMENT_ATTEMPT khi purchase PENDING_PAYMENT, owner có quyền CREATE, accept-new bật và SePay đã cấu hình. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login
         lại.'
       tags:
       - Subscription purchase
@@ -671,8 +669,7 @@ paths:
       summary: '[IMPLEMENTED] Lịch sử purchase của tenant'
       description: 'PageResponse; fixed sort createdAt DESC,id DESC. createdFrom inclusive,createdTo exclusive UTC; from<to,
         tối đa366ngày nếu đủ hai đầu. Không nhận restaurantId; query unknown restaurantId không đổi scope. GET không write/reconcile;
-        status filter dùng trạng thái đã lưu, displayStatus có thể khác. Phase2 chưa có API attempt/QR: allowedActions không
-        quảng bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+        status filter dùng trạng thái đã lưu, displayStatus có thể khác. allowedActions chỉ có CREATE_PAYMENT_ATTEMPT khi purchase PENDING_PAYMENT, owner có quyền CREATE, accept-new bật và SePay đã cấu hình. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
       tags:
       - Subscription purchase
       x-implementation-status: IMPLEMENTED
@@ -914,8 +911,7 @@ paths:
       summary: '[IMPLEMENTED] Đọc trạng thái purchase để polling/recovery'
       description: 'Scoped tenant404; không raw provider payload. GET không audit/reconcile. PENDING_PAYMENT quá hạn project
         displayStatus EXPIRED. PAID không biến EXPIRED khi activation retry sau quote expiry. ACTIVATED có subscriptionId;
-        không yêu cầu trả tiền lại. Polling mỗi3–5giây có backoff. Phase2 chưa có API attempt/QR: allowedActions không quảng
-        bá CREATE_PAYMENT_ATTEMPT. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
+        không yêu cầu trả tiền lại. Polling mỗi3–5giây có backoff. allowedActions chỉ có CREATE_PAYMENT_ATTEMPT khi purchase PENDING_PAYMENT, owner có quyền CREATE, accept-new bật và SePay đã cấu hình. Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
       tags:
       - Subscription purchase
       x-implementation-status: IMPLEMENTED
@@ -1270,14 +1266,14 @@ paths:
   /subscription-purchases/{purchaseId}/payment-attempts:
     post:
       operationId: createSubscriptionPaymentAttempt
-      summary: '[PLANNED] Tạo QR attempt cho purchase còn hạn'
+      summary: '[IMPLEMENTED] Tạo QR attempt cho purchase còn hạn'
       description: JSON {}. Key scope tenant+CREATE_PAYMENT_ATTEMPT, fingerprint gồm purchaseId. Cùng key replay200 original
         attempt kể cả sau expiry; FE GET trước hiển thị QR. Key mới khi đã có PENDING trả409 PAYMENT_ATTEMPT_PENDING, không
         tạo attempt thứ hai. Attempt.expiresAt bằng quote.expiresAt; không kéo dài hạn. Instructions account nền tảng; QR
         mẫu chỉ DEMO. Phase3 chưa có webhook thì không bật public purchase flow production.
       tags:
       - Subscription purchase
-      x-implementation-status: PLANNED
+      x-implementation-status: IMPLEMENTED
       x-target-phase: 3
       x-required-permissions:
       - SUBSCRIPTION_PURCHASE_CREATE
@@ -1334,7 +1330,7 @@ paths:
                     status: PENDING
                     displayStatus: PENDING
                     provider: SEPAY
-                    referenceCode: PS0123456789ABCDEF01234567
+                    referenceCode: PS0123456789ABCDEF0123
                     amount: 399000
                     currencyCode: VND
                     expiresAt: '2026-11-01T03:15:00Z'
@@ -1342,7 +1338,7 @@ paths:
                       bankCode: DEMO_BANK
                       accountNumber: '0000000000'
                       accountName: DEMO POS SAAS
-                      transferContent: PS0123456789ABCDEF01234567
+                      transferContent: PS0123456789ABCDEF0123
                       qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
                     paidAt: null
                     createdAt: '2026-11-01T03:00:00Z'
@@ -1377,7 +1373,7 @@ paths:
                     status: PENDING
                     displayStatus: PENDING
                     provider: SEPAY
-                    referenceCode: PS0123456789ABCDEF01234567
+                    referenceCode: PS0123456789ABCDEF0123
                     amount: 399000
                     currencyCode: VND
                     expiresAt: '2026-11-01T03:15:00Z'
@@ -1385,7 +1381,7 @@ paths:
                       bankCode: DEMO_BANK
                       accountNumber: '0000000000'
                       accountName: DEMO POS SAAS
-                      transferContent: PS0123456789ABCDEF01234567
+                      transferContent: PS0123456789ABCDEF0123
                       qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
                     paidAt: null
                     createdAt: '2026-11-01T03:00:00Z'
@@ -1686,13 +1682,13 @@ paths:
   /subscription-purchases/{purchaseId}/payment-attempts/current:
     get:
       operationId: getCurrentSubscriptionPaymentAttempt
-      summary: '[PLANNED] Lấy attempt mới nhất để khôi phục QR/trạng thái'
+      summary: '[IMPLEMENTED] Lấy attempt mới nhất để khôi phục QR/trạng thái'
       description: 200 paymentAttempt=null nếu chưa từng có attempt; purchase không thuộc tenant404. Lấy mới nhất kể cả SUCCESS/FAILED/EXPIRED/CANCELLED,
         không chỉ PENDING. PENDING quá hạn project displayStatus EXPIRED, không ghi DB. Không tạo QR/attempt mới trên GET;
         không hiển thị QR mời trả nếu purchase PAID/review/activated.
       tags:
       - Subscription purchase
-      x-implementation-status: PLANNED
+      x-implementation-status: IMPLEMENTED
       x-target-phase: 3
       x-required-permissions:
       - SUBSCRIPTION_PURCHASE_VIEW
@@ -1736,7 +1732,7 @@ paths:
                       status: PENDING
                       displayStatus: PENDING
                       provider: SEPAY
-                      referenceCode: PS0123456789ABCDEF01234567
+                      referenceCode: PS0123456789ABCDEF0123
                       amount: 399000
                       currencyCode: VND
                       expiresAt: '2026-11-01T03:15:00Z'
@@ -1744,7 +1740,7 @@ paths:
                         bankCode: DEMO_BANK
                         accountNumber: '0000000000'
                         accountName: DEMO POS SAAS
-                        transferContent: PS0123456789ABCDEF01234567
+                        transferContent: PS0123456789ABCDEF0123
                         qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
                       paidAt: null
                       createdAt: '2026-11-01T03:00:00Z'
@@ -1764,7 +1760,7 @@ paths:
                       status: SUCCESS
                       displayStatus: SUCCESS
                       provider: SEPAY
-                      referenceCode: PS0123456789ABCDEF01234567
+                      referenceCode: PS0123456789ABCDEF0123
                       amount: 399000
                       currencyCode: VND
                       expiresAt: '2026-11-01T03:15:00Z'
@@ -1772,7 +1768,7 @@ paths:
                         bankCode: DEMO_BANK
                         accountNumber: '0000000000'
                         accountName: DEMO POS SAAS
-                        transferContent: PS0123456789ABCDEF01234567
+                        transferContent: PS0123456789ABCDEF0123
                         qrPayload: DEMO_ONLY_NOT_A_PAYABLE_QR
                       paidAt: '2026-11-01T03:05:00Z'
                       createdAt: '2026-11-01T03:00:00Z'
@@ -1983,7 +1979,7 @@ paths:
       description: 'expectedVersion bắt buộc; reason optional. PENDING_PAYMENT còn hạn chưa matched payment mới cancel được.
         CANCELLED trả200 no-op trước check version, không audit lần hai. PAID/ACTIVATED/REVIEW_REQUIRED/CLOSED409 PURCHASE_CANNOT_CANCEL.
         EXPIRED409 PURCHASE_PERIOD_EXPIRED. Cancel và settlement cùng restaurant lock; nếu cancel thắng tiền đến sau vẫn lưu
-        review. Không cần Idempotency-Key. Phase2 chưa có API attempt/QR: allowedActions không quảng bá CREATE_PAYMENT_ATTEMPT.
+        review. Không cần Idempotency-Key. allowedActions chỉ có CREATE_PAYMENT_ATTEMPT khi purchase PENDING_PAYMENT, owner có quyền CREATE, accept-new bật và SePay đã cấu hình.
         Quyền từ JWT phải có và vẫn còn hiệu lực trong DB; đổi quyền cần refresh/login lại.'
       tags:
       - Subscription purchase
@@ -2261,7 +2257,7 @@ paths:
   /webhooks/subscriptions/sepay:
     post:
       operationId: receiveSepaySubscriptionWebhook
-      summary: '[PLANNED] Nhận giao dịch SePay với HMAC riêng'
+      summary: '[IMPLEMENTED] Nhận giao dịch SePay với HMAC riêng'
       description: Xác thực HMAC-SHA256 trên timestamp.rawBody, constant-time compare, ±300giây theo Clock. JSON tối đa64KiB.
         Không JWT và không phải public không xác thực. Parse sau verify. ACK200 success=true chỉ sau inbox commit hoặc xác
         nhận durable duplicate. Duplicate đang PROCESSING vẫn ACK nhưng worker tiếp tục. Trả503 nếu chưa lưu được; tuyệt đối
@@ -2269,7 +2265,7 @@ paths:
         được kiểm tra lại khi settlement; chữ ký hợp lệ không đồng nghĩa đã PAID. HMAC header mẫu không phải chữ ký dùng được.
       tags:
       - SePay subscription webhook
-      x-implementation-status: PLANNED
+      x-implementation-status: IMPLEMENTED
       x-target-phase: 4
       x-required-permissions: []
       x-required-role: PROVIDER_HMAC
@@ -2301,8 +2297,8 @@ paths:
                   transactionDate: '2026-11-01 10:05:00'
                   accountNumber: '0000000000'
                   subAccount: ''
-                  code: PS0123456789ABCDEF01234567
-                  content: PS0123456789ABCDEF01234567
+                  code: PS0123456789ABCDEF0123
+                  content: PS0123456789ABCDEF0123
                   transferType: in
                   description: DEMO subscription transfer
                   transferAmount: 399000
@@ -2562,7 +2558,7 @@ paths:
                       currencyCode: VND
                       direction: in
                       receiverAccountMasked: '******0000'
-                      paymentReference: PS0123456789ABCDEF01234567
+                      paymentReference: PS0123456789ABCDEF0123
                       state: REVIEW_REQUIRED
                       reviewReason: AMOUNT_MISMATCH
                       occurredAt: '2026-11-01T03:05:00Z'
@@ -2823,7 +2819,7 @@ paths:
                     currencyCode: VND
                     direction: in
                     receiverAccountMasked: '******0000'
-                    paymentReference: PS0123456789ABCDEF01234567
+                    paymentReference: PS0123456789ABCDEF0123
                     state: RETRY_PENDING
                     reviewReason: AMOUNT_MISMATCH
                     occurredAt: '2026-11-01T03:05:00Z'
@@ -2870,7 +2866,7 @@ paths:
                     currencyCode: VND
                     direction: in
                     receiverAccountMasked: '******0000'
-                    paymentReference: PS0123456789ABCDEF01234567
+                    paymentReference: PS0123456789ABCDEF0123
                     state: CLOSED
                     reviewReason: AMOUNT_MISMATCH
                     occurredAt: '2026-11-01T03:05:00Z'
@@ -3641,13 +3637,21 @@ components:
           minLength: 1
         transferContent:
           type: string
-          pattern: ^PS[0-9A-F]{24}$
+          pattern: ^PS[0-9A-F]{20}$
         qrPayload:
           type: string
           maxLength: 4096
           minLength: 1
           description: VietQR payload do adapter tạo, FE render QR offline. Giá trị trong ví dụ là DEMO, không dùng chuyển
             tiền.
+        qrImageUrl:
+          description: Link ảnh QR của SePay (qr.sepay.vn/img) dựng offline từ cùng tài khoản/số tiền/nội dung; FE có thể
+            hiển thị bằng thẻ img thay cho tự render qrPayload. null nếu adapter không hỗ trợ.
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 2048
+          - type: 'null'
       required:
       - bankCode
       - accountNumber
@@ -3673,7 +3677,7 @@ components:
           const: SEPAY
         referenceCode:
           type: string
-          pattern: ^PS[0-9A-F]{24}$
+          pattern: ^PS[0-9A-F]{20}$
         amount:
           type: integer
           minimum: 1

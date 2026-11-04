@@ -1,5 +1,6 @@
 subscription-purchase:
   accept-new: ${SUBSCRIPTION_PURCHASE_ACCEPT_NEW:false}
+  payment-clock-skew: ${SUBSCRIPTION_PAYMENT_CLOCK_SKEW:PT2M}
 
 spring:
   config:
@@ -60,6 +61,20 @@ app:
       fixed-delay: ${SUBSCRIPTION_EXPIRATION_FIXED_DELAY:PT1M}
       initial-delay: ${SUBSCRIPTION_EXPIRATION_INITIAL_DELAY:PT1M}
       batch-size: ${SUBSCRIPTION_EXPIRATION_BATCH_SIZE:100}
+    subscription-purchase-expiration:
+      enabled: ${SUBSCRIPTION_PURCHASE_EXPIRATION_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PURCHASE_EXPIRATION_FIXED_DELAY:PT1M}
+      initial-delay: ${SUBSCRIPTION_PURCHASE_EXPIRATION_INITIAL_DELAY:PT1M}
+      batch-size: ${SUBSCRIPTION_PURCHASE_EXPIRATION_BATCH_SIZE:100}
+    subscription-payment-events:
+      enabled: ${SUBSCRIPTION_PAYMENT_EVENTS_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PAYMENT_EVENTS_FIXED_DELAY:PT5S}
+      batch-size: ${SUBSCRIPTION_PAYMENT_EVENTS_BATCH_SIZE:20}
+      lease: PT60S
+      retry-exhausted-after: PT24H
+    subscription-purchase-activation:
+      enabled: ${SUBSCRIPTION_PURCHASE_ACTIVATION_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PURCHASE_ACTIVATION_FIXED_DELAY:PT10S}
   bootstrap:
     super-admin:
       enabled: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:false}
@@ -73,6 +88,19 @@ app:
     api-key: ${CLOUDINARY_API_KEY:}
     api-secret: ${CLOUDINARY_API_SECRET:}
     folder: ${CLOUDINARY_FOLDER:pos-saas}
+  sepay:
+    enabled: ${SEPAY_ENABLED:false}
+    provider-account-key: ${SEPAY_PROVIDER_ACCOUNT_KEY:}
+    bank-code: ${SEPAY_BANK_CODE:}
+    bank-bin: ${SEPAY_BANK_BIN:}
+    account-number: ${SEPAY_ACCOUNT_NUMBER:}
+    account-name: ${SEPAY_ACCOUNT_NAME:}
+    qr-image-base-url: ${SEPAY_QR_IMAGE_BASE_URL:https://qr.sepay.vn/img}
+    qr-template: ${SEPAY_QR_TEMPLATE:compact}
+    webhook:
+      secret: ${SEPAY_WEBHOOK_SECRET:}
+      timestamp-tolerance: PT5M
+      max-body-bytes: 65536
   jwt:
     access-token-ttl: ${JWT_ACCESS_TTL:7d}
     refresh-token-ttl: ${JWT_REFRESH_TTL:30d}

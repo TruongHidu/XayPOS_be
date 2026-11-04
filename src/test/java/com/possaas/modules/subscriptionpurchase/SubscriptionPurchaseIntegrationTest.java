@@ -68,7 +68,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@SpringBootTest(properties = {"subscription-purchase.accept-new=true", "spring.jpa.properties.hibernate.generate_statistics=true"})
+@SpringBootTest(properties = {"subscription-purchase.accept-new=true", "spring.jpa.properties.hibernate.generate_statistics=true",
+    "app.sepay.enabled=false"})
 @AutoConfigureMockMvc @Import(SubscriptionPurchaseIntegrationTest.TimeConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -505,8 +506,8 @@ class SubscriptionPurchaseIntegrationTest {
                 }
             }
             var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();
-            assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(1);
-            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("41");
+            assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("42");
             try(var connection=dataSource.getConnection()) {
                 connection.setSchema(schema);
                 try(var ps=connection.prepareStatement("select row_to_json(s)::text from restaurant_subscriptions s where id=?")) {
@@ -552,7 +553,7 @@ class SubscriptionPurchaseIntegrationTest {
     private CreateSubscriptionRequest adminRequest(PackagePlan p){return new CreateSubscriptionRequest(p.getCode(),NOW,NOW.plusSeconds(3600),false,p.getPriceAmount(),"VND");}
     private ChangePackageRequest changeRequest(PackagePlan p){return new ChangePackageRequest(p.getCode(),NOW.plusSeconds(3600),false,p.getPriceAmount(),"VND");}
     private void insertAttempt(UUID tenant,PurchaseResponses.View v,UUID id,String key,long amount){
-        String reference="PS"+id.toString().replace("-", "").substring(0,24).toUpperCase(Locale.ROOT);
+        String reference="PS"+id.toString().replace("-", "").substring(0,20).toUpperCase(Locale.ROOT);
         db.update("""
             insert into subscription_payment_attempts(id,restaurant_id,purchase_id,status,provider_account_key,reference_code,amount,currency_code,expires_at,instructions,idempotency_key,request_hash,creation_response,created_at,updated_at)
             values(?,?,?,'PENDING','platform-demo',?,?,'VND',?,cast('{}' as jsonb),?,?,cast('{}' as jsonb),?,?)

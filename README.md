@@ -319,10 +319,11 @@ nhập kho không tự ghi chi; dòng tiền không phải lợi nhuận. Curren
 [OpenAPI](docs/openapi/cashbook-api.yaml), [FE sync](docs/cashbook-fe-sync.md).
 
 
-## Subscription purchase — Phase 2
+## Subscription purchase — Phase 2–3
 
 V41 thêm schema/permission và năm API OWNER purchase/onboarding/read/cancel.
-**QR, SePay webhook, settlement và activation từ purchase chưa triển khai.** Xem [thiết kế](docs/subscription-purchase-design.md),
+Phase3 (V42) thêm payment attempt, mã chuyển khoản `PS` + 20 HEX và QR SePay/VietQR offline: [Phase3](docs/subscription-purchase-phase3-implementation.md).
+Phase4 thêm webhook SePay (HMAC), worker đối chiếu và tự kích hoạt gói: [Phase4](docs/subscription-purchase-phase4-implementation.md). **Đối soát API SePay và API admin review (Phase5) chưa triển khai.** Xem [thiết kế](docs/subscription-purchase-design.md),
 [OpenAPI dự kiến](docs/openapi/subscription-purchase-api.yaml),
 [test plan](docs/subscription-purchase-test-plan.md) và
 [hướng dẫn FE](docs/subscription-purchase-fe-sync.md). API đăng ký hiện tại tiếp tục

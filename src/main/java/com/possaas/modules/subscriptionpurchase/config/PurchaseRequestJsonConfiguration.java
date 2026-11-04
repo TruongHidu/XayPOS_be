@@ -18,7 +18,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /** Strict request-only converter; leaves Boot's response mapper and all other API contracts unchanged. */
 @Configuration
 public class PurchaseRequestJsonConfiguration implements WebMvcConfigurer {
-    private static final Set<Class<?>> TYPES = Set.of(PurchaseRequests.Create.class, PurchaseRequests.Cancel.class);
+    private static final Set<Class<?>> TYPES = Set.of(PurchaseRequests.Create.class, PurchaseRequests.Cancel.class,
+        PurchaseRequests.CreateAttempt.class);
     private final ObjectMapper requests;
     public PurchaseRequestJsonConfiguration(ObjectMapper mapper) {
         requests = mapper.copy();

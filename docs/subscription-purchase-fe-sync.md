@@ -17,10 +17,10 @@ Base URL local: `http://localhost:8080/api/v1`. Các path trong bảng đã bỏ
 | IMPLEMENTED Phase2 | POST `/subscription-purchases` | OWNER + SUBSCRIPTION_PURCHASE_CREATE |
 | IMPLEMENTED Phase2 | GET `/subscription-purchases` | OWNER + SUBSCRIPTION_PURCHASE_VIEW |
 | IMPLEMENTED Phase2 | GET `/subscription-purchases/{purchaseId}` | OWNER + SUBSCRIPTION_PURCHASE_VIEW |
-| PLANNED Phase3 | POST `/subscription-purchases/{purchaseId}/payment-attempts` | OWNER + SUBSCRIPTION_PURCHASE_CREATE |
-| PLANNED Phase3 | GET `/subscription-purchases/{purchaseId}/payment-attempts/current` | OWNER + SUBSCRIPTION_PURCHASE_VIEW |
+| IMPLEMENTED Phase3 | POST `/subscription-purchases/{purchaseId}/payment-attempts` | OWNER + SUBSCRIPTION_PURCHASE_CREATE |
+| IMPLEMENTED Phase3 | GET `/subscription-purchases/{purchaseId}/payment-attempts/current` | OWNER + SUBSCRIPTION_PURCHASE_VIEW |
 | IMPLEMENTED Phase2 | POST `/subscription-purchases/{purchaseId}/cancel` | OWNER + SUBSCRIPTION_PURCHASE_CANCEL |
-| PLANNED Phase4 | POST `/webhooks/subscriptions/sepay` | **Provider HMAC**, không gọi từ browser |
+| IMPLEMENTED Phase4 | POST `/webhooks/subscriptions/sepay` | **Provider HMAC**, không gọi từ browser |
 | PLANNED Phase5 | GET `/admin/subscription-payment-events` | System SUPER_ADMIN + SUBSCRIPTION_PAYMENT_REVIEW |
 | PLANNED Phase5 | POST `/admin/subscription-payment-events/{eventId}/reconcile` | System SUPER_ADMIN + SUBSCRIPTION_PAYMENT_REVIEW |
 
@@ -30,7 +30,7 @@ Không bật CTA mua gói production chỉ vì các endpoint Phase2 đã có: Ph
 
 ## 2. Phần có thể sử dụng ngay ở Phase2
 
-Đăng ký/login → GET onboarding → POST purchase → GET list/detail → cancel hoặc tiếp tục xem purchase. Default accept-new=false; local/test có thể bật SUBSCRIPTION_PURCHASE_ACCEPT_NEW=true. Không render QR hoặc gọi payment-attempt/current khi endpoints còn PLANNED. Phase2 purchase pending chỉ trả VIEW_PURCHASE/CANCEL_PURCHASE theo quyền, không CREATE_PAYMENT_ATTEMPT. Replay trả response cũ, luôn GET lại trước thao tác.
+Đăng ký/login → GET onboarding → POST purchase → GET list/detail → cancel hoặc tiếp tục xem purchase. Default accept-new=false; local/test có thể bật SUBSCRIPTION_PURCHASE_ACCEPT_NEW=true. Phase3: purchase pending trả thêm CREATE_PAYMENT_ATTEMPT khi accept-new bật và backend đã cấu hình SePay; khi đó POST payment-attempts với body `{}` + Idempotency-Key, reload thì GET `.../payment-attempts/current`. QR hiển thị bằng `instructions.qrPayload` (tự render) hoặc `instructions.qrImageUrl` (ảnh qr.sepay.vn). Phase4: sau khi chuyển khoản, backend tự chuyển purchase `PENDING_PAYMENT` → `PAID` → `ACTIVATED` (thường vài giây). FE poll `GET /subscription-purchases/{id}` mỗi 3–5 giây khi đang hiện QR; thấy `PAID` thì ẩn QR, thấy `ACTIVATED` thì gọi `/me/entitlements`. `REVIEW_REQUIRED` nghĩa là tiền đã nhận nhưng cần hỗ trợ xử lý, không yêu cầu chuyển lại. Replay trả response cũ, luôn GET lại trước thao tác.
 
 ## 3. Trình tự đích sau khi Phase3–5 hoàn thiện
 

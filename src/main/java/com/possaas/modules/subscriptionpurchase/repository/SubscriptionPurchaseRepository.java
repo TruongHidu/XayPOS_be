@@ -50,14 +50,27 @@ public interface SubscriptionPurchaseRepository extends JpaRepository<Subscripti
     @Query(value = "select count(*) from subscription_payment_events where restaurant_id=:tenant and state='REVIEW_REQUIRED'", nativeQuery = true)
     long countPaymentReviews(@Param("tenant") UUID tenant);
 
-    @Query(value = "select id from subscription_payment_attempts where restaurant_id=:tenant and purchase_id=:purchase and status='PENDING' order by id for update", nativeQuery = true)
-    List<UUID> lockPendingAttempts(@Param("tenant") UUID tenant, @Param("purchase") UUID purchase);
+    /** Unmanaged routing read: lets callers prepare payment instructions before taking any lock. */
+    Optional<PaymentTerms> findTermsByIdAndRestaurantId(UUID id, UUID restaurantId);
 
-    @Modifying
     @Query(value = """
-        update subscription_payment_attempts set status=:target,updated_at=:now,version=version+1
-        where restaurant_id=:tenant and purchase_id=:purchase and status='PENDING'
+        select id as "id", restaurant_id as "restaurantId" from subscription_purchases
+        where status='PENDING_PAYMENT' and expires_at <= :now order by expires_at, id limit :limit
         """, nativeQuery = true)
-    int endPendingAttempts(@Param("tenant") UUID tenant, @Param("purchase") UUID purchase,
-        @Param("target") String target, @Param("now") Instant now);
+    List<DueRef> findDue(@Param("now") Instant now, @Param("limit") int limit);
+
+    /** Scalar routing read; does not put a purchase entity into the persistence context before it is locked. */
+    @Query("select p.restaurantId from SubscriptionPurchase p where p.id=:id")
+    Optional<UUID> findRestaurantId(@Param("id") UUID id);
+
+    /** Activation claim: PAID purchases due for (re)activation whose lease is free. */
+    @Query(value = """
+        select id from subscription_purchases
+        where status='PAID' and activation_next_at <= :now and (activation_lease_until is null or activation_lease_until < :now)
+        order by activation_next_at, id limit :limit for update skip locked
+        """, nativeQuery = true)
+    List<UUID> lockActivationDue(@Param("now") Instant now, @Param("limit") int limit);
+
+    interface PaymentTerms { java.math.BigDecimal getAmount(); String getCurrencyCode(); Instant getExpiresAt(); }
+    interface DueRef { UUID getId(); UUID getRestaurantId(); }
 }

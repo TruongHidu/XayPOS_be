@@ -1,6 +1,6 @@
 # Purchase và onboarding — Giai đoạn 2
 
-Năm API dưới đây đã được hiện thực ở backend. QR, payment attempt, webhook, settlement, activation từ purchase và admin payment review chưa triển khai. [OpenAPI](openapi/subscription-purchase-api.yaml) đánh dấu IMPLEMENTED/PLANNED theo từng operation; [thiết kế](subscription-purchase-design.md), [FE sync](subscription-purchase-fe-sync.md), [test plan](subscription-purchase-test-plan.md).
+Năm API dưới đây đã được hiện thực ở backend (Phase2). Payment attempt/QR SePay đã có ở Phase3, xem [Phase3](subscription-purchase-phase3-implementation.md). Webhook, settlement, activation từ purchase và admin payment review chưa triển khai. [OpenAPI](openapi/subscription-purchase-api.yaml) đánh dấu IMPLEMENTED/PLANNED theo từng operation; [thiết kế](subscription-purchase-design.md), [FE sync](subscription-purchase-fe-sync.md), [test plan](subscription-purchase-test-plan.md).
 
 Base URL: `http://localhost:8080/api/v1`.
 

@@ -7,6 +7,7 @@ import com.possaas.infrastructure.security.RestAccessDeniedHandler;
 import com.possaas.infrastructure.security.RestAuthenticationEntryPoint;
 import com.possaas.infrastructure.security.TenantRestaurantStatusFilter;
 import com.possaas.infrastructure.security.UserAccountStatusFilter;
+import com.possaas.infrastructure.subscriptionpayment.sepay.SepayWebhookAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,6 +29,7 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
         HttpSecurity http,
         JwtAuthenticationFilter jwtFilter,
+        SepayWebhookAuthenticationFilter sepayWebhookFilter,
         UserAccountStatusFilter userAccountStatusFilter,
         TenantRestaurantStatusFilter tenantRestaurantStatusFilter,
         RestAuthenticationEntryPoint authenticationEntryPoint,
@@ -46,9 +48,12 @@ public class SecurityConfig {
                 .requestMatchers(PublicQrOrderRequests.ENDPOINTS).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register-restaurant", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/packages", "/api/v1/packages/**").permitAll()
+                // SePay is authenticated by HMAC in SepayWebhookAuthenticationFilter, never by JWT; only this exact path.
+                .requestMatchers(HttpMethod.POST, SepayWebhookAuthenticationFilter.PATH).hasAuthority(SepayWebhookAuthenticationFilter.AUTHORITY)
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(sepayWebhookFilter, JwtAuthenticationFilter.class)
             .addFilterAfter(userAccountStatusFilter, JwtAuthenticationFilter.class)
             .addFilterAfter(tenantRestaurantStatusFilter, UserAccountStatusFilter.class);
         return http.build();

@@ -41,6 +41,11 @@ public class SubscriptionPurchase implements Persistable<UUID> {
     @Column(name = "closed_at") private Instant closedAt;
     @Column(name = "cancel_reason", length = 500) private String cancelReason;
     @Column(name = "review_reason", length = 60) private String reviewReason;
+    @Column(name = "activation_retry_count", nullable = false) private int activationRetryCount;
+    @Column(name = "activation_next_at") private Instant activationNextAt;
+    @Column(name = "activation_lease_until") private Instant activationLeaseUntil;
+    @Column(name = "activation_token") private UUID activationToken;
+    @Column(name = "activation_error_code", length = 60) private String activationErrorCode;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @Version @Column(nullable = false) private long version;
@@ -64,6 +69,35 @@ public class SubscriptionPurchase implements Persistable<UUID> {
     public void cancel(Instant now, String reason) {
         status = PurchaseStatus.CANCELLED; cancelledAt = now; cancelReason = reason; updatedAt = now;
     }
+    /** Verified money: paid evidence is set once and activation is scheduled immediately. */
+    public void markPaid(UUID eventId, Instant paidAt, Instant now) {
+        status = PurchaseStatus.PAID; paidEventId = eventId; this.paidAt = paidAt;
+        activationNextAt = now; activationRetryCount = 0; updatedAt = now;
+    }
+
+    public boolean activationHeldBy(UUID token) { return status == PurchaseStatus.PAID && token.equals(activationToken); }
+
+    public void claimActivation(UUID token, Instant leaseUntil, Instant now) {
+        activationToken = token; activationLeaseUntil = leaseUntil; updatedAt = now;
+    }
+
+    public void markActivated(UUID subscriptionId, Instant now) {
+        status = PurchaseStatus.ACTIVATED; this.subscriptionId = subscriptionId; activatedAt = now;
+        clearActivationJob(); activationErrorCode = null; updatedAt = now;
+    }
+
+    public void scheduleActivationRetry(Instant next, String errorCode, Instant now) {
+        activationRetryCount++; activationNextAt = next; activationErrorCode = errorCode;
+        activationLeaseUntil = null; activationToken = null; updatedAt = now;
+    }
+
+    /** Paid evidence, if any, is kept; the open slot stays taken until an operator resolves it. */
+    public void markReview(String reason, Instant now) {
+        status = PurchaseStatus.REVIEW_REQUIRED; reviewReason = reason; clearActivationJob(); updatedAt = now;
+    }
+
+    private void clearActivationJob() { activationNextAt = null; activationLeaseUntil = null; activationToken = null; }
+
     @Override public boolean isNew() { return newRecord; }
     @PostLoad @PostPersist private void persisted() { newRecord = false; }
 }
