@@ -254,16 +254,28 @@ components:
     CurrentEntitlementResponse:
       type: object
       additionalProperties: false
-      required: [subscriptionId, packageCode, status, startAt, endAt, features, maxStaff]
+      required: [subscriptionId, packageCode, packageName, status, startAt, endAt, daysRemaining, features, maxStaff]
       properties:
         maxStaff:
           $ref: "#/components/schemas/MaxStaff"
           description: Effective limit from immutable snapshot, including legacy v1 compatibility.
         subscriptionId: {type: string, format: uuid}
         packageCode: {type: string}
+        packageName:
+          type: [string, "null"]
+          description: Current display name of the package; null only if the package row no longer exists.
+          example: Pro
         status: {type: string, const: ACTIVE}
         startAt: {type: string, format: date-time}
         endAt: {type: string, format: date-time}
+        daysRemaining:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Whole days left until `endAt` at response time, rounded up (23 hours left = 1).
+            0 once `endAt` has passed. Use `endAt` for the exact expiry instant.
+          example: 30
         features:
           type: array
           description: Immutable feature snapshot captured at activation.

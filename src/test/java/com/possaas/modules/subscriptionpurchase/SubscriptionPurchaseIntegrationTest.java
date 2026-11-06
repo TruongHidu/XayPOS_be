@@ -505,7 +505,7 @@ class SubscriptionPurchaseIntegrationTest {
                     ps.setObject(1,sub);try(var rs=ps.executeQuery()){rs.next();before=rs.getString(1);}
                 }
             }
-            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();
+            var upgraded=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("42").load();
             assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(2);
             assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("42");
             try(var connection=dataSource.getConnection()) {

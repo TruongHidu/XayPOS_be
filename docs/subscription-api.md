@@ -72,9 +72,11 @@ status == ACTIVE && startAt <= now && now < endAt
 {
   "subscriptionId": "4cd93ccb-04e4-498b-b88c-4fe20f945a88",
   "packageCode": "PRO",
+  "packageName": "Pro",
   "status": "ACTIVE",
   "startAt": "2026-08-24T00:00:00Z",
   "endAt": "2026-09-24T00:00:00Z",
+  "daysRemaining": 30,
   "features": [
     {
       "code": "TABLE_MANAGEMENT",
@@ -83,6 +85,10 @@ status == ACTIVE && startAt <= now && now < endAt
   ]
 }
 ```
+
+- `packageName`: tên hiện tại của gói trong bảng `packages` (đổi tên gói sẽ hiện tên mới); `null` nếu gói không còn tồn tại.
+- `daysRemaining`: số ngày còn lại tới `endAt` tại thời điểm gọi API, **làm tròn lên** (còn 23 giờ = 1 ngày); bằng `0` khi đã qua `endAt`.
+  Cần thời điểm hết hạn chính xác thì dùng `endAt` (UTC) và đổi sang múi giờ nhà hàng ở FE.
 
 `features` là immutable snapshot đã chốt lúc activate. Disable feature, đổi package mapping hoặc giá
 package về sau không sửa entitlement lịch sử. `features.is_active` không phải global kill switch cho

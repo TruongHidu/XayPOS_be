@@ -593,6 +593,8 @@ class SubscriptionModuleIntegrationTest {
         mockMvc.perform(get("/api/v1/subscriptions/current").with(authentication(owner)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.packageCode").value("PRO"))
+            .andExpect(jsonPath("$.packageName").value("Pro"))
+            .andExpect(jsonPath("$.daysRemaining").value(30))
             .andExpect(jsonPath("$.featureSnapshot").doesNotExist())
             .andExpect(jsonPath("$.version").doesNotExist());
         mockMvc.perform(get("/api/v1/subscriptions/history?page=0&size=1").with(authentication(owner)))

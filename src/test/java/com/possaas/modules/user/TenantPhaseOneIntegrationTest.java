@@ -183,14 +183,16 @@ class TenantPhaseOneIntegrationTest {
         assertThat(audits("STAFF_PERMISSIONS_UPDATED")).isEqualTo(2);
         User manager=user(restaurant,"MANAGER");
         override(manager,"STAFF_PERMISSION_MANAGE",PermissionEffect.GRANT);
-        call(put(endpoint).content("{\"grants\":[\"PAYMENT_REFUND\"],\"denies\":[]}"),manager)
+        call(put(endpoint).content("{\"grants\":[\"CASHBOOK_VOID\"],\"denies\":[]}"),manager)
             .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PERMISSION_ESCALATION_NOT_ALLOWED"));
         call(put(path(owner)+"/permissions").content(body),owner).andExpect(status().isForbidden());
         call(put(path(manager)+"/permissions").content(body),manager).andExpect(status().isForbidden());
         var another=user(restaurant,"MANAGER");
         call(put(path(another)+"/permissions").content(body),manager).andExpect(status().isForbidden());
         String catalog=call(get("/api/v1/staff/permissions"),owner).andReturn().getResponse().getContentAsString();
-        assertThat(catalog).contains("ORDER_VIEW").doesNotContain("PACKAGE_MANAGE","RESTAURANT_PROFILE","AUDIT_VIEW");
+        assertThat(catalog).contains("ORDER_VIEW").doesNotContain("PACKAGE_MANAGE","RESTAURANT_PROFILE","AUDIT_VIEW")
+            .doesNotContain("PAYMENT_REFUND","INVENTORY_TRANSFER","ANALYTICS_VIEW","AI_FORECAST_VIEW")
+            .contains("\"name\":\"Xem đơn hàng\"").doesNotContain("\"description\":null");
     }
 
     @Test void roleEmailAndPermissionsRevokeSessionsButCosmeticChangesDoNot() throws Exception {
