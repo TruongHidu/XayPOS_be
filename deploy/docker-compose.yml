@@ -1,0 +1,98 @@
+# Production stack: PostgreSQL + Spring Boot backend + Caddy (frontend static + reverse proxy + HTTPS).
+# Expected layout on the server:
+#   ~/pos-saas/pos-saas-be   (this repo)
+#   ~/pos-saas/pos-saas-web  (frontend repo)
+# Run from this folder:  docker compose up -d --build
+name: pos-saas
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      -c max_connections=50
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: ${PG_MEM_LIMIT:-512m}
+    # No "ports:" on purpose: the database is reachable only inside the Docker network.
+
+  backend:
+    build:
+      context: ..
+    image: pos-saas-be:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (at least 32 bytes)}
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      SUPER_ADMIN_BOOTSTRAP_ENABLED: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:-false}
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
+      SUPER_ADMIN_NAME: ${SUPER_ADMIN_NAME:-System Administrator}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-pos-saas}
+      SUBSCRIPTION_PURCHASE_ACCEPT_NEW: ${SUBSCRIPTION_PURCHASE_ACCEPT_NEW:-false}
+      SEPAY_ENABLED: ${SEPAY_ENABLED:-false}
+      SEPAY_PROVIDER_ACCOUNT_KEY: ${SEPAY_PROVIDER_ACCOUNT_KEY:-}
+      SEPAY_BANK_CODE: ${SEPAY_BANK_CODE:-}
+      SEPAY_BANK_BIN: ${SEPAY_BANK_BIN:-}
+      SEPAY_ACCOUNT_NUMBER: ${SEPAY_ACCOUNT_NUMBER:-}
+      SEPAY_ACCOUNT_NAME: ${SEPAY_ACCOUNT_NAME:-}
+      SEPAY_WEBHOOK_SECRET: ${SEPAY_WEBHOOK_SECRET:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/v1/packages || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    mem_limit: ${BACKEND_MEM_LIMIT:-1g}
+    # No "ports:" on purpose: only Caddy talks to the backend.
+
+  web:
+    build:
+      context: ${FE_DIR:-../../pos-saas-web}
+      args:
+        VITE_API_BASE_URL: /api/v1
+        VITE_APP_NAME: ${VITE_APP_NAME:-POS SaaS}
+        VITE_ENABLE_QR_API: "true"
+        VITE_REALTIME_ENABLED: "true"
+    image: pos-saas-web:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN}}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.idea
+.mvn
+target
+target_old
+docs
+deploy
+*.log
+.env
+.env.*
+compose.yaml
+HELP.md
