@@ -1,0 +1,22 @@
+package com.possaas.modules.user.controller;
+import com.possaas.common.exception.GlobalExceptionHandler.ErrorResponse;
+import com.possaas.modules.user.service.StaffConflictTranslator;
+import java.time.Clock;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.dao.*;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+@RestControllerAdvice(assignableTypes={StaffController.class, StaffPermissionController.class})
+@Order(Ordered.HIGHEST_PRECEDENCE)
+@RequiredArgsConstructor
+public class StaffConflictHandler {
+    private final Clock clock;
+    @ExceptionHandler({DataIntegrityViolationException.class, OptimisticLockingFailureException.class, PessimisticLockingFailureException.class})
+    public ResponseEntity<ErrorResponse> conflict(RuntimeException failure) {
+        var error=StaffConflictTranslator.translate(failure);
+        return ResponseEntity.status(error.getStatus()).body(new ErrorResponse(false,error.getCode(),error.getMessage(),Map.of(),clock.instant()));
+    }
+}

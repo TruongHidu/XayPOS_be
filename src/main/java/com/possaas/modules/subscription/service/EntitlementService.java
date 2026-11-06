@@ -37,7 +37,8 @@ public class EntitlementService implements FeatureAccessChecker, CurrentEntitlem
             subscription.getStatus(),
             subscription.getStartAt(),
             subscription.getEndAt(),
-            snapshot.features()
+            snapshot.features(),
+            snapshot.effectiveMaxStaff()
         );
     }
 

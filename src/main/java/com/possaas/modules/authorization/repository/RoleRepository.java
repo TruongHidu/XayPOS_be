@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RoleRepository extends JpaRepository<Role, UUID> {
+    java.util.List<Role> findByRestaurantIdIsNullAndSystemTrueAndActiveTrueOrderByCodeAsc();
     Optional<Role> findByCodeAndRestaurantIdIsNull(String code);
     Optional<Role> findByCodeAndRestaurantId(String code, UUID restaurantId);
 }

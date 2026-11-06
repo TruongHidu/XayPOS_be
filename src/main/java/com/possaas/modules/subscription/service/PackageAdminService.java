@@ -7,6 +7,7 @@ import com.possaas.modules.subscription.domain.SubscriptionFeatureSnapshot;
 import com.possaas.modules.subscription.dto.AdminPackageResponse;
 import com.possaas.modules.subscription.dto.CreatePackageRequest;
 import com.possaas.modules.subscription.dto.PackageFeatureRequest;
+import com.possaas.modules.subscription.dto.PackageFeatureSelectionRequest;
 import com.possaas.modules.subscription.dto.UpdatePackageRequest;
 import com.possaas.modules.subscription.entity.Feature;
 import com.possaas.modules.subscription.entity.PackageFeature;
@@ -35,6 +36,8 @@ public class PackageAdminService {
     private final PackageFeatureCatalog packageFeatureCatalog;
     private final PackageMapper packageMapper;
     private final AuditService auditService;
+    private final PackageFeatureAssignmentService assignments;
+    private final PackageLimitPolicy limits;
 
     @Transactional(readOnly = true)
     public List<AdminPackageResponse> findAll(boolean includeInactive) {
@@ -63,14 +66,18 @@ public class PackageAdminService {
         if (packageRepository.findByCode(code).isPresent()) {
             throw new BusinessException(HttpStatus.CONFLICT, "PACKAGE_ALREADY_EXISTS", "Package already exists");
         }
+        var selected = assignments.prepare(request.features());
+        Long maxStaff = limits.validateMaxStaff(request.maxStaff());
         PackagePlan packagePlan = new PackagePlan();
         packagePlan.setCode(code);
+        packagePlan.setMaxStaff(maxStaff);
         apply(packagePlan, request.name(), request.description(), request.priceAmount(),
             request.currencyCode(), request.billingCycleMonths(), true);
         packagePlan = packageRepository.saveAndFlush(packagePlan);
+        assignments.replace(packagePlan.getId(), selected);
         auditService.record(null, actorUserId, "PACKAGE_CREATED", "packages", packagePlan.getId(),
-            null, packageState(packagePlan), ipAddress);
-        return packageMapper.toAdminResponse(packagePlan, List.of());
+            null, completeState(packagePlan), ipAddress);
+        return responseWithAllFeatures(packagePlan);
     }
 
     @Transactional
@@ -80,18 +87,21 @@ public class PackageAdminService {
         UUID actorUserId,
         String ipAddress
     ) {
-        PackagePlan packagePlan = requirePackage(packageCode);
-        Map<String, Object> before = packageState(packagePlan);
+        PackagePlan packagePlan = requirePackageForUpdate(packageCode);
+        Map<String, Object> before = completeState(packagePlan);
+        Map<String, Object> metadataBefore = packageState(packagePlan);
+        Long maxStaff = limits.validateMaxStaff(request.maxStaff());
+        boolean featuresChanged = request.features() != null
+            && assignments.replace(packagePlan.getId(), assignments.prepare(request.features()));
         apply(packagePlan, request.name(), request.description(), request.priceAmount(),
             request.currencyCode(), request.billingCycleMonths(), request.active());
-        packagePlan = packageRepository.saveAndFlush(packagePlan);
-        auditService.record(null, actorUserId, "PACKAGE_UPDATED", "packages", packagePlan.getId(),
-            before, packageState(packagePlan), ipAddress);
-        return packageMapper.toAdminResponse(
-            packagePlan,
-            packageFeatureCatalog.getAllFeatures(List.of(packagePlan.getId()))
-                .getOrDefault(packagePlan.getId(), List.of())
-        );
+        packagePlan.setMaxStaff(maxStaff);
+        if (featuresChanged || !metadataBefore.equals(packageState(packagePlan))) {
+            packagePlan = packageRepository.saveAndFlush(packagePlan);
+            auditService.record(null, actorUserId, "PACKAGE_UPDATED", "packages", packagePlan.getId(),
+                before, completeState(packagePlan), ipAddress);
+        }
+        return responseWithAllFeatures(packagePlan);
     }
 
     @Transactional
@@ -102,12 +112,9 @@ public class PackageAdminService {
         UUID actorUserId,
         String ipAddress
     ) {
-        PackagePlan packagePlan = requirePackage(packageCode);
-        Feature feature = featureRepository.findByCode(normalizeCode(featureCode))
-            .orElseThrow(() -> new ResourceNotFoundException("FEATURE_NOT_FOUND", "Feature not found"));
-        if (!feature.isActive()) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "FEATURE_DISABLED", "Feature is inactive");
-        }
+        PackagePlan packagePlan = requirePackageForUpdate(packageCode);
+        var selected = assignments.prepare(List.of(new PackageFeatureSelectionRequest(featureCode, request.limits()))).getFirst();
+        Feature feature = selected.feature();
         PackageFeatureId id = new PackageFeatureId(packagePlan.getId(), feature.getId());
         if (packageFeatureRepository.existsById(id)) {
             throw new BusinessException(
@@ -118,10 +125,10 @@ public class PackageAdminService {
         }
         PackageFeature mapping = new PackageFeature();
         mapping.setId(id);
-        mapping.setLimits(request.limits());
+        mapping.setLimits(selected.limits());
         packageFeatureRepository.saveAndFlush(mapping);
         auditService.record(null, actorUserId, "PACKAGE_FEATURE_ADDED", "package_features",
-            packagePlan.getId(), null, mappingState(packagePlan, feature, request.limits()), ipAddress);
+            packagePlan.getId(), null, mappingState(packagePlan, feature, selected.limits()), ipAddress);
         return responseWithAllFeatures(packagePlan);
     }
 
@@ -132,7 +139,7 @@ public class PackageAdminService {
         UUID actorUserId,
         String ipAddress
     ) {
-        PackagePlan packagePlan = requirePackage(packageCode);
+        PackagePlan packagePlan = requirePackageForUpdate(packageCode);
         Feature feature = featureRepository.findByCode(normalizeCode(featureCode))
             .orElseThrow(() -> new ResourceNotFoundException("FEATURE_NOT_FOUND", "Feature not found"));
         PackageFeatureId id = new PackageFeatureId(packagePlan.getId(), feature.getId());
@@ -162,6 +169,18 @@ public class PackageAdminService {
             .orElseThrow(() -> new ResourceNotFoundException("PACKAGE_NOT_FOUND", "Package not found"));
     }
 
+    private PackagePlan requirePackageForUpdate(String packageCode) {
+        return packageRepository.findByCodeForUpdate(normalizeCode(packageCode))
+            .orElseThrow(() -> new ResourceNotFoundException("PACKAGE_NOT_FOUND", "Package not found"));
+    }
+
+    private Map<String, Object> completeState(PackagePlan packagePlan) {
+        var state = packageState(packagePlan);
+        state.put("features", responseWithAllFeatures(packagePlan).features().stream()
+            .map(feature -> Map.of("code", feature.code(), "limits", feature.limits())).toList());
+        return state;
+    }
+
     private static void apply(
         PackagePlan packagePlan,
         String name,
@@ -183,10 +202,12 @@ public class PackageAdminService {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("code", packagePlan.getCode());
         state.put("name", packagePlan.getName());
-        state.put("priceAmount", packagePlan.getPriceAmount());
+        state.put("description", packagePlan.getDescription());
+        state.put("priceAmount", packagePlan.getPriceAmount().stripTrailingZeros());
         state.put("currencyCode", packagePlan.getCurrencyCode());
         state.put("billingCycleMonths", packagePlan.getBillingCycleMonths());
         state.put("active", packagePlan.isActive());
+        state.put("maxStaff", packagePlan.getMaxStaff());
         return state;
     }
 

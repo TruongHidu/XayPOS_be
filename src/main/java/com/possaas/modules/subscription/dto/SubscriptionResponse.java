@@ -19,5 +19,6 @@ public record SubscriptionResponse(
     String currencyCode,
     Instant activatedAt,
     Instant cancelledAt,
-    List<FeatureEntitlementResponse> features
+    List<FeatureEntitlementResponse> features,
+    Long maxStaff
 ) {}

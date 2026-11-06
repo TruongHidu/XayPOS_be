@@ -1,0 +1,20 @@
+# SITE_ADDRESS is the domain (e.g. pos.example.com). Caddy obtains and renews
+# the Let's Encrypt certificate automatically. Use ":80" for a plain-HTTP test.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# REST API, SePay webhook and STOMP WebSocket go to Spring Boot.
+	@backend path /api/* /ws /ws/*
+	handle @backend {
+		reverse_proxy backend:8080
+	}
+
+	# Everything else is the React SPA.
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -33,6 +33,13 @@ public interface RestaurantSubscriptionRepository extends
 
     Optional<RestaurantSubscription> findByRestaurantIdAndStatus(UUID restaurantId, SubscriptionStatus status);
 
+    @Query(value = """
+        select * from restaurant_subscriptions where restaurant_id=:tenant
+        order by case when status='ACTIVE' and end_at > :now then 0 when status='PENDING' then 1
+                      when status='ACTIVE' then 2 else 3 end, created_at desc, id desc limit 1
+        """, nativeQuery = true)
+    Optional<RestaurantSubscription> findForOnboarding(@Param("tenant") UUID tenant, @Param("now") Instant now);
+
     @Query("""
         select s from RestaurantSubscription s
         where s.restaurantId = :restaurantId

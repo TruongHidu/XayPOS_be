@@ -1,0 +1,42 @@
+package com.possaas.modules.menu.repository;
+
+import com.possaas.modules.menu.entity.*;
+import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
+import java.util.*;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
+
+public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificationExecutor<Item> {
+    @Query("select i from Item i where i.restaurantId=:tenant and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT "
+        + "and i.trackInventory=true and i.deletedAt is null order by i.id")
+    List<Item> findAllTrackedIngredients(@Param("tenant") UUID tenant);
+    @Query("select i from Item i where i.restaurantId=:tenant and i.trackInventory=true and i.recipeEnabled=false and i.deletedAt is null order by i.id")
+    List<Item> findAllTrackedStockItems(@Param("tenant") UUID tenant);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Item i where i.restaurantId=:tenant and i.id in :ids order by i.id")
+    List<Item> findStockItemsForUpdate(@Param("tenant") UUID tenant,@Param("ids") Collection<UUID> ids);
+    Optional<Item> findByIdAndRestaurantIdAndItemType(UUID id, UUID restaurantId, ItemType type);
+    List<Item> findAllByRestaurantIdAndIdIn(UUID restaurantId, Collection<UUID> ids);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Item i where i.restaurantId=:restaurantId and i.id in :ingredientIds "
+            + "and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT order by i.id")
+    List<Item> findIngredientsForUpdate(@Param("restaurantId") UUID restaurantId,
+            @Param("ingredientIds") Collection<UUID> ingredientIds);
+
+    interface IngredientReferenceCost {
+        UUID getIngredientId();
+        String getBaseUnit();
+        BigDecimal getUnitCost();
+        boolean isCostConfigured();
+    }
+
+    @Query("select i.id as ingredientId, i.baseUnit as baseUnit, i.costPrice as unitCost, i.costConfigured as costConfigured from Item i "
+            + "where i.restaurantId=:restaurantId and i.id in :ingredientIds "
+            + "and i.itemType=com.possaas.modules.menu.entity.ItemType.INGREDIENT")
+    List<IngredientReferenceCost> findIngredientReferenceCosts(@Param("restaurantId") UUID restaurantId,
+            @Param("ingredientIds") Collection<UUID> ingredientIds);
+
+    boolean existsByRestaurantIdAndGroupIdAndDeletedAtIsNull(UUID restaurantId, UUID groupId);
+}

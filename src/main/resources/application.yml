@@ -1,8 +1,19 @@
+subscription-purchase:
+  accept-new: ${SUBSCRIPTION_PURCHASE_ACCEPT_NEW:false}
+  payment-clock-skew: ${SUBSCRIPTION_PAYMENT_CLOCK_SKEW:PT2M}
+
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: pos-saas-be
   profiles:
     default: dev
+  datasource:
+    hikari:
+      data-source-properties:
+        # PostgreSQL constraint details may contain the table QR token.
+        logServerErrorDetail: false
   jpa:
     hibernate:
       ddl-auto: validate
@@ -18,17 +29,52 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 server:
   port: 8080
 
+# Request URLs and JDBC parameter/result traces can expose table QR bearer tokens.
+# Keep these boundaries in environment-specific logging overrides as well.
+logging:
+  level:
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.hibernate.orm.jdbc.bind: OFF
+    org.hibernate.orm.jdbc.extract: OFF
+
 app:
+  qr-order:
+    guest-access-ttl-minutes: ${QR_GUEST_ACCESS_TTL_MINUTES:60}
+    request-ttl-minutes: ${QR_REQUEST_TTL_MINUTES:15}
+    rate-limit:
+      mint: ${QR_MINT_RATE_LIMIT:30}
+      submit: ${QR_SUBMIT_RATE_LIMIT:30}
+      window-seconds: ${QR_RATE_WINDOW_SECONDS:60}
+      max-entries: ${QR_RATE_MAX_ENTRIES:10000}
   jobs:
     subscription-expiration:
       enabled: ${SUBSCRIPTION_EXPIRATION_ENABLED:true}
       fixed-delay: ${SUBSCRIPTION_EXPIRATION_FIXED_DELAY:PT1M}
       initial-delay: ${SUBSCRIPTION_EXPIRATION_INITIAL_DELAY:PT1M}
       batch-size: ${SUBSCRIPTION_EXPIRATION_BATCH_SIZE:100}
+    subscription-purchase-expiration:
+      enabled: ${SUBSCRIPTION_PURCHASE_EXPIRATION_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PURCHASE_EXPIRATION_FIXED_DELAY:PT1M}
+      initial-delay: ${SUBSCRIPTION_PURCHASE_EXPIRATION_INITIAL_DELAY:PT1M}
+      batch-size: ${SUBSCRIPTION_PURCHASE_EXPIRATION_BATCH_SIZE:100}
+    subscription-payment-events:
+      enabled: ${SUBSCRIPTION_PAYMENT_EVENTS_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PAYMENT_EVENTS_FIXED_DELAY:PT5S}
+      batch-size: ${SUBSCRIPTION_PAYMENT_EVENTS_BATCH_SIZE:20}
+      lease: PT60S
+      retry-exhausted-after: PT24H
+    subscription-purchase-activation:
+      enabled: ${SUBSCRIPTION_PURCHASE_ACTIVATION_ENABLED:true}
+      fixed-delay: ${SUBSCRIPTION_PURCHASE_ACTIVATION_FIXED_DELAY:PT10S}
   bootstrap:
     super-admin:
       enabled: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:false}
@@ -37,7 +83,25 @@ app:
       name: ${SUPER_ADMIN_NAME:System Administrator}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+    folder: ${CLOUDINARY_FOLDER:pos-saas}
+  sepay:
+    enabled: ${SEPAY_ENABLED:false}
+    provider-account-key: ${SEPAY_PROVIDER_ACCOUNT_KEY:}
+    bank-code: ${SEPAY_BANK_CODE:}
+    bank-bin: ${SEPAY_BANK_BIN:}
+    account-number: ${SEPAY_ACCOUNT_NUMBER:}
+    account-name: ${SEPAY_ACCOUNT_NAME:}
+    qr-image-base-url: ${SEPAY_QR_IMAGE_BASE_URL:https://qr.sepay.vn/img}
+    qr-template: ${SEPAY_QR_TEMPLATE:compact}
+    webhook:
+      secret: ${SEPAY_WEBHOOK_SECRET:}
+      timestamp-tolerance: PT5M
+      max-body-bytes: 65536
   jwt:
-    access-token-ttl: ${JWT_ACCESS_TTL:15m}
+    access-token-ttl: ${JWT_ACCESS_TTL:7d}
     refresh-token-ttl: ${JWT_REFRESH_TTL:30d}
     secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes-long}

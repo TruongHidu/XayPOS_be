@@ -10,6 +10,7 @@ import com.possaas.modules.subscription.entity.RestaurantSubscription;
 import com.possaas.modules.subscription.mapper.SubscriptionMapper;
 import com.possaas.modules.subscription.repository.PackagePlanRepository;
 import com.possaas.modules.subscription.repository.RestaurantSubscriptionRepository;
+import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -27,11 +28,15 @@ public class SubscriptionQueryService {
     private final RestaurantSubscriptionRepository subscriptionRepository;
     private final PackagePlanRepository packageRepository;
     private final SubscriptionMapper subscriptionMapper;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public CurrentEntitlementResponse getCurrent(UUID restaurantId) {
         CurrentEntitlement entitlement = currentEntitlementQuery.getForRestaurant(restaurantId);
-        return subscriptionMapper.toResponse(entitlement);
+        String packageName = packageRepository.findByCode(entitlement.packageCode())
+            .map(PackagePlan::getName)
+            .orElse(null);
+        return subscriptionMapper.toResponse(entitlement, packageName, clock.instant());
     }
 
     @Transactional(readOnly = true)

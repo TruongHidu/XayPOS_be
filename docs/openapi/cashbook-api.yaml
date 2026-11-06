@@ -1,0 +1,1228 @@
+openapi: "3.0.3"
+info:
+  title: "POS SaaS Cashbook API"
+  version: "1.0.0"
+  description: "Tenant cashbook: real payment collections and posted paid expenses. New permissions default to OWNER; effective DETAIL_REPORT required. V39 preserves legacy receipt currency UNKNOWN."
+servers:
+  - url: "http://localhost:8080"
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/cashbook/entries:
+    get:
+      operationId: "cashbookEntries"
+      tags:
+        - "Cashbook"
+      summary: "Effective cash inflows/outflows"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. Reads payment SUCCESS/paidAt and expense POSTED/expenseAt, not completed-order sales. No copied payment ledger."
+      parameters:
+        - $ref: "#/components/parameters/fromDate"
+        - $ref: "#/components/parameters/toDate"
+        - $ref: "#/components/parameters/currencyCode"
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/sourceType"
+        - $ref: "#/components/parameters/categoryCode"
+        - $ref: "#/components/parameters/paymentMethod"
+        - $ref: "#/components/parameters/createdBy"
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/size"
+        - $ref: "#/components/parameters/direction"
+        - name: "sortBy"
+          in: "query"
+          schema:
+            type: "string"
+            default: "occurredAt"
+            enum:
+              - "occurredAt"
+              - "amount"
+              - "code"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    $ref: "#/components/schemas/EntryPage"
+                required:
+                  - "meta"
+                  - "data"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/cashbook/summary:
+    get:
+      operationId: "cashbookSummary"
+      tags:
+        - "Cashbook"
+      summary: "Cash flow summary"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. Same predicates as entries. netCashFlowAmount is income minus expense, not profit or cash balance. Receipt totalCost is never added as expense."
+      parameters:
+        - $ref: "#/components/parameters/fromDate"
+        - $ref: "#/components/parameters/toDate"
+        - $ref: "#/components/parameters/currencyCode"
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/sourceType"
+        - $ref: "#/components/parameters/categoryCode"
+        - $ref: "#/components/parameters/paymentMethod"
+        - $ref: "#/components/parameters/createdBy"
+        - $ref: "#/components/parameters/q"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    $ref: "#/components/schemas/Summary"
+                required:
+                  - "meta"
+                  - "data"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/cashbook/series:
+    get:
+      operationId: "cashbookSeries"
+      tags:
+        - "Cashbook"
+      summary: "Daily/monthly cash flow"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. Zero-filled local calendar buckets; same filter cohort as entries/summary."
+      parameters:
+        - $ref: "#/components/parameters/fromDate"
+        - $ref: "#/components/parameters/toDate"
+        - $ref: "#/components/parameters/currencyCode"
+        - $ref: "#/components/parameters/type"
+        - $ref: "#/components/parameters/sourceType"
+        - $ref: "#/components/parameters/categoryCode"
+        - $ref: "#/components/parameters/paymentMethod"
+        - $ref: "#/components/parameters/createdBy"
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/granularity"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/SeriesPoint"
+                required:
+                  - "meta"
+                  - "data"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/cashbook/categories:
+    get:
+      operationId: "cashbookCategories"
+      tags:
+        - "Cashbook"
+      summary: "Read seeded cashbook categories"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. No category CRUD in MVP. SALES_COLLECTION is system income only."
+      parameters:
+        - $ref: "#/components/parameters/type"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/Category"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/cashbook/expenses:
+    get:
+      operationId: "cashbookExpenses"
+      tags:
+        - "Cashbook"
+      summary: "Expense voucher history"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. Filter by expenseAt; omitted status includes POSTED and VOIDED. This history is not the effective cash-flow dataset."
+      parameters:
+        - $ref: "#/components/parameters/fromDate"
+        - $ref: "#/components/parameters/toDate"
+        - $ref: "#/components/parameters/currencyCode"
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/categoryCode"
+        - $ref: "#/components/parameters/paymentMethod"
+        - $ref: "#/components/parameters/stockDocumentId"
+        - $ref: "#/components/parameters/createdBy"
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/size"
+        - $ref: "#/components/parameters/direction"
+        - name: "sortBy"
+          in: "query"
+          schema:
+            type: "string"
+            default: "expenseAt"
+            enum:
+              - "expenseAt"
+              - "amount"
+              - "expenseCode"
+              - "createdAt"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    $ref: "#/components/schemas/ExpensePage"
+                required:
+                  - "meta"
+                  - "data"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: "recordCashbookExpense"
+      tags:
+        - "Cashbook"
+      summary: "Record a paid expense"
+      description: "Requires CASHBOOK_CREATE + DETAIL_REPORT. Linked receipt additionally requires INVENTORY_VIEW + INVENTORY_MANAGEMENT. One-step POSTED; receipt link is provenance, not debt settlement. Source must be same-tenant CONFIRMED RECEIPT. No stock/payment side effects."
+      parameters:
+        - name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 100
+      responses:
+        200:
+          description: "Matching idempotent replay, including a previously voided voucher"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+            Idempotency-Replayed:
+              schema:
+                type: "boolean"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        201:
+          description: "Created"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+            Idempotency-Replayed:
+              schema:
+                type: "boolean"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExpense"
+  /api/v1/cashbook/expenses/{expenseId}:
+    get:
+      operationId: "cashbookExpenseDetail"
+      tags:
+        - "Cashbook"
+      summary: "Read expense voucher"
+      description: "Requires CASHBOOK_VIEW + DETAIL_REPORT. Foreign tenant/missing ID returns 404. No PATCH/DELETE."
+      parameters:
+        - name: "expenseId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/cashbook/expenses/{expenseId}/void:
+    post:
+      operationId: "voidCashbookExpense"
+      tags:
+        - "Cashbook"
+      summary: "Void an incorrectly recorded expense"
+      description: "Requires CASHBOOK_VOID + DETAIL_REPORT. First transition validates expectedVersion; repeats return existing VOIDED state without duplicate audit. Does not refund money or create fake income; corrected historic reports exclude the voucher."
+      parameters:
+        - name: "expenseId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoidExpense"
+  /api/v1/cashbook/stock-receipts:
+    get:
+      operationId: "cashbookStockReceipts"
+      tags:
+        - "Cashbook"
+      summary: "Reconcile confirmed stock receipt sources"
+      description: "Requires CASHBOOK_VIEW + INVENTORY_VIEW + DETAIL_REPORT + INVENTORY_MANAGEMENT. Dates apply to confirmedAt; linked expenses are POSTED all-time. UNKNOWN currency sources return null reconciliation amount. This endpoint does not infer debt or add receipt totalCost to cash expenses."
+      parameters:
+        - $ref: "#/components/parameters/fromDate"
+        - $ref: "#/components/parameters/toDate"
+        - $ref: "#/components/parameters/currencyCode"
+        - $ref: "#/components/parameters/warehouseId"
+        - $ref: "#/components/parameters/includeUnknownCurrency"
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/size"
+        - $ref: "#/components/parameters/direction"
+        - name: "sortBy"
+          in: "query"
+          schema:
+            type: "string"
+            default: "confirmedAt"
+            enum:
+              - "confirmedAt"
+              - "documentCode"
+              - "totalCost"
+      responses:
+        200:
+          description: "Success"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+                  data:
+                    $ref: "#/components/schemas/StockReceiptPage"
+                required:
+                  - "meta"
+                  - "data"
+        400:
+          description: "Validation or invalid range/filter/currency/sort"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        401:
+          description: "Missing/invalid staff authentication"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        403:
+          description: "Missing permission, feature, tenant or effective subscription"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        404:
+          description: "Resource unavailable in current tenant"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        409:
+          description: "Idempotency, version, source state or currency conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: "http"
+      scheme: "bearer"
+      bearerFormat: "JWT"
+  parameters:
+    fromDate:
+      name: "fromDate"
+      in: "query"
+      required: true
+      schema:
+        type: "string"
+        format: "date"
+      description: "Inclusive local restaurant calendar date; maximum range 366 days."
+    toDate:
+      name: "toDate"
+      in: "query"
+      required: true
+      schema:
+        type: "string"
+        format: "date"
+      description: "Inclusive local restaurant calendar date; server uses exclusive next-day boundary."
+    currencyCode:
+      name: "currencyCode"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+      description: "Defaults to current restaurant currency. Never converts/mixes currencies."
+    type:
+      name: "type"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        enum:
+          - "INCOME"
+          - "EXPENSE"
+    sourceType:
+      name: "sourceType"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        enum:
+          - "ORDER_PAYMENT"
+          - "EXPENSE_VOUCHER"
+    categoryCode:
+      name: "categoryCode"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+    paymentMethod:
+      name: "paymentMethod"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        enum:
+          - "CASH"
+          - "TRANSFER"
+    createdBy:
+      name: "createdBy"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        format: "uuid"
+    q:
+      name: "q"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+      description: "Search code/order code/reference; maximum 100 characters."
+    page:
+      name: "page"
+      in: "query"
+      required: false
+      schema:
+        type: "integer"
+        default: 0
+        minimum: 0
+    size:
+      name: "size"
+      in: "query"
+      required: false
+      schema:
+        type: "integer"
+        default: 20
+        maximum: 100
+        minimum: 1
+    direction:
+      name: "direction"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        default: "desc"
+        enum:
+          - "asc"
+          - "desc"
+    granularity:
+      name: "granularity"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        default: "DAY"
+        enum:
+          - "DAY"
+          - "MONTH"
+    status:
+      name: "status"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        enum:
+          - "POSTED"
+          - "VOIDED"
+      description: "Omitted includes POSTED and VOIDED history."
+    stockDocumentId:
+      name: "stockDocumentId"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        format: "uuid"
+    warehouseId:
+      name: "warehouseId"
+      in: "query"
+      required: false
+      schema:
+        type: "string"
+        format: "uuid"
+    includeUnknownCurrency:
+      name: "includeUnknownCurrency"
+      in: "query"
+      required: false
+      schema:
+        type: "boolean"
+        default: false
+      description: "Include legacy receipts with unknown currency; no amount reconciliation is inferred."
+  schemas:
+    Meta:
+      type: "object"
+      properties:
+        fromDate:
+          type: "string"
+          format: "date"
+        toDate:
+          type: "string"
+          format: "date"
+        timezone:
+          type: "string"
+        currencyCode:
+          type: "string"
+        dateBasis:
+          type: "string"
+          enum:
+            - "CASH_OCCURRED_AT"
+            - "EXPENSE_AT"
+            - "CONFIRMED_AT"
+        granularity:
+          type: "string"
+          enum:
+            - "DAY"
+            - "MONTH"
+          nullable: true
+        generatedAt:
+          type: "string"
+          format: "date-time"
+    Category:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        code:
+          type: "string"
+        name:
+          type: "string"
+        type:
+          type: "string"
+          enum:
+            - "INCOME"
+            - "EXPENSE"
+        active:
+          type: "boolean"
+    Expense:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        expenseCode:
+          type: "string"
+        categoryCode:
+          type: "string"
+        categoryName:
+          type: "string"
+        amount:
+          type: "number"
+          format: "decimal"
+        currencyCode:
+          type: "string"
+        paymentMethod:
+          type: "string"
+          enum:
+            - "CASH"
+            - "TRANSFER"
+        expenseAt:
+          type: "string"
+          format: "date-time"
+        stockDocumentId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        sourceDocumentCode:
+          type: "string"
+          nullable: true
+        sourceCurrencyStatus:
+          type: "string"
+          nullable: true
+        referenceNo:
+          type: "string"
+          nullable: true
+        payeeName:
+          type: "string"
+          nullable: true
+        note:
+          type: "string"
+          nullable: true
+        status:
+          type: "string"
+          enum:
+            - "POSTED"
+            - "VOIDED"
+        createdBy:
+          type: "string"
+          format: "uuid"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+        version:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        voidedBy:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        voidedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+        voidReason:
+          type: "string"
+          nullable: true
+      required:
+        - "id"
+        - "expenseCode"
+        - "categoryCode"
+        - "categoryName"
+        - "amount"
+        - "currencyCode"
+        - "paymentMethod"
+        - "expenseAt"
+        - "stockDocumentId"
+        - "sourceDocumentCode"
+        - "sourceCurrencyStatus"
+        - "referenceNo"
+        - "payeeName"
+        - "note"
+        - "status"
+        - "createdBy"
+        - "createdAt"
+        - "updatedAt"
+        - "version"
+        - "voidedBy"
+        - "voidedAt"
+        - "voidReason"
+    CreateExpense:
+      type: "object"
+      properties:
+        categoryCode:
+          type: "string"
+          maxLength: 50
+        amount:
+          type: "number"
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 1e+16
+          multipleOf: 0.01
+        currencyCode:
+          type: "string"
+          minLength: 3
+          maxLength: 3
+          description: "Optional; captured from restaurant currency when omitted."
+        paymentMethod:
+          type: "string"
+          enum:
+            - "CASH"
+            - "TRANSFER"
+        expenseAt:
+          type: "string"
+          format: "date-time"
+        stockDocumentId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        referenceNo:
+          type: "string"
+          maxLength: 100
+        payeeName:
+          type: "string"
+          maxLength: 150
+        note:
+          type: "string"
+          maxLength: 10000
+      required:
+        - "categoryCode"
+        - "amount"
+        - "paymentMethod"
+        - "expenseAt"
+      example:
+        categoryCode: "UTILITIES"
+        amount: 100000
+        currencyCode: "VND"
+        paymentMethod: "CASH"
+        expenseAt: "2026-10-29T04:00:00Z"
+        note: "Thanh toán tiền nước"
+    VoidExpense:
+      type: "object"
+      properties:
+        expectedVersion:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        reason:
+          type: "string"
+          minLength: 1
+          maxLength: 1000
+      required:
+        - "expectedVersion"
+        - "reason"
+    Entry:
+      type: "object"
+      properties:
+        sourceType:
+          type: "string"
+          enum:
+            - "ORDER_PAYMENT"
+            - "EXPENSE_VOUCHER"
+        sourceId:
+          type: "string"
+          format: "uuid"
+        code:
+          type: "string"
+        type:
+          type: "string"
+          enum:
+            - "INCOME"
+            - "EXPENSE"
+        categoryCode:
+          type: "string"
+        categoryName:
+          type: "string"
+        amount:
+          type: "number"
+          format: "decimal"
+        currencyCode:
+          type: "string"
+        paymentMethod:
+          type: "string"
+          enum:
+            - "CASH"
+            - "TRANSFER"
+        occurredAt:
+          type: "string"
+          format: "date-time"
+        recordedAt:
+          type: "string"
+          format: "date-time"
+        createdBy:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        orderId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        orderCode:
+          type: "string"
+          nullable: true
+        stockDocumentId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        sourceDocumentCode:
+          type: "string"
+          nullable: true
+    Summary:
+      type: "object"
+      properties:
+        totalIncomeAmount:
+          type: "number"
+          format: "decimal"
+        totalExpenseAmount:
+          type: "number"
+          format: "decimal"
+        netCashFlowAmount:
+          type: "number"
+          format: "decimal"
+        incomeEntryCount:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        expenseEntryCount:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        saleIncomeAmount:
+          type: "number"
+          format: "decimal"
+        receiptLinkedExpenseAmount:
+          type: "number"
+          format: "decimal"
+        otherExpenseAmount:
+          type: "number"
+          format: "decimal"
+      required:
+        - "totalIncomeAmount"
+        - "totalExpenseAmount"
+        - "netCashFlowAmount"
+        - "incomeEntryCount"
+        - "expenseEntryCount"
+        - "saleIncomeAmount"
+        - "receiptLinkedExpenseAmount"
+        - "otherExpenseAmount"
+    SeriesPoint:
+      type: "object"
+      properties:
+        bucketStartDate:
+          type: "string"
+          format: "date"
+        totalIncomeAmount:
+          type: "number"
+          format: "decimal"
+        totalExpenseAmount:
+          type: "number"
+          format: "decimal"
+        netCashFlowAmount:
+          type: "number"
+          format: "decimal"
+        incomeEntryCount:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        expenseEntryCount:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+      required:
+        - "bucketStartDate"
+        - "totalIncomeAmount"
+        - "totalExpenseAmount"
+        - "netCashFlowAmount"
+        - "incomeEntryCount"
+        - "expenseEntryCount"
+    StockReceipt:
+      type: "object"
+      properties:
+        stockDocumentId:
+          type: "string"
+          format: "uuid"
+        documentCode:
+          type: "string"
+        warehouseId:
+          type: "string"
+          format: "uuid"
+        warehouseName:
+          type: "string"
+        confirmedAt:
+          type: "string"
+          format: "date-time"
+        totalCost:
+          type: "number"
+          format: "decimal"
+        currencyCode:
+          type: "string"
+          nullable: true
+        currencyStatus:
+          type: "string"
+          enum:
+            - "KNOWN"
+            - "UNKNOWN"
+        linkedPostedExpenseCount:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        recordedExpenseAmountAllTime:
+          type: "number"
+          format: "decimal"
+          nullable: true
+    EntryPage:
+      type: "object"
+      properties:
+        content:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Entry"
+        page:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        size:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalElements:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalPages:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+    ExpensePage:
+      type: "object"
+      properties:
+        content:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/Expense"
+        page:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        size:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalElements:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalPages:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+    StockReceiptPage:
+      type: "object"
+      properties:
+        content:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/StockReceipt"
+        page:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        size:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalElements:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+        totalPages:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+    Error:
+      type: "object"
+      properties:
+        success:
+          type: "boolean"
+          example: false
+        code:
+          type: "string"
+        message:
+          type: "string"
+        details:
+          type: "object"
+          additionalProperties: true
+        timestamp:
+          type: "string"
+          format: "date-time"

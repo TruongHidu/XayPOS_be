@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserPermissionRepository extends JpaRepository<UserPermission, UserPermissionId> {
+    List<UserPermission> findByIdUserId(UUID userId);
+
     @Query(value = """
         SELECT p.code, up.effect FROM user_permissions up
         JOIN permissions p ON p.id = up.permission_id

@@ -14,10 +14,11 @@ public class FeatureSnapshotFactory {
 
     public SubscriptionFeatureSnapshot capture(PackagePlan packagePlan) {
         return new SubscriptionFeatureSnapshot(
-            1,
+            2,
             packagePlan.getCode(),
             packageFeatureCatalog.getActiveFeatures(packagePlan.getId()),
-            clock.instant()
+            clock.instant(),
+            packagePlan.getMaxStaff()
         );
     }
 }

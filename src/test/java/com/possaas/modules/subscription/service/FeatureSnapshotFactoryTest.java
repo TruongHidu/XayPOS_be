@@ -23,10 +23,11 @@ class FeatureSnapshotFactoryTest {
         PackagePlan packagePlan = new PackagePlan();
         packagePlan.setId(UUID.randomUUID());
         packagePlan.setCode("PRO");
+        packagePlan.setMaxStaff(50L);
         when(catalog.getActiveFeatures(packagePlan.getId())).thenReturn(List.of(
             new SubscriptionFeatureSnapshot.FeatureGrant(
                 "STAFF_MANAGEMENT",
-                Map.of("maxStaff", 50)
+                Map.of()
             )
         ));
         FeatureSnapshotFactory factory = new FeatureSnapshotFactory(
@@ -36,11 +37,12 @@ class FeatureSnapshotFactoryTest {
 
         SubscriptionFeatureSnapshot snapshot = factory.capture(packagePlan);
 
-        assertThat(snapshot.schemaVersion()).isEqualTo(1);
+        assertThat(snapshot.schemaVersion()).isEqualTo(2);
+        assertThat(snapshot.maxStaff()).isEqualTo(50L);
         assertThat(snapshot.packageCode()).isEqualTo("PRO");
         assertThat(snapshot.capturedAt()).isEqualTo(NOW);
         assertThat(snapshot.features()).containsExactly(
-            new SubscriptionFeatureSnapshot.FeatureGrant("STAFF_MANAGEMENT", Map.of("maxStaff", 50))
+            new SubscriptionFeatureSnapshot.FeatureGrant("STAFF_MANAGEMENT", Map.of())
         );
     }
 }

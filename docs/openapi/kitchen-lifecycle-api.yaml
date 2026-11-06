@@ -1,0 +1,251 @@
+openapi: 3.0.3
+info:
+  title: POS SaaS kitchen and order completion
+  version: 1.2.1
+  description: "PAID and serving status are separate; KDS continues after payment. V24 complete DINE_IN atomically completes the order and closes exactly order.tableSessionId after full payment, all live items SERVED and session-wide readiness; TAKEAWAY completion has no TABLE side effect or access dependency. All resources are tenant-scoped from JWT without a tenant header. V23 grants existing KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including existing manual close/cancel endpoints; user DENY and snapshot features still apply. Login/refresh is required for new JWT authorities. Bulk actions preserve money and do not automatically complete the order or close the session. V33 consumes RESERVED allocation on PENDING to COOKING and bulk PENDING to SERVED, once in the same transaction; later READY/SERVED transitions do not deduct again. Existing action permissions are sufficient, with no INVENTORY_ISSUE/RECIPE_VIEW requirement. Allocation stays valid after inventory/recipe entitlement loss. Complete/payment never consume and complete rejects unresolved RESERVED allocations. Single mark-served remains READY-only and bulk mark-ready still rejects PENDING. No allocation/ingredient/cost details enter OrderResponse. See kitchen-completion-api.md and order-inventory-allocation-fe-sync.md for examples and Postman/FE flow."
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/kitchen/items:
+    get:
+      operationId: listKitchenItems
+      description: "KITCHEN_VIEW + KITCHEN_DISPLAY. Stable queue sorted by coalesce(sentToKitchenAt,createdAt), id. Includes paid but unserved orders and the table currently attached to the session. No OPEN drafts or terminal orders."
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [PENDING, COOKING, READY], default: PENDING}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Paginated kitchen queue, content: {application/json: {schema: {$ref: '#/components/schemas/KitchenPage'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/v1/orders/{orderId}/items/{orderItemId}/start-cooking:
+    post:
+      operationId: startCooking
+      description: "KITCHEN_START_COOKING + KITCHEN_DISPLAY; PENDING -> COOKING only. Exact retry is no-op."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/items/{orderItemId}/mark-ready:
+    post:
+      operationId: markReady
+      description: "KITCHEN_MARK_READY + KITCHEN_DISPLAY; COOKING -> READY only."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/items/{orderItemId}/mark-served:
+    post:
+      operationId: markServed
+      description: "ORDER_MARK_SERVED + ORDER_MANAGEMENT; READY -> SERVED only, including paid orders."
+      parameters: [{$ref: '#/components/parameters/OrderId'}, {$ref: '#/components/parameters/OrderItemId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses: {'200': {$ref: '#/components/responses/OrderUpdated'}, '400': {$ref: '#/components/responses/BadRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/orders/{orderId}/mark-ready:
+    post:
+      operationId: markAllOrderItemsReady
+      summary: Mark all cooking items in an order ready
+      x-permission: KITCHEN_MARK_READY
+      x-feature: KITCHEN_DISPLAY
+      description: >-
+        Requires effective KITCHEN_MARK_READY and KITCHEN_DISPLAY snapshot entitlement.
+        Root must be CONFIRMED/PREPARING/READY/SERVED with at least one non-CANCELLED item.
+        Any PENDING item rejects the whole command with INVALID_ORDER_ITEM_TRANSITION;
+        otherwise COOKING becomes READY, READY/SERVED stay unchanged and CANCELLED is ignored.
+        Validate all items before any mutation; restaurant lock and one atomic transaction.
+        No-op after auth/tenant/feature/root/item checks accepts a stale expectedOrderVersion
+        without changing version, updatedAt, history or audit. Actual changes require current
+        Order.version and advance the root once, record history for each changed item and
+        one ORDER_ITEMS_MARKED_READY audit. Aggregate root status from live items, never
+        rewind SERVED. PAID orders may still be served; preserve prices, quantities, amounts,
+        payment state, session and sentToKitchenAt. No Idempotency-Key required. Root OPEN,
+        COMPLETED/CANCELLED or empty live items reject even when the target would be a no-op.
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses:
+        '200': {$ref: '#/components/responses/OrderUpdated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/Internal'}
+  /api/v1/orders/{orderId}/mark-served:
+    post:
+      operationId: markAllOrderItemsServed
+      summary: Mark all pending, cooking or ready items in an order served
+      x-permission: ORDER_MARK_SERVED
+      x-feature: ORDER_MANAGEMENT
+      description: >-
+        Requires effective ORDER_MARK_SERVED and ORDER_MANAGEMENT snapshot entitlement.
+        Root must be CONFIRMED/PREPARING/READY/SERVED with at least one non-CANCELLED item.
+        PENDING, COOKING and READY become SERVED directly, SERVED stays unchanged and CANCELLED
+        is ignored. This confirms actual service even without a kitchen screen; no operating
+        mode, KITCHEN_DISPLAY entitlement or prior kitchen API calls are required. Applies
+        to every actor with the effective permission, not only CASHIER. Single-item
+        mark-served remains READY -> SERVED only; bulk mark-ready still rejects PENDING.
+        Validate all items before any mutation; restaurant lock and one atomic transaction.
+        No-op after auth/tenant/feature/root/item checks accepts a stale expectedOrderVersion
+        without changing version, updatedAt, history or audit. Actual changes require current
+        Order.version and advance the root once, record actual PENDING/COOKING/READY -> SERVED
+        history for each changed item without fabricated cooking steps and one
+        ORDER_ITEMS_MARKED_SERVED audit. Newly appended PENDING items make a stale-version
+        retry a mutation and return CONCURRENT_ORDER_UPDATE rather than serving the new items.
+        Aggregate root status from live items. PAID is
+        allowed while the order is being served; preserve financial and snapshot fields.
+        No Idempotency-Key required. Does not complete the order or close its session;
+        complete DINE_IN closes the session in its own atomic command after payment and
+        readiness checks. OPEN/COMPLETED/CANCELLED or empty live items are rejected.
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      requestBody: {$ref: '#/components/requestBodies/OrderItemTransition'}
+      responses:
+        '200': {$ref: '#/components/responses/OrderUpdated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/Internal'}
+  /api/v1/orders/{orderId}/complete:
+    post:
+      operationId: completeOrder
+      summary: Complete a paid served order and close its DINE_IN session atomically
+      x-permission: ORDER_COMPLETE
+      x-feature: ORDER_MANAGEMENT
+      x-conditional-access:
+        DINE_IN:
+          permissions: [TABLE_CLOSE]
+          features: [TABLE_MANAGEMENT]
+      description: >-
+        Requires effective ORDER_COMPLETE and ORDER_MANAGEMENT. DINE_IN additionally
+        requires TABLE_CLOSE and TABLE_MANAGEMENT, checked before mutation, no-op or repair.
+        TAKEAWAY does not require TABLE permissions/features and never calls TABLE closure.
+        First completion requires a submitted serving order (not OPEN/CANCELLED), PAID,
+        paidAmount equal to totalAmount > 0, at least one non-CANCELLED item and all live
+        items SERVED. Does not update item states, payment records, amounts or snapshots.
+        Body expectedVersion is the ORDER version; no sessionId/tableId/expectedSessionVersion
+        or Idempotency-Key is required. A real order mutation requires the current version.
+        For DINE_IN, close exactly order.tableSessionId, owned by the tenant and OPEN before
+        first completion. Under the shared restaurant write lock and one transaction, flush
+        the order COMPLETED then validate all attached orders: at least one COMPLETED/PAID/
+        full amount and every other order COMPLETED/PAID/full amount or CANCELLED/UNPAID/
+        paidAmount=0. Failure to close or persist/audit rolls back the whole request.
+        Successful first DINE_IN completion advances each aggregate version once and records
+        ORDER_COMPLETED plus TABLE_SESSION_CLOSED. No item-status history is added.
+        Retry COMPLETED+CLOSED accepts stale expectedVersion after all access guards and
+        changes no version, timestamp or audit. Legacy COMPLETED+OPEN rechecks payment/items
+        and session-wide readiness, then closes only the session; root version/mutationSequence/
+        completedAt stay unchanged and only TABLE_SESSION_CLOSED is added. Stale order version
+        is accepted for this repair. TAKEAWAY COMPLETED is an access-guarded no-op.
+        Non-COMPLETED order with CLOSED session, or CANCELLED session, returns
+        TABLE_SESSION_NOT_OPEN. Missing/foreign session returns TABLE_SESSION_NOT_FOUND;
+        missing DINE_IN tableSessionId returns INVALID_ORDER_SEATING. Never resolve a newer
+        session by tableId or reopen a terminal session. Transfer keeps the exact session
+        identity; closure preserves QR/configuration/history and occupancy remains derived
+        from OPEN sessions. Inactive table/area does not add a closure restriction.
+        Response stays OrderResponse with Cache-Control:no-store, no session object or extra
+        fields. After 200 DINE_IN the referenced session is CLOSED; FE reloads tables/session
+        instead of calling /close again. V24 adds TABLE_CLOSE to global CASHIER/MANAGER;
+        the same permission covers existing manual close/cancel, preserving user DENY.
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VersionRequest'}
+            example: {expectedVersion: 9}
+      responses:
+        '200':
+          description: >-
+            Current OrderResponse with status COMPLETED. For DINE_IN the exact referenced
+            session is also CLOSED when returned. First mutation advances order version
+            once; retry/legacy session-only repair preserves order version and completedAt.
+          headers:
+            Cache-Control: {description: Private response must not be cached, schema: {type: string, example: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Order'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '500': {$ref: '#/components/responses/Internal'}
+  /api/v1/table-sessions/{sessionId}/close:
+    post:
+      operationId: closeTableSession
+      description: "TABLE_CLOSE + TABLE_MANAGEMENT. Body expectedVersion is the SESSION version. Needs at least one paid COMPLETED order and every associated order COMPLETED/PAID/full amount or CANCELLED/UNPAID/paidAmount=0. CLOSED retry is a no-op accepting the initial version without duplicate audit. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, preserving user DENY and snapshot gates; this permission also covers manual cancel according to its guards. Remains available after atomic DINE_IN completion but FE need not call it again. Does not complete orders, change payment or reopen sessions."
+      parameters: [{$ref: '#/components/parameters/SessionId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/VersionRequest'}}}}
+      responses:
+        '200': {description: CLOSED session, content: {application/json: {schema: {$ref: '#/components/schemas/TableSession'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  securitySchemes:
+    BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    OrderId: {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+    OrderItemId: {name: orderItemId, in: path, required: true, schema: {type: string, format: uuid}}
+    SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
+  requestBodies:
+    OrderItemTransition:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, required: [expectedOrderVersion], additionalProperties: false, properties: {expectedOrderVersion: {type: integer, format: int64, minimum: 0}}}
+          example: {expectedOrderVersion: 7}
+  responses:
+    OrderUpdated:
+      description: Current OrderResponse; use returned version. Actual mutation advances version once, no-op preserves it.
+      headers:
+        Cache-Control: {description: Private response must not be cached, schema: {type: string, example: no-store}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Order'}
+    BadRequest: {description: INVALID_REQUEST_BODY or VALIDATION_ERROR, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Unauthorized: {description: UNAUTHORIZED or ACCOUNT_INACTIVE, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden: {description: FORBIDDEN / TENANT_ACCESS_DENIED / RESTAURANT_INACTIVE / SUBSCRIPTION_NOT_ACTIVE / FEATURE_NOT_ENTITLED, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: Tenant-scoped resource not found, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Conflict: {description: "INVALID_ORDER_ITEM_TRANSITION / EMPTY_ORDER / CONCURRENT_ORDER_UPDATE for bulk actions; completion/closure may return ORDER_NOT_PAID, ORDER_NOT_READY_FOR_COMPLETION, INVALID_ORDER_SEATING, TABLE_SESSION_NOT_OPEN, TABLE_SESSION_NOT_READY_TO_CLOSE or CONCURRENT_TABLE_UPDATE", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Internal: {description: INTERNAL_ERROR without SQL or exception details, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    VersionRequest: {type: object, required: [expectedVersion], additionalProperties: false, properties: {expectedVersion: {type: integer, format: int64, minimum: 0}}}
+    KitchenPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/KitchenItem'}}
+        page: {type: integer}
+        size: {type: integer}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+    KitchenItem:
+      type: object
+      properties:
+        orderId: {type: string, format: uuid}
+        orderCode: {type: string}
+        orderVersion: {type: integer, format: int64}
+        orderItemId: {type: string, format: uuid}
+        itemName: {type: string}
+        quantity: {type: number}
+        unit: {type: string}
+        note: {type: string, nullable: true}
+        itemStatus: {type: string, enum: [PENDING, COOKING, READY]}
+        serviceType: {type: string, enum: [DINE_IN, TAKEAWAY]}
+        createdAt: {type: string, format: date-time}
+        sentToKitchenAt: {type: string, format: date-time, nullable: true}
+        sessionId: {type: string, format: uuid, nullable: true}
+        tableId: {type: string, format: uuid, nullable: true}
+        tableCode: {type: string, nullable: true}
+        tableName: {type: string, nullable: true}
+    Order: {$ref: 'order-api.yaml#/components/schemas/Order'}
+    TableSession: {type: object, description: "Existing TableSessionResponse; see tenant-api.yaml", additionalProperties: true}
+    Error:
+      type: object
+      properties:
+        success: {type: boolean, enum: [false]}
+        code: {type: string}
+        message: {type: string}
+        fieldErrors: {type: object}
+        timestamp: {type: string, format: date-time}

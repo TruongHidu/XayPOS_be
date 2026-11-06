@@ -12,5 +12,6 @@ public record PackageResponse(
     BigDecimal priceAmount,
     String currencyCode,
     short billingCycleMonths,
-    List<FeatureEntitlementResponse> features
+    List<FeatureEntitlementResponse> features,
+    Long maxStaff
 ) {}

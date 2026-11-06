@@ -1,0 +1,8 @@
+package com.possaas.modules.subscriptionpurchase.entity;
+
+/** Why money or a paid purchase needs an operator; stored as text on events and purchases. */
+public enum ReviewReason {
+    AMOUNT_MISMATCH, REFERENCE_UNMATCHED, REFERENCE_AMBIGUOUS, ACCOUNT_MISMATCH, OUTGOING_TRANSFER,
+    DUPLICATE_PAYMENT, PURCHASE_CANCELLED, PAYMENT_OUTSIDE_WINDOW, SUBSCRIPTION_CONFLICT,
+    RESTAURANT_UNAVAILABLE, IDENTITY_UNCERTAIN, IDENTITY_CONFLICT, TECHNICAL_RETRY_EXHAUSTED
+}

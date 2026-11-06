@@ -7,6 +7,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+# Behind the reverse proxy (Caddy), trust X-Forwarded-For/Proto from private-network
+# proxies so getRemoteAddr() returns the real client IP (QR rate limits, audit logs).
+server:
+  forward-headers-strategy: native
+
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}

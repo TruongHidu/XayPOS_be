@@ -13,5 +13,6 @@ public record AdminPackageResponse(
     String currencyCode,
     short billingCycleMonths,
     boolean active,
-    List<FeatureEntitlementResponse> features
+    List<FeatureEntitlementResponse> features,
+    Long maxStaff
 ) {}

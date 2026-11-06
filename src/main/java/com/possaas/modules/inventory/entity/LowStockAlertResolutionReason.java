@@ -1,0 +1,6 @@
+package com.possaas.modules.inventory.entity;
+
+public enum LowStockAlertResolutionReason {
+    STOCK_RECOVERED, THRESHOLD_DISABLED, WAREHOUSE_INACTIVE, WAREHOUSE_DELETED,
+    INGREDIENT_UNTRACKED, INGREDIENT_DELETED, INGREDIENT_UNIT_CHANGED
+}

@@ -65,7 +65,8 @@ public class AdminSubscriptionMapper {
             subscription.getUpdatedAt(),
             snapshot.features().stream()
                 .map(feature -> new FeatureEntitlementResponse(feature.code(), feature.limits()))
-                .toList()
+                .toList(),
+            snapshot.effectiveMaxStaff()
         );
     }
 
