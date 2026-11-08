@@ -1,0 +1,103 @@
+name: Backend CI/CD
+
+# Pull requests: build + test only.
+# Push to main (or "Run workflow" by hand): build + test, then deploy to the VPS.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Skip tests (emergency deploy only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Some integration tests refuse to run unless these are set explicitly.
+      DB_URL: jdbc:postgresql://localhost:5432/kiot_tay_db
+      DB_USERNAME: ci
+      DB_PASSWORD: ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+
+      # Started by hand (not a service container) to raise max_connections:
+      # each cached Spring test context keeps its own Hikari pool.
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name ci-postgres -p 5432:5432 \
+            -e POSTGRES_DB=kiot_tay_db -e POSTGRES_USER="$DB_USERNAME" -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+            postgres:17-alpine -c max_connections=500
+          for _ in $(seq 1 30); do
+            docker exec ci-postgres pg_isready -U "$DB_USERNAME" -d kiot_tay_db && exit 0
+            sleep 2
+          done
+          docker logs ci-postgres
+          exit 1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and test
+        run: |
+          if [ "${{ inputs.skip_tests }}" = "true" ]; then
+            mvn -B package -DskipTests
+          else
+            mvn -B verify
+          fi
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Never run two deploys of this repo at once; queue instead of cancelling.
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$VPS_HOST" ]; then
+            echo "::error::Missing secrets VPS_SSH_KEY / VPS_HOST (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull and restart backend on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          APP_DIR: ${{ vars.APP_DIR || '~/pos-saas' }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "${VPS_PORT:-22}" -o ServerAliveInterval=30 \
+            "${VPS_USER:-root}@$VPS_HOST" \
+            "set -e; cd $APP_DIR/pos-saas-be && git fetch --quiet origin main && git reset --quiet --hard origin/main && bash deploy/deploy.sh backend main"
