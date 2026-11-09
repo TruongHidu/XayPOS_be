@@ -9,6 +9,7 @@ import java.util.UUID;
 
 /** Synchronous internal inventory side effects; the caller holds the restaurant mutation lock. */
 public interface OrderInventoryAllocationCommand {
+    /** @throws InsufficientStockException when tracked usages exceed available stock; nothing is persisted. */
     void reserve(CurrentUser actor, UUID orderId, List<AcceptedItem> items, boolean inventoryEnabled, Instant now, String ip);
     void consume(CurrentUser actor, UUID orderId, Collection<UUID> itemIds, Instant now, String ip);
     void release(CurrentUser actor, UUID orderId, Collection<UUID> itemIds, Instant now, String ip);
@@ -17,8 +18,9 @@ public interface OrderInventoryAllocationCommand {
     void validate(UUID tenant, UUID orderId, List<LineState> lines);
 
     record AcceptedItem(UUID orderItemId, UUID recipeSnapshotId, String snapshotStatus,
-            BigDecimal orderQuantity, String orderUnit, List<Usage> usages, boolean directStock) {
-        public AcceptedItem(UUID item,UUID snapshot,String status,BigDecimal quantity,String unit,List<Usage> usages) {this(item,snapshot,status,quantity,unit,usages,false);}
+            BigDecimal orderQuantity, String orderUnit, List<Usage> usages, boolean directStock,
+            UUID menuItemId, String itemName) {
+        public AcceptedItem(UUID item,UUID snapshot,String status,BigDecimal quantity,String unit,List<Usage> usages) {this(item,snapshot,status,quantity,unit,usages,false,null,null);}
         public AcceptedItem { usages = List.copyOf(usages); }
     }
 

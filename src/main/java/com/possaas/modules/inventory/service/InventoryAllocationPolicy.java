@@ -1,6 +1,7 @@
 package com.possaas.modules.inventory.service;
 
 import com.possaas.common.exception.ConflictException;
+import com.possaas.common.security.CurrentUser;
 import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery.UsageCost;
 import com.possaas.modules.inventory.entity.*;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand.AcceptedItem;
@@ -13,6 +14,14 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class InventoryAllocationPolicy {
+    /** Same read permission that guards balances and allocation detail. */
+    static final String INGREDIENT_DETAIL_PERMISSION = "INVENTORY_VIEW";
+
+    /** Ingredient names and balances in a shortage are inventory data; others only see the menu-level estimate. */
+    public boolean revealsShortIngredients(CurrentUser actor) {
+        return actor != null && actor.hasPermission(INGREDIENT_DETAIL_PERMISSION);
+    }
+
     public InventoryAllocationSkipReason skipReason(AcceptedItem item, boolean enabled) {
         if ("LEGACY_UNAVAILABLE".equals(item.snapshotStatus())) return InventoryAllocationSkipReason.LEGACY_UNAVAILABLE;
         if(item.directStock()) return enabled ? null : InventoryAllocationSkipReason.INVENTORY_FEATURE_DISABLED;

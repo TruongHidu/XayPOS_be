@@ -54,6 +54,7 @@ class OrderInventoryAllocationIntegrationTest {
     static final Set<String> ORDER=Set.of("ORDER_VIEW","ORDER_CREATE","ORDER_UPDATE","ORDER_CANCEL",
         "ORDER_MARK_SERVED","ORDER_COMPLETE","KITCHEN_VIEW","KITCHEN_MARK_READY","KITCHEN_START_COOKING",
         "TABLE_OPEN","TABLE_CLOSE","TABLE_TRANSFER","PAYMENT_CREATE","PAYMENT_CONFIRM");
+    static final Set<String> STOCK_READER=java.util.stream.Stream.concat(ORDER.stream(),java.util.stream.Stream.of("INVENTORY_VIEW")).collect(java.util.stream.Collectors.toUnmodifiableSet());
     static final Set<String> ALL;
     static {var p=new HashSet<>(ORDER);p.addAll(Set.of("MENU_VIEW","MENU_UPDATE","MENU_CREATE","INGREDIENT_CREATE","INGREDIENT_VIEW","RECIPE_VIEW","INVENTORY_VIEW","WAREHOUSE_CREATE",
         "WAREHOUSE_UPDATE","WAREHOUSE_DELETE","INVENTORY_RECEIVE","INVENTORY_ISSUE","INVENTORY_ADJUST",
@@ -153,7 +154,23 @@ class OrderInventoryAllocationIntegrationTest {
     @Test void sharedIngredientDemandIsAggregatedBeforeCheckingAndFailureLeavesNoOrderOrKey() throws Exception {
         stock("500");var request=body(true,"3");request.put("items",List.of(line(menu.getId(),"3","first"),line(menu.getId(),"3","second")));
         String key=UUID.randomUUID().toString();long auditBefore=count("audit_logs");
-        call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        var failure=call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(failure.body.at("/details/lines")).hasSize(2);
+        for(var shortage:failure.body.at("/details/lines")){
+            assertThat(shortage.path("itemName").asText()).isEqualTo("Food");assertThat(shortage.path("unit").asText()).isEqualTo("portion");
+            assertThat(shortage.path("menuItemId").asText()).isEqualTo(menu.getId().toString());
+            assertThat(shortage.path("requestedQuantity").decimalValue()).isEqualByComparingTo("3");
+            assertThat(shortage.path("maxAvailableQuantity").decimalValue()).isEqualByComparingTo("1");
+            assertThat(shortage.path("sharesIngredientWithOtherLines").asBoolean()).isTrue();
+            assertThat(shortage.has("shortIngredients")).as("waiter without INVENTORY_VIEW").isFalse();
+        }
+        var manager=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,STOCK_READER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        for(var shortage:manager.body.at("/details/lines")){
+            assertThat(shortage.path("maxAvailableQuantity").decimalValue()).isEqualByComparingTo("1");
+            assertThat(shortage.at("/shortIngredients/0/ingredientId").asText()).isEqualTo(ingredient.getId().toString());
+            assertThat(shortage.at("/shortIngredients/0/availableQuantity").decimalValue()).isEqualByComparingTo("500");
+            assertThat(shortage.at("/shortIngredients/0/requiredQuantity").decimalValue()).isEqualByComparingTo("630");
+        }
         assertNoOrderArtifacts();assertThat(count("audit_logs")).isEqualTo(auditBefore);balance(warehouse,"500","0","500");
         receive(warehouse,ingredient,"500","10");call(post("/api/v1/orders").header("Idempotency-Key",key),request,ORDER).expect(201);
         balance(warehouse,"1000","630","370");assertInvariant();
@@ -162,13 +179,21 @@ class OrderInventoryAllocationIntegrationTest {
         stock("1000");var missing=item("Missing",ItemType.INGREDIENT,"g",true);
         RecipeItem extra=new RecipeItem();extra.initialize(restaurant.getId(),recipe.getId(),missing,BigDecimal.ONE,BigDecimal.ZERO,NOW);recipeItems.saveAndFlush(extra);
         var table=table();var request=body(true,"3");request.put("serviceType","DINE_IN");request.put("sourceChannel","WAITER");request.put("tableId",table.getId());
-        long audits=count("audit_logs");call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        long audits=count("audit_logs");var failure=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,STOCK_READER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(failure.body.at("/details/lines/0/maxAvailableQuantity").decimalValue()).isEqualByComparingTo("0");
+        assertThat(failure.body.at("/details/lines/0/sharesIngredientWithOtherLines").asBoolean()).isFalse();
+        assertThat(failure.body.at("/details/lines/0/shortIngredients")).singleElement()
+            .satisfies(node->{assertThat(node.path("name").asText()).isEqualTo("Missing");assertThat(node.path("availableQuantity").decimalValue()).isEqualByComparingTo("0");});
         assertNoOrderArtifacts();assertThat(count("table_sessions")).isZero();assertThat(count("audit_logs")).isEqualTo(audits);balance(warehouse,"1000","0","1000");
     }
     @Test void insufficientAppendPreservesExistingRootLinesReservationAndIdempotency() throws Exception {
         stock("400");var first=create(true,"3").expect(201);var before=allocation(first,0).body;long audits=count("audit_logs");
         String key=UUID.randomUUID().toString();var request=addition(first,"1");
-        call(post(path(first)+"/items").header("Idempotency-Key",key),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        var failure=call(post(path(first)+"/items").header("Idempotency-Key",key),request,STOCK_READER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(failure.body.at("/details/lines")).hasSize(1);
+        assertThat(failure.body.at("/details/lines/0/maxAvailableQuantity").decimalValue()).isEqualByComparingTo("0");
+        assertThat(failure.body.at("/details/lines/0/shortIngredients/0/availableQuantity").decimalValue()).isEqualByComparingTo("85");
+        assertThat(failure.body.at("/details/lines/0/shortIngredients/0/requiredQuantity").decimalValue()).isEqualByComparingTo("105");
         assertThat(detail(first).body).isEqualTo(first.body);assertThat(allocation(first,0).body).isEqualTo(before);
         assertThat(count("order_item_submissions")).isZero();assertThat(count("audit_logs")).isEqualTo(audits);balance(warehouse,"400","315","85");
         receive(warehouse,ingredient,"100","10");call(post(path(first)+"/items").header("Idempotency-Key",key),request,ORDER).expect(200);assertInvariant();
@@ -188,7 +213,7 @@ class OrderInventoryAllocationIntegrationTest {
         var added=append(cooking,"1").expect(200);assertThat(allocation(added,1).expect(200).body.path("status").asText()).isEqualTo("RESERVED");balance(warehouse,"1000","105","895");assertInvariant();
     }
     @Test void trackedSnapshotRequiresValidDefaultAndSparseZeroBalanceCannotProvideStock() throws Exception {
-        create(true,"3").error(409,"INVENTORY_DEFAULT_WAREHOUSE_REQUIRED");assertNoOrderArtifacts();
+        assertThat(create(true,"3").error(409,"INVENTORY_DEFAULT_WAREHOUSE_REQUIRED").body.has("details")).isFalse();assertNoOrderArtifacts();
         warehouse=createWarehouse("MAIN").id();long rows=count("inventory_balances"),audits=count("audit_logs");
         var zero=call(get("/api/v1/inventory/warehouses/"+warehouse+"/balances/"+ingredient.getId()),null,ALL).expect(200);
         assertThat(zero.body.path("configured").asBoolean()).isFalse();for(String field:List.of("quantity","reservedQuantity","availableQuantity"))assertThat(zero.body.path(field).decimalValue()).isEqualByComparingTo("0");
@@ -855,6 +880,6 @@ class OrderInventoryAllocationIntegrationTest {
     long events(String event){return jdbc.queryForObject("select count(*) from audit_logs where restaurant_id=? and action_code=?",Long.class,restaurant.getId(),event);}
     long recipeUses(){return jdbc.queryForObject("select count(*) from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE'",Long.class,restaurant.getId());}
     Reply call(MockHttpServletRequestBuilder request,Object body,Set<String> permissions)throws Exception{if(body!=null)request.content(json.writeValueAsString(body));var actor=new CurrentUser(user.getId(),restaurant.getId(),user.getEmail(),"OWNER",permissions);var auth=new UsernamePasswordAuthenticationToken(actor,null,permissions.stream().map(SimpleGrantedAuthority::new).toList());var response=mvc.perform(request.contentType(MediaType.APPLICATION_JSON).with(authentication(auth))).andReturn().getResponse();return new Reply(response.getStatus(),response.getContentAsString().isBlank()?json.createObjectNode():json.readTree(response.getContentAsString()),response.getHeader("Cache-Control"));}
-    record Reply(int status,JsonNode body,String cache){UUID id(){return UUID.fromString(body.path("id").asText());}UUID line(int index){return UUID.fromString(body.at("/items/"+index+"/id").asText());}long version(){return body.path("version").asLong();}Reply expect(int code){assertThat(status).as(body.toString()).isEqualTo(code);return this;}void error(int status,String code){expect(status);assertThat(body.path("code").asText()).isEqualTo(code);}}
+    record Reply(int status,JsonNode body,String cache){UUID id(){return UUID.fromString(body.path("id").asText());}UUID line(int index){return UUID.fromString(body.at("/items/"+index+"/id").asText());}long version(){return body.path("version").asLong();}Reply expect(int code){assertThat(status).as(body.toString()).isEqualTo(code);return this;}Reply error(int status,String code){expect(status);assertThat(body.path("code").asText()).isEqualTo(code);return this;}}
     List<Reply> race(Callable<Reply> one,Callable<Reply> two)throws Exception{var ready=new CountDownLatch(2);var go=new CountDownLatch(1);try(var pool=Executors.newFixedThreadPool(2)){var a=pool.submit(()->{ready.countDown();go.await(10,TimeUnit.SECONDS);return one.call();});var b=pool.submit(()->{ready.countDown();go.await(10,TimeUnit.SECONDS);return two.call();});assertThat(ready.await(10,TimeUnit.SECONDS)).isTrue();go.countDown();return List.of(a.get(30,TimeUnit.SECONDS),b.get(30,TimeUnit.SECONDS));}}
 }

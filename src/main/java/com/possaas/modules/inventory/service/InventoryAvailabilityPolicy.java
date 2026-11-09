@@ -33,10 +33,18 @@ public class InventoryAvailabilityPolicy {
     }
 
     public void requireAvailable(InventoryBalance balance, BigDecimal requested) {
-        quantity(requested);
-        BigDecimal available = balance == null ? BigDecimal.ZERO : balance.getAvailableQuantity();
-        if (available.compareTo(requested) < 0)
+        if (!hasAvailable(balance, requested))
             throw new ConflictException("INSUFFICIENT_AVAILABLE_STOCK", "Insufficient available inventory");
+    }
+
+    public boolean hasAvailable(InventoryBalance balance, BigDecimal requested) {
+        quantity(requested);
+        return available(balance).compareTo(requested) >= 0;
+    }
+
+    /** Sparse balances have no stock to offer. */
+    public BigDecimal available(InventoryBalance balance) {
+        return balance == null ? new BigDecimal("0.000") : balance.getAvailableQuantity();
     }
 
     public void requireStockPosting(BigDecimal after, BigDecimal reserved) {

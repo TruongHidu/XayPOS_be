@@ -13,6 +13,15 @@ version, Idempotency-Key và security của ORDER/KDS/QR hiện có.
 - INVENTORY_DEFAULT_WAREHOUSE_REQUIRED: báo owner cần cấu hình kho. Với
   INSUFFICIENT_AVAILABLE_STOCK, reload dữ liệu, cho staff xử lý lựa chọn/nhập tồn
   rồi thử lại. Không coi lỗi là order đã gửi một phần.
+- INSUFFICIENT_AVAILABLE_STOCK có `details.lines`. Với mỗi dòng hiển thị
+  "{itemName}: chỉ còn {maxAvailableQuantity} {unit}" hoặc "{itemName}: đã hết" khi
+  bằng 0. Nếu `sharesIngredientWithOtherLines` thì thêm "dùng chung nguyên liệu với
+  món khác trong đơn" (số còn lại đã giả định các dòng khác giữ nguyên). Map dòng
+  về giỏ bằng `menuItemId` + thứ tự, không dựa vào `orderItemId` (đã rollback).
+  `shortIngredients` (tên, available, tổng cần) chỉ có khi user có INVENTORY_VIEW;
+  thiếu field thì không hiển thị khối nguyên liệu, không coi là lỗi. Số liệu
+  chỉ đúng tại thời điểm báo; lần gửi lại vẫn được kiểm tra. Code cũ chỉ đọc
+  `code` vẫn chạy đúng; các lỗi khác không có `details`.
 - QR PENDING/review không giữ nguyên liệu. Approve thiếu tồn không tự reject;
   request tiếp tục PENDING. Sau bổ sung tồn, review lại và dùng version/hash mới
   theo quote/context guard, không tự thay hash hoặc giả APPROVED trên client.

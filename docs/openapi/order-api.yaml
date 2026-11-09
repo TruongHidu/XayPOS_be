@@ -2,7 +2,7 @@
 "info":
   "title": "POS SaaS Staff Order MVP"
   "version": "1.7.0"
-  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/single-item and bulk mark-ready/mark-served/complete/close operations are documented in kitchen-lifecycle-api.yaml. V23 grants KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN without bypassing snapshot features or user DENY; bulk body uses expectedOrderVersion. V24 complete DINE_IN atomically closes exactly order.tableSessionId after full payment, all live items SERVED and session readiness, with ORDER_COMPLETE+TABLE_CLOSE and ORDER_MANAGEMENT+TABLE_MANAGEMENT. TAKEAWAY requires only ORDER_COMPLETE+ORDER_MANAGEMENT and no TABLE operation. Complete body remains expectedVersion of ORDER and response remains OrderResponse; CLOSED retries are no-ops, legacy COMPLETED+OPEN repairs close only the session if ready. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including manual close/cancel according to existing policies; refresh/login required. V25 QR ordering uses separate guest pending-request and staff-approval APIs in public-qr-order-api.yaml. Staff hashes, DTOs and POS_QUICK_ORDER gate remain unchanged. V33 reserves tracked immutable snapshot usages during SUBMIT/confirm/append/QR approve; DRAFT and QR pending never reserve. Missing default warehouse or insufficient available stock returns 409 INVENTORY_DEFAULT_WAREHOUSE_REQUIRED/INSUFFICIENT_AVAILABLE_STOCK and rolls back the whole command. PENDING starts consume once; cancel PENDING releases without increasing physical. Durable SKIPPED never applies inventory later. Existing staff permissions suffice without inventory/recipe management permissions. Payment/complete do not deduct; table transfer preserves allocation warehouse. Allocation details remain separate in tenant-api.yaml and never enter ordinary OrderResponse. No /orders/from-table route; occupancy stays in TABLE."
+  "description": "Staff ORDER with serviceType Strategy and create/append/update-item CoR. POST /orders accepts tableId+SUBMIT to open seating and confirm atomically, or legacy tableSessionId. V19 enforces one serving DINE_IN order per session. Legacy hashes retained; table intent has its own fingerprint. Manual payment is documented separately in payment-api.yaml. KDS/single-item and bulk mark-ready/mark-served/complete/close operations are documented in kitchen-lifecycle-api.yaml. V23 grants KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN without bypassing snapshot features or user DENY; bulk body uses expectedOrderVersion. V24 complete DINE_IN atomically closes exactly order.tableSessionId after full payment, all live items SERVED and session readiness, with ORDER_COMPLETE+TABLE_CLOSE and ORDER_MANAGEMENT+TABLE_MANAGEMENT. TAKEAWAY requires only ORDER_COMPLETE+ORDER_MANAGEMENT and no TABLE operation. Complete body remains expectedVersion of ORDER and response remains OrderResponse; CLOSED retries are no-ops, legacy COMPLETED+OPEN repairs close only the session if ready. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including manual close/cancel according to existing policies; refresh/login required. V25 QR ordering uses separate guest pending-request and staff-approval APIs in public-qr-order-api.yaml. Staff hashes, DTOs and POS_QUICK_ORDER gate remain unchanged. V33 reserves tracked immutable snapshot usages during SUBMIT/confirm/append/QR approve; DRAFT and QR pending never reserve. Missing default warehouse or insufficient available stock returns 409 INVENTORY_DEFAULT_WAREHOUSE_REQUIRED/INSUFFICIENT_AVAILABLE_STOCK and rolls back the whole command. INSUFFICIENT_AVAILABLE_STOCK carries details.lines (InsufficientStockError) for staff callers only. PENDING starts consume once; cancel PENDING releases without increasing physical. Durable SKIPPED never applies inventory later. Existing staff permissions suffice without inventory/recipe management permissions. Payment/complete do not deduct; table transfer preserves allocation warehouse. Allocation details remain separate in tenant-api.yaml and never enter ordinary OrderResponse. No /orders/from-table route; occupancy stays in TABLE."
 "security":
   -
     "BearerAuth": []
@@ -158,7 +158,7 @@
         "404":
           "$ref": "#/components/responses/NotFound"
         "409":
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/StockConflict"
         "500":
           "$ref": "#/components/responses/Internal"
       "requestBody":
@@ -327,7 +327,7 @@
         "404":
           "$ref": "#/components/responses/NotFound"
         "409":
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/StockConflict"
         "500":
           "$ref": "#/components/responses/Internal"
       "requestBody":
@@ -482,7 +482,7 @@
         "404":
           "$ref": "#/components/responses/NotFound"
         "409":
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/StockConflict"
         "500":
           "$ref": "#/components/responses/Internal"
       "requestBody":
@@ -729,6 +729,20 @@
         "application/json":
           "schema":
             "$ref": "#/components/schemas/Error"
+    "StockConflict":
+      "description": "Same codes as Conflict. INSUFFICIENT_AVAILABLE_STOCK additionally returns details.lines (InsufficientStockError): per new reserving line the requested quantity, maxAvailableQuantity in the menu unit (FLOOR, assuming other lines of the same command stay unchanged), sharesIngredientWithOtherLines, and shortIngredients only for callers with INVENTORY_VIEW. The whole command is still rolled back."
+      "headers":
+        "Cache-Control":
+          "description": "Responses are not cached."
+          "schema":
+            "type": "string"
+            "example": "no-store"
+      "content":
+        "application/json":
+          "schema":
+            "oneOf":
+              - "$ref": "#/components/schemas/Error"
+              - "$ref": "#/components/schemas/InsufficientStockError"
     "Internal":
       "description": "INTERNAL_ERROR; no SQL or exception details."
       "headers":
@@ -1301,6 +1315,104 @@
         "totalPages":
           "type": "integer"
           "minimum": 0
+    "InsufficientStockError":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "success"
+        - "code"
+        - "message"
+        - "fieldErrors"
+        - "timestamp"
+        - "details"
+      "properties":
+        "success":
+          "type": "boolean"
+          "enum":
+            - false
+        "code":
+          "type": "string"
+          "enum":
+            - "INSUFFICIENT_AVAILABLE_STOCK"
+        "message":
+          "type": "string"
+        "fieldErrors":
+          "type": "object"
+          "additionalProperties":
+            "type": "string"
+        "timestamp":
+          "type": "string"
+          "format": "date-time"
+        "details":
+          "type": "object"
+          "additionalProperties": false
+          "required":
+            - "lines"
+          "properties":
+            "lines":
+              "type": "array"
+              "minItems": 1
+              "items":
+                "$ref": "#/components/schemas/StockShortageLine"
+    "StockShortageLine":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "orderItemId"
+        - "menuItemId"
+        - "itemName"
+        - "requestedQuantity"
+        - "maxAvailableQuantity"
+        - "unit"
+        - "sharesIngredientWithOtherLines"
+      "properties":
+        "orderItemId":
+          "type": "string"
+          "format": "uuid"
+          "description": "Rolled-back line id; use menuItemId and request order to map to the cart."
+        "menuItemId":
+          "type": "string"
+          "format": "uuid"
+        "itemName":
+          "type": "string"
+        "requestedQuantity":
+          "type": "number"
+        "maxAvailableQuantity":
+          "type": "number"
+          "minimum": 0
+          "description": "Conservative FLOOR estimate in the menu unit; 0 means sold out."
+        "unit":
+          "type": "string"
+        "sharesIngredientWithOtherLines":
+          "type": "boolean"
+        "shortIngredients":
+          "type": "array"
+          "minItems": 1
+          "description": "Present only when the caller has INVENTORY_VIEW; omitted otherwise (not an empty array)."
+          "items":
+            "$ref": "#/components/schemas/StockShortIngredient"
+    "StockShortIngredient":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "ingredientId"
+        - "name"
+        - "unit"
+        - "availableQuantity"
+        - "requiredQuantity"
+      "properties":
+        "ingredientId":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+        "unit":
+          "type": "string"
+        "availableQuantity":
+          "type": "number"
+        "requiredQuantity":
+          "type": "number"
+          "description": "Whole command demand for this ingredient."
     "Error":
       "type": "object"
       "additionalProperties": false

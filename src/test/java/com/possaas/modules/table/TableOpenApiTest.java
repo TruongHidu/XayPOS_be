@@ -23,7 +23,7 @@ class TableOpenApiTest {
                     });
                 }
             });
-            assertThat(operations).hasSize(23);
+            assertThat(operations).hasSize(25);
             var transfer = root.path("paths").path("/api/v1/table-sessions/{sessionId}/transfer").path("post");
             assertThat(transfer.path("description").asText()).contains("TABLE_TRANSFER", "TABLE_MANAGEMENT");
             assertThat(transfer.path("parameters").toString()).contains("Idempotency-Key");

@@ -23,7 +23,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class QrStaffErrorHandler {
     private final Clock clock;
     @ExceptionHandler(BusinessException.class) ResponseEntity<ErrorResponse> business(BusinessException failure) {
-        return error(failure.getStatus(), failure.getCode(), failure.getMessage());
+        return error(failure.getStatus(), failure.getCode(), failure.getMessage(), failure.details());
     }
     @ExceptionHandler({BindException.class, ConstraintViolationException.class, MethodArgumentTypeMismatchException.class, HandlerMethodValidationException.class})
     ResponseEntity<ErrorResponse> validation(Exception ignored) { return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Request validation failed"); }
@@ -55,7 +55,10 @@ public class QrStaffErrorHandler {
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Could not process the QR review request");
     }
     private ResponseEntity<ErrorResponse> error(HttpStatus status, String code, String message) {
+        return error(status, code, message, null);
+    }
+    private ResponseEntity<ErrorResponse> error(HttpStatus status, String code, String message, Object details) {
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore())
-            .body(new ErrorResponse(false, code, message, Map.of(), clock.instant()));
+            .body(new ErrorResponse(false, code, message, Map.of(), clock.instant(), details));
     }
 }

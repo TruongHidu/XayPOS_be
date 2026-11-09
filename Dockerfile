@@ -14,7 +14,9 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -q package -DskipTests \
 
 # ---- Runtime stage: JRE only, non-root ----
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S app && adduser -S app -G app
+# Java2D text rendering for printable QR cards needs freetype/fontconfig and a font with Vietnamese glyphs.
+RUN apk add --no-cache fontconfig freetype ttf-dejavu \
+    && addgroup -S app && adduser -S app -G app
 WORKDIR /app
 COPY --from=build /app/app.jar app.jar
 USER app

@@ -23,7 +23,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class OrderConflictHandler {
     private final Clock clock;
     @ExceptionHandler(BusinessException.class)
-    ResponseEntity<ErrorResponse> business(BusinessException failure) { return error(failure.getStatus(),failure.getCode(),failure.getMessage()); }
+    ResponseEntity<ErrorResponse> business(BusinessException failure) { return error(failure.getStatus(),failure.getCode(),failure.getMessage(),failure.details()); }
     @ExceptionHandler({BindException.class,ConstraintViolationException.class,MethodArgumentTypeMismatchException.class,HandlerMethodValidationException.class})
     ResponseEntity<ErrorResponse> validation(Exception failure) { return error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","Request validation failed"); }
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -52,7 +52,8 @@ public class OrderConflictHandler {
         if(inventory!=null) return business(inventory);
         return error(HttpStatus.INTERNAL_SERVER_ERROR,"INTERNAL_ERROR","Could not process the order request");
     }
-    private ResponseEntity<ErrorResponse> error(HttpStatus status,String code,String message) {
-        return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(new ErrorResponse(false,code,message,Map.of(),clock.instant()));
+    private ResponseEntity<ErrorResponse> error(HttpStatus status,String code,String message) { return error(status,code,message,null); }
+    private ResponseEntity<ErrorResponse> error(HttpStatus status,String code,String message,Object details) {
+        return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(new ErrorResponse(false,code,message,Map.of(),clock.instant(),details));
     }
 }

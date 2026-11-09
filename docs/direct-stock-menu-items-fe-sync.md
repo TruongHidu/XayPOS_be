@@ -79,6 +79,8 @@ Tiếp tục dùng API order/QR hiện tại, không có API đặt đơn riêng
 - DRAFT/cart/QR pending/review: không giữ kho.
 - SUBMIT/confirm/append SUBMIT/QR approve: chốt quyết định và giữ kho.
 - Thiếu tồn: 409 INSUFFICIENT_AVAILABLE_STOCK; toàn command rollback, kể cả phiên mới.
+  `details.lines[].maxAvailableQuantity` là số còn bán theo đơn vị món (ví dụ "còn 2 lon");
+  `shortIngredients` (chỉ khi có INVENTORY_VIEW) có đúng một phần tử là chính item.
 - Kho mặc định thiếu/inactive: 409 INVENTORY_DEFAULT_WAREHOUSE_REQUIRED.
 - PENDING -> COOKING hoặc bulk PENDING -> SERVED: consume một lần.
 - mark-ready giữ rule hiện tại: món phải bắt đầu nấu; không thêm đường tắt mới.

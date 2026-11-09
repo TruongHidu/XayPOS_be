@@ -108,6 +108,6 @@ class TablePolicyTest {
         table.setQrToken("sensitive-qr-material");
         var audit = new TableAudit(mock(AuditService.class));
         assertThat(audit.snapshot(table).toString()).doesNotContain("sensitive-qr-material", "qrToken", "qrPath", "qrTokenHash");
-        assertThat(TableQrResponse.from(table).toString()).doesNotContain("sensitive-qr-material");
+        assertThat(TableQrResponse.from(table, new com.possaas.config.PublicMenuProperties()).toString()).doesNotContain("sensitive-qr-material");
     }
 }

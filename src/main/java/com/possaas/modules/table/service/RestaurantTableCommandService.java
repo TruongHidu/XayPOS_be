@@ -1,6 +1,7 @@
 package com.possaas.modules.table.service;
 
 import com.possaas.common.security.CurrentUser;
+import com.possaas.config.PublicMenuProperties;
 import com.possaas.modules.table.dto.*;
 import com.possaas.modules.table.entity.*;
 import com.possaas.modules.table.repository.RestaurantTableRepository;
@@ -24,6 +25,7 @@ public class RestaurantTableCommandService {
     private final TableAudit audit;
     private final Clock clock;
     private final TableGuestAccessLifecycle qrRequests;
+    private final PublicMenuProperties menu;
 
     public RestaurantTableResponse create(TableRequests.CreateTable r, String ip) {
         var actor = access.require(true);
@@ -109,7 +111,7 @@ public class RestaurantTableCommandService {
         table.setQrToken(tokens.rotate(table.getQrToken()));
         persist(actor, table, "TABLE_QR_ROTATED", before, ip);
         qrRequests.invalidateTable(actor.restaurantId(), id, "TABLE_QR_ROTATED", actor.userId(), table.getUpdatedAt(), ip);
-        return TableQrResponse.from(table);
+        return TableQrResponse.from(table, menu);
     }
 
     private void persist(CurrentUser actor, RestaurantTable table, String action, Map<String, Object> before, String ip) {

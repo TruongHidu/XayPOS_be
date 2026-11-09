@@ -367,9 +367,23 @@ paths:
     get:
       tags: ["Tables"]
       operationId: "getTableQr"
-      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Restricted management response. Does not mutate/audit. qrPath is a future web menu contract, not an implemented public API."
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Restricted management response. Does not mutate/audit. menuUrl is the absolute link encoded by /qr/image and /qr/card."
       parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]
       responses: {"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TableQr"}}}},"400":{"description":"VALIDATION_ERROR, INVALID_REQUEST_BODY or EMPTY_UPDATE_REQUEST","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_AREA_NOT_FOUND, TABLE_NOT_FOUND or TABLE_SESSION_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"409":{"description":"TABLE_AREA_NAME_EXISTS, TABLE_CODE_EXISTS, TABLE_AREA_INACTIVE, TABLE_AREA_NOT_EMPTY, TABLE_AREA_HAS_OPEN_SESSIONS, TABLE_INACTIVE, TABLE_ALREADY_OCCUPIED, TABLE_HAS_OPEN_SESSION, INVALID_TABLE_SESSION_TRANSITION, CONCURRENT_TABLE_UPDATE or QR_TOKEN_CONFLICT","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/qr/image":
+    get:
+      tags: ["Tables"]
+      operationId: "getTableQrImage"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Bare QR code encoding menuUrl (PUBLIC_MENU_BASE_URL + /menu/qr/{qrToken}), rendered on demand and never stored. Contains the bearer table token: Cache-Control no-store; clients must fetch with the Authorization header and display via a blob URL. Read-only, no audit."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"format","in":"query","required":false,"schema":{"type":"string","enum":["png","svg"],"default":"png"},"description":"Case-insensitive."},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":128,"maximum":2048,"default":512},"description":"Pixel width/height including the 4-module quiet zone."},{"name":"download","in":"query","required":false,"schema":{"type":"boolean","default":false},"description":"true gives Content-Disposition attachment, otherwise inline."}]
+      responses: {"200":{"description":"QR image","headers":{"Cache-Control":{"schema":{"type":"string","example":"no-store"}},"Content-Disposition":{"schema":{"type":"string","example":"inline; filename=\"qr-ban-b01.png\""}}},"content":{"image/png":{"schema":{"type":"string","format":"binary"}},"image/svg+xml":{"schema":{"type":"string"}}}},"400":{"description":"VALIDATION_ERROR: format other than png/svg or size outside 128..2048","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_NOT_FOUND or RESTAURANT_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
+  "/api/v1/tables/{tableId}/qr/card":
+    get:
+      tags: ["Tables"]
+      operationId: "getTableQrCard"
+      description: "Requires TABLE_UPDATE and TABLE_MANAGEMENT in the effective subscription snapshot. Tenant is derived only from Bearer JWT; account and restaurant must be active. Printable 1240x1748 PNG (A6 at 300 dpi): restaurant name, QR of menuUrl, table name, table code (omitted when equal to the name) and a scan hint. Rendered on demand, never stored, Cache-Control no-store. Read-only, no audit."
+      parameters: [{"name":"tableId","in":"path","required":true,"schema":{"type":"string","format":"uuid"}},{"name":"download","in":"query","required":false,"schema":{"type":"boolean","default":false}}]
+      responses: {"200":{"description":"Printable card","headers":{"Cache-Control":{"schema":{"type":"string","example":"no-store"}},"Content-Disposition":{"schema":{"type":"string","example":"inline; filename=\"qr-ban-b01.png\""}}},"content":{"image/png":{"schema":{"type":"string","format":"binary"}}}},"400":{"description":"VALIDATION_ERROR: format other than png/svg or size outside 128..2048","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"401":{"description":"UNAUTHORIZED or ACCOUNT_INACTIVE","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"403":{"description":"FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE or FEATURE_NOT_ENTITLED","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}},"404":{"description":"TABLE_NOT_FOUND or RESTAURANT_NOT_FOUND; foreign-tenant identifiers are hidden","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Error"}}}}}
   "/api/v1/tables/{tableId}/qr/rotate":
     post:
       tags: ["Tables"]
@@ -2550,8 +2564,8 @@ components:
     TableQr:
       type: "object"
       additionalProperties: false
-      properties: {"tableId":{"type":"string","format":"uuid"},"qrToken":{"type":"string","pattern":"^[A-Za-z0-9_-]{43}$"},"qrPath":{"type":"string","description":"Relative future public-menu route /menu/qr/{qrToken}; no public route is implemented in this phase."},"version":{"type":"integer","format":"int64","minimum":0}}
-      required: ["tableId","qrToken","qrPath","version"]
+      properties: {"tableId":{"type":"string","format":"uuid"},"qrToken":{"type":"string","pattern":"^[A-Za-z0-9_-]{43}$"},"qrPath":{"type":"string","description":"Relative frontend route /menu/qr/{qrToken}."},"menuUrl":{"type":"string","format":"uri","description":"Absolute URL encoded in the printed QR: PUBLIC_MENU_BASE_URL + qrPath."},"version":{"type":"integer","format":"int64","minimum":0}}
+      required: ["tableId","qrToken","qrPath","menuUrl","version"]
     TableSession:
       type: "object"
       additionalProperties: false

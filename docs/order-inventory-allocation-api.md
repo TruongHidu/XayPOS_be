@@ -118,12 +118,15 @@ tracked vì còn MANUAL/untracked. Snapshot tiền không chứng minh đã cons
 ## Lỗi
 
 Business conflict trả 409 theo error envelope hiện có. UI dùng code, không parse
-message. Lỗi gửi món không tiết lộ recipe, giá hoặc toàn bộ số dư cho waiter/guest.
+message. Lỗi gửi món không tiết lộ giá, toàn bộ recipe hay toàn bộ số dư cho
+waiter/guest; riêng INSUFFICIENT_AVAILABLE_STOCK trả thêm `details` cho staff
+(xem mục "Chi tiết thiếu tồn"): mức món cho mọi staff, nguyên liệu chỉ cho
+INVENTORY_VIEW; guest QR không bao giờ nhận.
 
 | Code | Cách xử lý |
 | --- | --- |
 | INVENTORY_DEFAULT_WAREHOUSE_REQUIRED | Owner cấu hình kho mặc định hợp lệ, rồi thử lại |
-| INSUFFICIENT_AVAILABLE_STOCK | Reload order/balance; bổ sung tồn hoặc thay lựa chọn theo luồng hiện có |
+| INSUFFICIENT_AVAILABLE_STOCK | Đọc `details.lines` để báo món/số lượng còn bán; reload, bổ sung tồn hoặc giảm số lượng rồi thử lại |
 | INVENTORY_ALLOCATION_NOT_FOUND | Dữ liệu dòng đã gửi thiếu quyết định; cần kiểm tra backend |
 | INVALID_INVENTORY_ALLOCATION_TRANSITION / INVENTORY_ALLOCATION_CONFLICT | Reload và kiểm tra trạng thái, không tự sửa lịch sử |
 | INVENTORY_RESERVATION_INVARIANT_VIOLATION | Kiểm tra nhất quán; không tự trừ hoặc reserve bù |
@@ -175,3 +178,49 @@ OpenAPI: [tenant-api.yaml](openapi/tenant-api.yaml).
 
 
 V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.
+
+## Chi tiết thiếu tồn
+
+Khi SUBMIT/confirm/append/QR approve thiếu tồn, response 409 vẫn giữ `code`,
+`message`, `fieldErrors`, `timestamp` như cũ và có thêm `details`
+(schema `InsufficientStockError` trong `openapi/order-api.yaml`):
+
+```json
+{
+  "success": false,
+  "code": "INSUFFICIENT_AVAILABLE_STOCK",
+  "message": "Insufficient available inventory",
+  "fieldErrors": {},
+  "timestamp": "2026-11-09T03:00:00Z",
+  "details": { "lines": [ {
+    "orderItemId": "…", "menuItemId": "…", "itemName": "Phở bò",
+    "requestedQuantity": 3.000, "maxAvailableQuantity": 1.000, "unit": "tô",
+    "sharesIngredientWithOtherLines": true,
+    "shortIngredients": [ { "ingredientId": "…", "name": "Thịt bò", "unit": "g",
+      "availableQuantity": 500.000, "requiredQuantity": 630.000 } ]
+  } ] }
+}
+```
+
+- `lines` chỉ gồm dòng mới có giữ tồn (không SKIPPED) và dùng ít nhất một nguyên
+  liệu thiếu, theo thứ tự request. Nguyên liệu "thiếu" khi tổng nhu cầu của cả
+  command lớn hơn available.
+- `maxAvailableQuantity` tính theo đơn vị món, **giả định các dòng khác trong cùng
+  command giữ nguyên**: với mỗi nguyên liệu k của dòng,
+  `remaining = max(0, available − (demand − own))`,
+  `max_k = FLOOR(remaining × orderQuantity / own)`; kết quả là min các `max_k` và
+  số lượng yêu cầu. Số lượng nguyên dùng bước 1, số lượng thập phân dùng bước 0.001.
+  Vì snapshot làm tròn CEILING nên con số này bảo thủ: không bao giờ vượt quá tồn
+  thật, có thể thấp hơn 1 bước.
+- Ví dụ: tồn 500 g, mỗi phần 105 g, hai dòng mỗi dòng 3 phần (tổng 630 g): mỗi dòng
+  `maxAvailableQuantity = FLOOR((500 − 315) × 3 / 315) = 1`,
+  `sharesIngredientWithOtherLines = true`.
+- `shortIngredients` chỉ chứa nguyên liệu thiếu mà dòng dùng; `requiredQuantity`
+  là tổng nhu cầu của cả command. Món DIRECT có đúng một phần tử là chính item.
+- `shortIngredients` chỉ trả khi người gọi có quyền `INVENTORY_VIEW` (cùng quyền
+  đọc tồn/allocation). Không có quyền thì field bị **bỏ hẳn** (không phải mảng rỗng);
+  các field mức món vẫn trả đầy đủ. `sharesIngredientWithOtherLines` không lộ tên
+  hay lượng nguyên liệu nên trả cho mọi staff.
+- `orderItemId` là id của dòng đã bị rollback; FE map về giỏ bằng `menuItemId` và
+  thứ tự dòng. Số liệu chỉ đúng tại thời điểm trả lỗi.
+- Phiếu kho, stock audit và các lỗi khác vẫn trả envelope cũ, không có `details`.

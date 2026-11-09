@@ -139,7 +139,13 @@ class DirectStockIntegrationTest {
     }
     @Test void missingStockRollsBackSessionAndAcceptanceArtifacts() throws Exception {
         direct();stock("2");var request=body(true,"3");request.put("serviceType","DINE_IN");request.put("sourceChannel","WAITER");request.put("tableId",table().getId());
-        call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        var failure=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(failure.body.at("/details/lines")).singleElement().satisfies(shortage->{
+            assertThat(shortage.path("itemName").asText()).isEqualTo("Coca lon");assertThat(shortage.path("unit").asText()).isEqualTo("lon");
+            assertThat(shortage.path("maxAvailableQuantity").decimalValue()).isEqualByComparingTo("2");
+            assertThat(shortage.has("shortIngredients")).isFalse();});
+        var manager=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ALL).error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(manager.body.at("/details/lines/0/shortIngredients/0/ingredientId").asText()).isEqualTo(menu.getId().toString());
         assertNoOrderArtifacts();assertThat(count("table_sessions")).isZero();balance(warehouse,"2","0","2");
     }
     @Test void concurrentOrdersCannotOversellLastStock() throws Exception {
@@ -219,7 +225,10 @@ class DirectStockIntegrationTest {
     }
     @Test void aggregateDirectDemandAndAuditFailureRollbackWholeCommand() throws Exception {
         direct();stock("3");var request=body(true,"2");request.put("items",List.of(line(menu.getId(),"2","a"),line(menu.getId(),"2","b")));
-        call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");assertNoOrderArtifacts();
+        var failure=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).error(409,"INSUFFICIENT_AVAILABLE_STOCK");assertNoOrderArtifacts();
+        assertThat(failure.body.at("/details/lines")).hasSize(2).allSatisfy(shortage->{
+            assertThat(shortage.path("maxAvailableQuantity").decimalValue()).isEqualByComparingTo("1");
+            assertThat(shortage.path("sharesIngredientWithOtherLines").asBoolean()).isTrue();});
         doThrow(new IllegalStateException("audit failure")).when(audit).recordAll(anyList());create(true,"1").expect(500);reset(audit);
         assertNoOrderArtifacts();balance(warehouse,"3","0","3");assertThat(committed.orders).isEmpty();
     }
@@ -311,6 +320,6 @@ class DirectStockIntegrationTest {
     long events(String event){return jdbc.queryForObject("select count(*) from audit_logs where restaurant_id=? and action_code=?",Long.class,restaurant.getId(),event);}
     long recipeUses(){return jdbc.queryForObject("select count(*) from inventory_transactions where restaurant_id=? and transaction_type='RECIPE_USE'",Long.class,restaurant.getId());}
     Reply call(MockHttpServletRequestBuilder request,Object body,Set<String> permissions)throws Exception{if(body!=null)request.content(json.writeValueAsString(body));var actor=new CurrentUser(user.getId(),restaurant.getId(),user.getEmail(),"OWNER",permissions);var auth=new UsernamePasswordAuthenticationToken(actor,null,permissions.stream().map(SimpleGrantedAuthority::new).toList());var response=mvc.perform(request.contentType(MediaType.APPLICATION_JSON).with(authentication(auth))).andReturn().getResponse();return new Reply(response.getStatus(),response.getContentAsString().isBlank()?json.createObjectNode():json.readTree(response.getContentAsString()),response.getHeader("Cache-Control"));}
-    record Reply(int status,JsonNode body,String cache){UUID id(){return UUID.fromString(body.path("id").asText());}UUID line(int index){return UUID.fromString(body.at("/items/"+index+"/id").asText());}long version(){return body.path("version").asLong();}Reply expect(int code){assertThat(status).as(body.toString()).isEqualTo(code);return this;}void error(int status,String code){expect(status);assertThat(body.path("code").asText()).isEqualTo(code);}}
+    record Reply(int status,JsonNode body,String cache){UUID id(){return UUID.fromString(body.path("id").asText());}UUID line(int index){return UUID.fromString(body.at("/items/"+index+"/id").asText());}long version(){return body.path("version").asLong();}Reply expect(int code){assertThat(status).as(body.toString()).isEqualTo(code);return this;}Reply error(int status,String code){expect(status);assertThat(body.path("code").asText()).isEqualTo(code);return this;}}
     List<Reply> race(Callable<Reply> one,Callable<Reply> two)throws Exception{var ready=new CountDownLatch(2);var go=new CountDownLatch(1);try(var pool=Executors.newFixedThreadPool(2)){var a=pool.submit(()->{ready.countDown();go.await(10,TimeUnit.SECONDS);return one.call();});var b=pool.submit(()->{ready.countDown();go.await(10,TimeUnit.SECONDS);return two.call();});assertThat(ready.await(10,TimeUnit.SECONDS)).isTrue();go.countDown();return List.of(a.get(30,TimeUnit.SECONDS),b.get(30,TimeUnit.SECONDS));}}
 }

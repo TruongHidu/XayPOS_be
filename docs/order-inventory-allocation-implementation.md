@@ -227,3 +227,22 @@ FE: [order-inventory-allocation-fe-sync.md](order-inventory-allocation-fe-sync.m
 
 
 V40 hỗ trợ [hàng bán sẵn theo dõi tồn trực tiếp](direct-stock-menu-items-fe-sync.md). MENU_ITEM DIRECT không cần công thức; nhập kho và tiêu thụ chính item. Xem hướng dẫn về itemId/itemType, alias nguyên liệu, feature và snapshot lịch sử.
+
+## Chi tiết thiếu tồn (INSUFFICIENT_AVAILABLE_STOCK.details)
+
+- `BusinessException.details()` mặc định null; `ErrorResponse.details` có
+  `@JsonInclude(NON_NULL)` và constructor 5 tham số cũ, nên mọi lỗi khác giữ nguyên JSON.
+- `InsufficientStockException` (port ORDER `order/application/port`) là
+  `ConflictException` với code cũ và payload `Details/ShortageLine/ShortIngredient`.
+  INVENTORY phụ thuộc vào port; ORDER không phụ thuộc INVENTORY.
+- `AcceptedItem` thêm `menuItemId`, `itemName` (map tại `OrderInventoryAllocationOperation`).
+- `InventoryAllocationPolicy.revealsShortIngredients(actor)` (quyền `INVENTORY_VIEW`)
+  quyết định có trả `shortIngredients`; adapter truyền cờ vào calculator, handler
+  không biết gì về tồn kho. Thiếu quyền thì field là null và bị bỏ khỏi JSON.
+- `InventoryShortageCalculator` là component thuần (không repository) tính dòng thiếu và
+  `maxAvailableQuantity`. Adapter chỉ gọi khi `InventoryAvailabilityPolicy.hasAvailable`
+  thất bại, tại đúng vị trí cũ: sau khi khóa balance, trước mọi lần ghi.
+- `OrderConflictHandler`, `QrStaffErrorHandler`, `GlobalExceptionHandler` truyền
+  `details()`; `PublicQrOrderErrorHandler` không đổi nên guest không thấy chi tiết.
+- OpenAPI giữ nguyên schema `Error`; 409 của create/append/confirm dùng `StockConflict`,
+  QR approve dùng `ApprovalConflict` (`oneOf: [Error, InsufficientStockError]`).

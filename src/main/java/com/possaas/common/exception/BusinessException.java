@@ -13,4 +13,9 @@ public class BusinessException extends RuntimeException {
         this.status = status;
         this.code = code;
     }
+
+    /** Structured payload safe for authenticated callers; null when the failure carries no details. */
+    public Object details() {
+        return null;
+    }
 }

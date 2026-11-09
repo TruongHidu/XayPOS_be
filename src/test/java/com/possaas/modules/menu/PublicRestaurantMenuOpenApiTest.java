@@ -11,7 +11,7 @@ class PublicRestaurantMenuOpenApiTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final Map<Path, JsonNode> documents = new HashMap<>();
 
-    @Test void allFiveOperationsHaveCorrectSecurityAndResponseContracts() throws Exception {
+    @Test void allOperationsHaveCorrectSecurityAndResponseContracts() throws Exception {
         var file = Path.of("docs/openapi/public-restaurant-menu-api.yaml"); var root = document(file);
         var operations = new HashSet<String>();
         root.path("paths").fields().forEachRemaining(path -> path.getValue().forEach(operation -> {
@@ -28,7 +28,7 @@ class PublicRestaurantMenuOpenApiTest {
                 assertThat(operation.path("responses").has("401")).isTrue();
             }
         }));
-        assertThat(operations).hasSize(5); assertThat(root.path("paths").size()).isEqualTo(4);
+        assertThat(operations).hasSize(7); assertThat(root.path("paths").size()).isEqualTo(6);
         var fields = new HashSet<String>(); root.at("/components/schemas/PublicRestaurantMenu/properties").fieldNames().forEachRemaining(fields::add);
         assertThat(fields).containsExactlyInAnyOrder("restaurant", "groups");
         assertThat(root.at("/components/schemas/RotateMenuLink/required").toString()).contains("expectedToken").doesNotContain("expectedVersion");

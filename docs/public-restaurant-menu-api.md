@@ -14,7 +14,7 @@ Files changed and actual verification results: [implementation report](public-re
 
 1. OWNER, MANAGER hoặc tenant user có quyền `RESTAURANT_PROFILE_UPDATE` lấy link bằng API authenticated.
 2. Nhà hàng có token null khởi tạo bằng POST; GET không sinh token.
-3. Frontend dự kiến sử dụng `/menu/{menuToken}`; ghép với origin web khi chia sẻ/in QR.
+3. Frontend dùng `/menu/{menuToken}`; backend trả sẵn `menuUrl` tuyệt đối và có API render ảnh QR/thẻ in.
 4. Khách gọi hai GET public, không gửi Authorization.
 5. Backend resolve nhà hàng và kiểm tra subscription snapshot rồi đọc menu chung.
 
@@ -98,18 +98,19 @@ Authorization: Bearer <accessToken>
 Accept: application/json
 ```
 
-Cả ba endpoint yêu cầu `RESTAURANT_PROFILE_UPDATE`, tenant lấy từ principal. Quyền mặc định ở OWNER và MANAGER; người được cấp quyền cũng có thể dùng. System account không có tenant bị từ chối. Token không xuất hiện trong DTO profile/admin list/login. Không cần QR_MENU_VIEW hoặc subscription chỉ để quản lý link; trạng thái account/restaurant và các security filter private vẫn áp dụng. Khách mở link sau đó vẫn phải qua public feature gate.
+Cả năm endpoint (link + ảnh QR) yêu cầu `RESTAURANT_PROFILE_UPDATE`, tenant lấy từ principal. Quyền mặc định ở OWNER và MANAGER; người được cấp quyền cũng có thể dùng. System account không có tenant bị từ chối. Token không xuất hiện trong DTO profile/admin list/login. Không cần QR_MENU_VIEW hoặc subscription chỉ để quản lý link; trạng thái account/restaurant và các security filter private vẫn áp dụng. Khách mở link sau đó vẫn phải qua public feature gate.
 
 Response 200 chung:
 
 ```json
 {
   "menuToken": "<token cấp nhà hàng>",
-  "menuPath": "/menu/<token cấp nhà hàng>"
+  "menuPath": "/menu/<token cấp nhà hàng>",
+  "menuUrl": "https://<PUBLIC_MENU_BASE_URL>/menu/<token cấp nhà hàng>"
 }
 ```
 
-Giá trị trong dấu `<...>` là placeholder. Backend chỉ trả path frontend, không hardcode domain/localhost. Response dùng no-store.
+Giá trị trong dấu `<...>` là placeholder. `menuUrl` = `app.public-menu.base-url` (env `PUBLIC_MENU_BASE_URL`, mặc định dev `http://localhost:3000`, prod bắt buộc https) + `menuPath`; đây là link được mã hoá trong ảnh QR. Response dùng no-store.
 
 ### GET /api/v1/restaurants/me/menu-link
 
@@ -130,6 +131,16 @@ Headers thêm `Content-Type: application/json`.
 expectedToken bắt buộc, không blank, tối đa 128 ký tự để so sánh token lưu hiện tại; field không hỗ trợ bị từ chối. Không dùng expectedVersion vì Restaurant không có @Version. Dưới cùng pessimistic lock, expectedToken cũ trả 409 `CONCURRENT_MENU_LINK_UPDATE`; token chưa khởi tạo trả 404 `PUBLIC_MENU_LINK_NOT_INITIALIZED`. Token mới phải khác token cũ; unique collision trả 409 `PUBLIC_MENU_TOKEN_CONFLICT`.
 
 Lưu token và audit `RESTAURANT_MENU_LINK_ROTATED` trong cùng transaction. Audit failure rollback token. Hai rotate cùng expectedToken chỉ một thành công. Không đổi QR bàn/snapshot. Token cũ bị từ chối từ request public tiếp theo, không xóa được nội dung đã tải trong browser.
+
+### GET /api/v1/restaurants/me/menu-link/qr/image
+
+Ảnh QR trần chứa `menuUrl`. Query: `format=png|svg` (mặc định png, không phân biệt hoa thường), `size=128..2048` (mặc định 512, tính cả quiet zone 4 module), `download=true|false` (attachment/inline). Response `image/png` hoặc `image/svg+xml`, `Cache-Control: no-store`, filename `qr-menu.png|svg`. Sai format/size trả 400 `VALIDATION_ERROR`; token chưa khởi tạo trả 404 `PUBLIC_MENU_LINK_NOT_INITIALIZED`. Chỉ đọc, không audit.
+
+### GET /api/v1/restaurants/me/menu-link/qr/card
+
+Thẻ in PNG 1240×1748 (A6 @300 dpi): tên nhà hàng, QR của `menuUrl`, dòng "Menu nhà hàng" và hướng dẫn quét. Query `download` như trên; filename `the-qr-menu.png`.
+
+Ảnh render theo yêu cầu, không lưu Cloudinary/disk (đổi token thì ảnh cũ tự vô hiệu ở lần quét tiếp theo, nhưng bản đã in phải in lại). Endpoint cần Bearer nên frontend không dùng thẳng `<img src>`: `fetch` kèm `Authorization` → `response.blob()` → `URL.createObjectURL(blob)`.
 
 V25 bổ sung cùng transaction: revoke guest grants và cancel PENDING RESTAURANT QR requests của credential cũ với reason RESTAURANT_MENU_TOKEN_ROTATED. Không tác động QR_TABLE requests, APPROVED orders hoặc payments. Body/response/permission menu-link không đổi; initialize/read vẫn không tạo request hoặc order.
 

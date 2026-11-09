@@ -174,7 +174,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '409': {$ref: '#/components/responses/Conflict'}
+        '409': {$ref: '#/components/responses/ApprovalConflict'}
         '413': {$ref: '#/components/responses/PayloadTooLarge'}
         '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/qr-order-requests/{requestId}/reject:
@@ -294,6 +294,17 @@ components:
         or existing order financial/concurrency/sellability errors. No successful audit and no partial writes.
       headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ApprovalConflict:
+      description: >-
+        Same codes as Conflict plus INVENTORY_DEFAULT_WAREHOUSE_REQUIRED and INSUFFICIENT_AVAILABLE_STOCK; the request stays PENDING.
+        INSUFFICIENT_AVAILABLE_STOCK returns staff-only details.lines (InsufficientStockError); guest endpoints never expose it.
+      headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: '#/components/schemas/Error'}
+              - {$ref: 'order-api.yaml#/components/schemas/InsufficientStockError'}
     RateLimited:
       description: QR_RATE_LIMIT_EXCEEDED. Bounded configurable in-memory limiter is single-instance; shared limiter required for multi-instance deployment.
       headers:

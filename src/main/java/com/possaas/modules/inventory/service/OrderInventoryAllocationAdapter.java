@@ -6,6 +6,8 @@ import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery;
 import com.possaas.modules.inventory.application.port.RecipeUsageCostQuery.UsageCost;
 import com.possaas.modules.inventory.entity.*;
 import com.possaas.modules.inventory.repository.*;
+import com.possaas.modules.order.application.port.InsufficientStockException;
+import com.possaas.modules.order.application.port.InsufficientStockException.ShortageLine;
 import com.possaas.modules.order.application.port.OrderInventoryAllocationCommand;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -29,6 +31,7 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
     private final RecipeUsageCostQuery usageCosts;
     private final InventoryAllocationPolicy policy;
     private final InventoryAvailabilityPolicy availability;
+    private final InventoryShortageCalculator shortages;
     private final InventoryAllocationAudit audit;
     private final LowStockAlertReconciliationService alerts;
 
@@ -69,7 +72,8 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
         }
         Set<BalanceKey> keys = new HashSet<>(state.keys()); keys.addAll(demand.keySet());
         Map<BalanceKey, InventoryBalance> locked = balanceState(actor.restaurantId(), keys, true, state.keys());
-        demand.forEach((key, quantity) -> availability.requireAvailable(locked.get(key), quantity));
+        if (!demand.entrySet().stream().allMatch(entry -> availability.hasAvailable(locked.get(entry.getKey()), entry.getValue())))
+            throw insufficient(actor, fresh, decisions, demand.keySet(), locked);
 
         Map<UUID, AcceptedItem> input = items.stream().collect(Collectors.toMap(AcceptedItem::orderItemId, Function.identity()));
         List<OrderItemInventoryAllocation> created = fresh.stream().map(item ->
@@ -199,6 +203,17 @@ public class OrderInventoryAllocationAdapter implements OrderInventoryAllocation
             } else availability.invariant(balance, reserved);
         }
         return result;
+    }
+
+    /** Every demand key shares the command's default warehouse, so availability is keyed by ingredient. */
+    private InsufficientStockException insufficient(CurrentUser actor, List<AcceptedItem> fresh,
+            Map<UUID, InventoryAllocationSkipReason> decisions, Set<BalanceKey> keys, Map<BalanceKey, InventoryBalance> locked) {
+        Map<UUID, BigDecimal> available = new HashMap<>();
+        for (BalanceKey key : keys) available.put(key.ingredientId(), availability.available(locked.get(key)));
+        List<AcceptedItem> reservable = fresh.stream().filter(item -> decisions.get(item.orderItemId()) == null).toList();
+        List<ShortageLine> lines = shortages.shortages(reservable, available, policy.revealsShortIngredients(actor));
+        if (lines.isEmpty()) throw InventoryAvailabilityPolicy.invariant();
+        return new InsufficientStockException(lines);
     }
 
     private void requireInput(List<AcceptedItem> items) {

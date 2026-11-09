@@ -108,6 +108,54 @@ paths:
         '404': {$ref: '#/components/responses/LinkNotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/restaurants/me/menu-link/qr/image:
+    get:
+      operationId: getRestaurantMenuLinkQrImage
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE. Bare QR code of menuUrl (PUBLIC_MENU_BASE_URL + /menu/{menuToken}) rendered on demand and never stored. Contains the bearer menu token; fetch with Authorization and display via a blob URL. Read-only, no audit; null token gives PUBLIC_MENU_LINK_NOT_INITIALIZED.
+      security:
+        - BearerAuth: []
+      parameters:
+        - {name: format, in: query, required: false, description: Case-insensitive., schema: {type: string, enum: [png, svg], default: png}}
+        - {name: size, in: query, required: false, description: Pixel width/height including the 4-module quiet zone., schema: {type: integer, minimum: 128, maximum: 2048, default: 512}}
+        - $ref: '#/components/parameters/Download'
+      responses:
+        '200':
+          description: QR image.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Content-Disposition: {$ref: '#/components/headers/ImageDisposition'}
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+            image/svg+xml:
+              schema: {type: string}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/restaurants/me/menu-link/qr/card:
+    get:
+      operationId: getRestaurantMenuLinkQrCard
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE. Printable 1240x1748 PNG (A6 at 300 dpi) with restaurant name, QR of menuUrl and a takeaway scan hint. Rendered on demand, never stored, no audit.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Download'
+      responses:
+        '200':
+          description: Printable card.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            Content-Disposition: {$ref: '#/components/headers/ImageDisposition'}
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     BearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -118,13 +166,22 @@ components:
       required: true
       description: Restaurant public_order_token; not a table QR token. Malformed token returns generic 404.
       schema: {type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$'}
+    Download:
+      name: download
+      in: query
+      required: false
+      description: true gives Content-Disposition attachment, otherwise inline.
+      schema: {type: boolean, default: false}
   headers:
     NoStore:
       description: Do not cache token responses or public menu data.
       schema: {type: string, example: no-store}
+    ImageDisposition:
+      description: inline or attachment with an ASCII filename (qr-menu.png, qr-menu.svg, the-qr-menu.png).
+      schema: {type: string, example: 'inline; filename="qr-menu.png"'}
   responses:
     MenuLink:
-      description: Existing, initialized or newly rotated restaurant menu link. Placeholder web path must be combined with the frontend origin.
+      description: Existing, initialized or newly rotated restaurant menu link. menuUrl already combines menuPath with the configured frontend origin.
       headers:
         Cache-Control: {$ref: '#/components/headers/NoStore'}
       content:
@@ -202,10 +259,11 @@ components:
     RestaurantMenuLink:
       type: object
       additionalProperties: false
-      required: [menuToken, menuPath]
+      required: [menuToken, menuPath, menuUrl]
       properties:
         menuToken: {type: string, maxLength: 128, description: 'Maps to restaurants.public_order_token; generated tokens have 43 base64url characters.'}
-        menuPath: {type: string, description: 'Frontend relative path /menu/{menuToken}; no domain hardcoded.'}
+        menuPath: {type: string, description: 'Frontend relative path /menu/{menuToken}.'}
+        menuUrl: {type: string, format: uri, description: 'Absolute URL encoded in printed QR codes: PUBLIC_MENU_BASE_URL + menuPath.'}
     RotateMenuLink:
       type: object
       additionalProperties: false

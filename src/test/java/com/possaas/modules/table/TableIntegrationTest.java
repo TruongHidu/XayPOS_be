@@ -292,6 +292,48 @@ class TableIntegrationTest {
     }
 
     @Test
+    void qrImageAndCardEncodeAbsoluteMenuUrlAreRestrictedAndNeverCached() throws Exception {
+        var t = table(null, "Bàn 7");
+        var qr = call(get(tp(t) + "/qr"));
+        String token = qr.body.path("qrToken").asText();
+        String url = "http://localhost:3000/menu/qr/" + token;
+        assertThat(qr.body.path("menuUrl").asText()).isEqualTo(url);
+
+        var png = raw(get(tp(t) + "/qr/image"), owner, ALL);
+        assertThat(png.getStatus()).isEqualTo(200);
+        assertThat(png.getContentType()).isEqualTo("image/png");
+        assertThat(png.getHeader("Cache-Control")).contains("no-store");
+        assertThat(png.getHeader("Content-Disposition")).startsWith("inline").contains("qr-ban-ban-7.png");
+        assertThat(com.possaas.support.QrDecoding.decodePng(png.getContentAsByteArray())).isEqualTo(url);
+
+        var svg = raw(get(tp(t) + "/qr/image").param("format", "SVG").param("size", "300").param("download", "true"), owner, ALL);
+        assertThat(svg.getStatus()).isEqualTo(200);
+        assertThat(svg.getContentType()).startsWith("image/svg+xml");
+        assertThat(svg.getHeader("Content-Disposition")).startsWith("attachment").contains(".svg");
+        assertThat(svg.getContentAsString()).contains("<svg", "width=\"300\"").doesNotContain(token);
+
+        var card = raw(get(tp(t) + "/qr/card"), owner, ALL);
+        assertThat(card.getStatus()).isEqualTo(200);
+        assertThat(card.getContentType()).isEqualTo("image/png");
+        assertThat(card.getHeader("Cache-Control")).contains("no-store");
+        assertThat(com.possaas.support.QrDecoding.decodePng(card.getContentAsByteArray())).isEqualTo(url);
+
+        call(get(tp(t) + "/qr/image").param("format", "jpg")).error(400, "VALIDATION_ERROR");
+        call(get(tp(t) + "/qr/image").param("size", "64")).error(400, "VALIDATION_ERROR");
+        call(get(tp(t) + "/qr/image").param("size", "4096")).error(400, "VALIDATION_ERROR");
+        for (String path : List.of("/qr/image", "/qr/card"))
+            call(get(tp(t) + path), owner, Set.of("TABLE_VIEW")).error(403, "FORBIDDEN");
+        call(get(TABLES + "/" + UUID.randomUUID() + "/qr/card")).error(404, "TABLE_NOT_FOUND");
+
+        var rotated = call(post(tp(t) + "/qr/rotate"), Map.of("expectedVersion", 0));
+        String fresh = "http://localhost:3000/menu/qr/" + rotated.body.path("qrToken").asText();
+        assertThat(rotated.body.path("menuUrl").asText()).isEqualTo(fresh);
+        assertThat(com.possaas.support.QrDecoding.decodePng(raw(get(tp(t) + "/qr/card"), owner, ALL).getContentAsByteArray()))
+                .isEqualTo(fresh);
+        assertThat(events("TABLE_QR_ROTATED")).isEqualTo(1);
+    }
+
+    @Test
     void qrCollisionRollsBackAndHasSpecificError(CapturedOutput output) throws Exception {
         var t = table(null, "TOKEN1");
         String token = call(get(tp(t) + "/qr")).body.path("qrToken").asText();
@@ -580,6 +622,12 @@ class TableIntegrationTest {
         var auth = new UsernamePasswordAuthenticationToken(principal, null, codes.stream().map(SimpleGrantedAuthority::new).toList());
         var response = mvc.perform(request.contentType(MediaType.APPLICATION_JSON).with(authentication(auth))).andReturn().getResponse();
         return new Result(response.getStatus(), response.getContentAsString().isBlank() ? json.createObjectNode() : json.readTree(response.getContentAsString()));
+    }
+
+    private org.springframework.mock.web.MockHttpServletResponse raw(MockHttpServletRequestBuilder request, User user, Set<String> codes) throws Exception {
+        var principal = new CurrentUser(user.getId(), user.getRestaurantId(), user.getEmail(), "OWNER", codes);
+        var auth = new UsernamePasswordAuthenticationToken(principal, null, codes.stream().map(SimpleGrantedAuthority::new).toList());
+        return mvc.perform(request.with(authentication(auth))).andReturn().getResponse();
     }
 
     private Result bearer(MockHttpServletRequestBuilder request, Set<String> codes) throws Exception {

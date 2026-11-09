@@ -1,9 +1,13 @@
 package com.possaas.modules.restaurant.controller;
 
+import com.possaas.infrastructure.qrcode.QrCodeRenderer;
+import com.possaas.infrastructure.qrcode.QrImageFormat;
 import com.possaas.modules.restaurant.dto.*;
 import com.possaas.modules.restaurant.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +30,18 @@ public class RestaurantMenuLinkController {
     @PostMapping
     public ResponseEntity<RestaurantMenuLinkResponse> initialize(HttpServletRequest http) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(command.initialize(http.getRemoteAddr()));
+    }
+
+    @GetMapping("/qr/image")
+    public ResponseEntity<byte[]> qrImage(@RequestParam(defaultValue = "png") String format,
+            @RequestParam(defaultValue = "" + QrCodeRenderer.DEFAULT_SIZE) @Min(QrCodeRenderer.MIN_SIZE) @Max(QrCodeRenderer.MAX_SIZE) int size,
+            @RequestParam(defaultValue = "false") boolean download) {
+        return query.qrImage(QrImageFormat.parse(format), size).toResponse(download);
+    }
+
+    @GetMapping("/qr/card")
+    public ResponseEntity<byte[]> qrCard(@RequestParam(defaultValue = "false") boolean download) {
+        return query.qrCard().toResponse(download);
     }
 
     @PostMapping("/rotate")

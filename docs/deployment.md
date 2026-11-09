@@ -57,6 +57,8 @@ nano .env
 
 Các biến bắt buộc: `DOMAIN`, `POSTGRES_*`, `JWT_SECRET`. Ở lần chạy đầu, đặt `SUPER_ADMIN_BOOTSTRAP_ENABLED=true` và điền email, mật khẩu cho tài khoản super admin.
 
+`PUBLIC_MENU_BASE_URL` (tuỳ chọn) là origin frontend được mã hoá vào ảnh QR bàn/QR menu; mặc định `https://${DOMAIN}`. Đổi biến này không đổi token nhưng các thẻ QR đã in theo domain cũ cần in lại.
+
 `deploy/.env` đã nằm trong `.gitignore`, **không được commit file này**.
 
 ## 5. Chạy

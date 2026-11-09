@@ -53,6 +53,7 @@ Nếu request TABLE chưa quan sát phiên lúc gửi nhưng hiện đã có S, 
 ## Xử lý xung đột và replay
 
 - `QR_REVIEW_CONTEXT_CHANGED`: tải lại detail, hiển thị phần thay đổi và yêu cầu nhân viên xác nhận lần nữa. Không tự thay hash rồi tự approve.
+- `INSUFFICIENT_AVAILABLE_STOCK` khi approve: request vẫn PENDING; hiển thị `details.lines` cho nhân viên như màn order (món, số còn bán; nguyên liệu thiếu chỉ khi có INVENTORY_VIEW). API của khách không bao giờ trả `details`.
 - `CONCURRENT_QR_REQUEST_UPDATE`: tải lại request. Nếu người khác đã xử lý, hiển thị kết quả đó; không chuyển intent sang order/phiên khác.
 - `QR_REQUEST_SESSION_CHANGED`: hiển thị phiên/bàn đã đổi hoặc kết thúc; không tự gắn request cũ vào lượt khách mới.
 - `QR_ORDER_REQUEST_EXPIRED`: request không duyệt được dù stored status vẫn PENDING; dùng `expired` và `canApprove` để thể hiện. Không đợi job dọn dữ liệu.

@@ -1,3 +1,6 @@
+# Keep the original project name so the existing pos-saas-be_pos_saas_postgres_data volume is reused.
+name: pos-saas-be
+
 services:
   postgres:
     image: postgres:17-alpine

@@ -84,7 +84,7 @@ class PublicRestaurantMenuPolicyTest {
 
     @Test void sensitiveDtosAndNestedAuditKeysAreRedacted() {
         String token = new PublicLinkTokenGenerator().generate();
-        assertThat(RestaurantMenuLinkResponse.fromToken(token).toString()).doesNotContain(token);
+        assertThat(RestaurantMenuLinkResponse.fromToken(token, new com.possaas.config.PublicMenuProperties()).toString()).doesNotContain(token);
         assertThat(new RotateRestaurantMenuLinkRequest(token).toString()).doesNotContain(token);
         var redactor = new AuditDataRedactor();
         for (String key : List.of("menuToken", "restaurant_menu_token", "expected-token", "menuPath")) {

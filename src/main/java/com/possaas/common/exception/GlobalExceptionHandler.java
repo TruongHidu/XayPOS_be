@@ -1,5 +1,6 @@
 package com.possaas.common.exception;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
@@ -21,11 +22,16 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-    public record ErrorResponse(boolean success, String code, String message, Map<String, String> fieldErrors, Instant timestamp) {}
+    public record ErrorResponse(boolean success, String code, String message, Map<String, String> fieldErrors, Instant timestamp,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Object details) {
+        public ErrorResponse(boolean success, String code, String message, Map<String, String> fieldErrors, Instant timestamp) {
+            this(success, code, message, fieldErrors, timestamp, null);
+        }
+    }
 
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<ErrorResponse> business(BusinessException ex) {
-        return ResponseEntity.status(ex.getStatus()).body(new ErrorResponse(false, ex.getCode(), ex.getMessage(), Map.of(), Instant.now()));
+        return ResponseEntity.status(ex.getStatus()).body(new ErrorResponse(false, ex.getCode(), ex.getMessage(), Map.of(), Instant.now(), ex.details()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

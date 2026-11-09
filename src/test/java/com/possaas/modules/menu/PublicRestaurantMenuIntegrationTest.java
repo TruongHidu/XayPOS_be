@@ -300,10 +300,35 @@ class PublicRestaurantMenuIntegrationTest {
             owner.setRoleId(roles.findByCodeAndRestaurantIdIsNull(role).orElseThrow().getId()); owner = users.saveAndFlush(owner);
             var user = new CurrentUser(owner.getId(), restaurant.getId(), owner.getEmail(), role, permissions.getEffectivePermissionCodes(owner.getId()));
             var result = body(get(LINK).header("Authorization", "Bearer " + jwt.createAccessToken(user)), 200);
-            assertThat(fields(result)).containsExactlyInAnyOrder("menuToken", "menuPath");
+            assertThat(fields(result)).containsExactlyInAnyOrder("menuToken", "menuPath", "menuUrl");
             assertThat(result.path("menuToken").asText()).isEqualTo(token());
             assertThat(result.path("menuPath").asText()).isEqualTo("/menu/" + token());
+            assertThat(result.path("menuUrl").asText()).isEqualTo("http://localhost:3000/menu/" + token());
         }
+        assertThat(events()).isZero();
+    }
+
+    @Test void menuLinkQrImageAndCardEncodeAbsoluteUrlAndAreNeverCached() throws Exception {
+        String url = "http://localhost:3000/menu/" + token();
+        var png = call(own(get(LINK + "/qr/image")));
+        assertThat(png.getStatus()).isEqualTo(200);
+        assertThat(png.getContentType()).isEqualTo("image/png");
+        assertThat(png.getHeader("Cache-Control")).contains("no-store");
+        assertThat(png.getHeader("Content-Disposition")).startsWith("inline").contains("qr-menu.png");
+        assertThat(com.possaas.support.QrDecoding.decodePng(png.getContentAsByteArray())).isEqualTo(url);
+        var svg = call(own(get(LINK + "/qr/image").param("format", "svg")));
+        assertThat(svg.getStatus()).isEqualTo(200);
+        assertThat(svg.getContentType()).startsWith("image/svg+xml");
+        var card = call(own(get(LINK + "/qr/card").param("download", "true")));
+        assertThat(card.getStatus()).isEqualTo(200);
+        assertThat(card.getHeader("Content-Disposition")).startsWith("attachment").contains("the-qr-menu.png");
+        assertThat(com.possaas.support.QrDecoding.decodePng(card.getContentAsByteArray())).isEqualTo(url);
+
+        error(own(get(LINK + "/qr/image").param("format", "gif")), 400, "VALIDATION_ERROR");
+        error(own(get(LINK + "/qr/image").param("size", "10")), 400, "VALIDATION_ERROR");
+        for (String path : List.of("/qr/image", "/qr/card")) error(auth(get(LINK + path), actor(Set.of())), 403, "FORBIDDEN");
+        jdbc.update("update restaurants set public_order_token=null where id=?", restaurant.getId());
+        for (String path : List.of("/qr/image", "/qr/card")) error(own(get(LINK + path)), 404, "PUBLIC_MENU_LINK_NOT_INITIALIZED");
         assertThat(events()).isZero();
     }
 

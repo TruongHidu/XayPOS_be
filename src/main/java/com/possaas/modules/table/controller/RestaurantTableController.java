@@ -1,10 +1,13 @@
 package com.possaas.modules.table.controller;
 
+import com.possaas.infrastructure.qrcode.QrCodeRenderer;
+import com.possaas.infrastructure.qrcode.QrImageFormat;
 import com.possaas.modules.table.dto.*;
 import com.possaas.modules.table.service.*;
 import com.possaas.modules.subscription.dto.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +65,19 @@ public class RestaurantTableController {
     @GetMapping("/{tableId}/qr") @PreAuthorize("hasAuthority('TABLE_UPDATE')")
     public TableQrResponse qr(@PathVariable UUID tableId) {
         return query.qr(tableId);
+    }
+
+    @GetMapping("/{tableId}/qr/image") @PreAuthorize("hasAuthority('TABLE_UPDATE')")
+    public ResponseEntity<byte[]> qrImage(@PathVariable UUID tableId,
+            @RequestParam(defaultValue = "png") String format,
+            @RequestParam(defaultValue = "" + QrCodeRenderer.DEFAULT_SIZE) @Min(QrCodeRenderer.MIN_SIZE) @Max(QrCodeRenderer.MAX_SIZE) int size,
+            @RequestParam(defaultValue = "false") boolean download) {
+        return query.qrImage(tableId, QrImageFormat.parse(format), size).toResponse(download);
+    }
+
+    @GetMapping("/{tableId}/qr/card") @PreAuthorize("hasAuthority('TABLE_UPDATE')")
+    public ResponseEntity<byte[]> qrCard(@PathVariable UUID tableId, @RequestParam(defaultValue = "false") boolean download) {
+        return query.qrCard(tableId).toResponse(download);
     }
 
     @PostMapping("/{tableId}/qr/rotate") @PreAuthorize("hasAuthority('TABLE_UPDATE')")

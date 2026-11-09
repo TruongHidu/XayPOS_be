@@ -3,6 +3,7 @@ package com.possaas.modules.restaurant.service;
 import com.possaas.common.exception.ConflictException;
 import com.possaas.common.exception.ResourceNotFoundException;
 import com.possaas.common.security.*;
+import com.possaas.config.PublicMenuProperties;
 import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.restaurant.dto.*;
 import com.possaas.modules.restaurant.entity.Restaurant;
@@ -26,14 +27,15 @@ public class RestaurantMenuLinkCommandService {
     private final AuditService audit;
     private final RestaurantMenuGuestAccessLifecycle qrRequests;
     private final Clock clock;
+    private final PublicMenuProperties menu;
 
     public RestaurantMenuLinkResponse initialize(String ip) {
         var restaurant = lockedRestaurant();
-        if (restaurant.getPublicOrderToken() != null) return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken());
+        if (restaurant.getPublicOrderToken() != null) return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken(), menu);
         restaurant.setPublicOrderToken(freshToken(null));
         restaurants.saveAndFlush(restaurant);
         record(restaurant, "RESTAURANT_MENU_LINK_INITIALIZED", Map.of("initialized", false), Map.of("initialized", true), ip);
-        return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken());
+        return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken(), menu);
     }
 
     public RestaurantMenuLinkResponse rotate(RotateRestaurantMenuLinkRequest request, String ip) {
@@ -47,7 +49,7 @@ public class RestaurantMenuLinkCommandService {
         record(restaurant, "RESTAURANT_MENU_LINK_ROTATED", Map.of("initialized", true),
                 Map.of("initialized", true, "rotated", true), ip);
         qrRequests.invalidateRestaurantCredential(restaurant.getId(), previous, users.getRequired().userId(), clock.instant(), ip);
-        return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken());
+        return RestaurantMenuLinkResponse.fromToken(restaurant.getPublicOrderToken(), menu);
     }
 
     private Restaurant lockedRestaurant() {

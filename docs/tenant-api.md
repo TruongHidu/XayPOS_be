@@ -431,6 +431,8 @@ tenant override header. The base path is `/api/v1`.
 | PATCH /tables/{tableId}/area | TABLE_UPDATE | AreaAssignment | 200 Table |
 | DELETE /tables/{tableId} | TABLE_UPDATE | expectedVersion query, required | 204 |
 | GET /tables/{tableId}/qr | TABLE_UPDATE | — | 200 QR |
+| GET /tables/{tableId}/qr/image | TABLE_UPDATE | query format, size, download | 200 image/png or image/svg+xml |
+| GET /tables/{tableId}/qr/card | TABLE_UPDATE | query download | 200 image/png |
 | POST /tables/{tableId}/qr/rotate | TABLE_UPDATE | Version | 200 QR |
 | POST /tables/{tableId}/sessions | TABLE_OPEN | OpenSession | 201 Session |
 | GET /tables/{tableId}/current-session | TABLE_VIEW | — | 200 Session; 204 when no OPEN |
@@ -610,6 +612,7 @@ QR (management endpoints only; token below is illustrative):
   "tableId":"22222222-2222-4222-8222-222222222222",
   "qrToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   "qrPath":"/menu/qr/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "menuUrl":"https://pos.example.com/menu/qr/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   "version":1
 }
 ```
@@ -619,7 +622,22 @@ changes the token and table version even during an OPEN session; the previous
 token no longer matches the table in DB. Ordinary responses/audit never include
 tokens, token hashes or token-bearing paths. GET QR is read-only and emits no
 mutation audit. Public menu reads and QR ordering are now separate APIs documented above;
-these TABLE management endpoints do not render QR images or let guests mutate sessions/orders.
+these TABLE management endpoints do not let guests mutate sessions/orders.
+
+`menuUrl` is `app.public-menu.base-url` (env `PUBLIC_MENU_BASE_URL`; dev default
+`http://localhost:3000`, https required in prod) + `qrPath`. QR images are rendered on
+demand, never stored, and returned with `Cache-Control: no-store`:
+
+- `GET /tables/{tableId}/qr/image?format=png|svg&size=512&download=false` — bare QR of
+  `menuUrl`; format is case-insensitive, size 128..2048 px including the 4-module quiet
+  zone; invalid values give 400 VALIDATION_ERROR. Filename `qr-ban-{code}.png|svg`.
+- `GET /tables/{tableId}/qr/card?download=false` — printable 1240x1748 PNG (A6 at 300 dpi)
+  with restaurant name, QR, table name and "Mã bàn: {code}" (omitted when equal to the
+  name). Filename `the-qr-ban-{code}.png`.
+
+Both need TABLE_UPDATE + TABLE_MANAGEMENT like GET QR. Rotation changes the token, so a
+re-rendered image encodes the new link and printed cards must be reprinted. The endpoints
+require Bearer auth: the frontend fetches them, then shows `URL.createObjectURL(blob)`.
 
 The datasource sets pgJDBC logServerErrorDetail=false so constraint exceptions
 do not echo QR values into application logs. Keep this setting in deployment

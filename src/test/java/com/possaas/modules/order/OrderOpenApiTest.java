@@ -30,6 +30,20 @@ class OrderOpenApiTest {
         assertThat(create.path("parameters").get(0).path("required").asBoolean()).isTrue();
         assertThat(create.path("responses").has("201")).isTrue();
     }
+    @Test void stockReservingCommandsDocumentShortageDetailsWithoutChangingError() throws Exception {
+        var root=document();
+        for(String path:List.of("/paths/~1api~1v1~1orders/post","/paths/~1api~1v1~1orders~1{orderId}~1items/post","/paths/~1api~1v1~1orders~1{orderId}~1confirm/post"))
+            assertThat(root.at(path+"/responses/409/$ref").asText()).as(path).isEqualTo("#/components/responses/StockConflict");
+        assertThat(root.at("/components/responses/StockConflict/content/application~1json/schema/oneOf").toString()).contains("schemas/Error","schemas/InsufficientStockError");
+        var error=new java.util.ArrayList<String>();root.at("/components/schemas/Error/properties").fieldNames().forEachRemaining(error::add);
+        assertThat(error).containsExactlyInAnyOrder("success","code","message","fieldErrors","timestamp");
+        var shortage=root.at("/components/schemas/InsufficientStockError");
+        assertThat(shortage.path("required").toString()).contains("details");
+        assertThat(shortage.at("/properties/code/enum/0").asText()).isEqualTo("INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(root.at("/components/schemas/StockShortageLine/required").toString()).contains("maxAvailableQuantity","unit","sharesIngredientWithOtherLines").doesNotContain("shortIngredients");
+        assertThat(root.at("/components/schemas/StockShortageLine/properties/shortIngredients/description").asText()).contains("INVENTORY_VIEW");
+        assertThat(root.at("/components/schemas/StockShortIngredient/required").toString()).contains("availableQuantity","requiredQuantity");
+    }
     @Test void schemasDoNotExposeInternalDataOrAllowClientAmountsAndActors() throws Exception {
         var root=document(); var request=root.at("/components/schemas/CreateOrder/properties");
         for(String name:List.of("restaurantId","createdBy","unitPrice","status","paymentStatus","currencyCode","totalAmount")) assertThat(request.has(name)).isFalse();

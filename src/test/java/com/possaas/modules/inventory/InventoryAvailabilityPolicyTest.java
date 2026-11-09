@@ -38,6 +38,17 @@ class InventoryAvailabilityPolicyTest {
         assertCode(() -> policy.requireStockPosting(new BigDecimal("-1.000"), BigDecimal.ZERO), "INSUFFICIENT_STOCK");
     }
 
+    @Test
+    void hasAvailableTreatsSparseBalanceAsZeroWithoutThrowing() {
+        InventoryBalance balance = new InventoryBalance();
+        balance.setQuantity(new BigDecimal("400.000")); balance.setReservedQuantity(new BigDecimal("315.000"));
+        assertThat(policy.hasAvailable(balance, new BigDecimal("85.000"))).isTrue();
+        assertThat(policy.hasAvailable(balance, new BigDecimal("85.001"))).isFalse();
+        assertThat(policy.hasAvailable(null, new BigDecimal("0.001"))).isFalse();
+        assertThat(policy.available(null)).isEqualByComparingTo("0").extracting(BigDecimal::scale).isEqualTo(3);
+        assertCode(() -> policy.hasAvailable(balance, new BigDecimal("0.0001")), "INVENTORY_QUANTITY_OUT_OF_RANGE");
+    }
+
     private static void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable action, String code) {
         assertThatThrownBy(action).isInstanceOf(BusinessException.class).extracting("code").isEqualTo(code);
     }
