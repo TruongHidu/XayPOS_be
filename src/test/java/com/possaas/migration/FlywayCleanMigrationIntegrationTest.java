@@ -62,8 +62,10 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("43");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("45");
             assertThat(countTables(schema)).isEqualTo(46);
+            for (String column : new String[] {"transfer_bank_bin", "transfer_account_number", "transfer_account_name"})
+                assertThat(columnExists(schema, "restaurants", column)).as(column).isTrue();
             assertThat(tableExists(schema, "subscription_purchases")).isTrue();
             assertThat(tableExists(schema, "subscription_payment_attempts")).isTrue();
             assertThat(tableExists(schema, "subscription_payment_events")).isTrue();
@@ -1196,6 +1198,21 @@ class FlywayCleanMigrationIntegrationTest {
                 PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, schema);
             statement.setString(2, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getBoolean(1);
+            }
+        }
+    }
+
+    private boolean columnExists(String schema, String table, String column) throws Exception {
+        String sql = "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = ? AND column_name = ?)";
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, column);
             try (ResultSet resultSet = statement.executeQuery()) {
                 resultSet.next();
                 return resultSet.getBoolean(1);

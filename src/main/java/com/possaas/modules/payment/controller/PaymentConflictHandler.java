@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-@RestControllerAdvice(assignableTypes = PaymentController.class)
+@RestControllerAdvice(assignableTypes = {PaymentController.class, OrderTransferQrController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE) @RequiredArgsConstructor
 public class PaymentConflictHandler {
     private final Clock clock;

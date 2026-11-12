@@ -14,6 +14,15 @@ public class OrderPaymentPolicy {
         OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED);
 
     public void requireFullSettlement(Order order, long expectedVersion, BigDecimal amount) {
+        requirePayable(order);
+        if (order.getVersion() != expectedVersion)
+            throw new ConflictException("CONCURRENT_PAYMENT_UPDATE", "Order changed; reload before paying");
+        if (amount.compareTo(order.getTotalAmount()) != 0)
+            throw new ConflictException("PAYMENT_AMOUNT_MISMATCH", "Payment amount differs from the current bill");
+    }
+
+    /** The order's state allows collecting its full total now, whatever the amount or version offered. */
+    public void requirePayable(Order order) {
         if (order.getPaymentStatus() == OrderPaymentStatus.PAID)
             throw new ConflictException("ORDER_ALREADY_PAID", "Order is already paid");
         if (!PAYABLE.contains(order.getStatus())
@@ -21,9 +30,5 @@ public class OrderPaymentPolicy {
                 || order.getPaidAmount().signum() != 0
                 || order.getTotalAmount().signum() <= 0)
             throw new ConflictException("ORDER_NOT_PAYABLE", "Order cannot be paid in its current state");
-        if (order.getVersion() != expectedVersion)
-            throw new ConflictException("CONCURRENT_PAYMENT_UPDATE", "Order changed; reload before paying");
-        if (amount.compareTo(order.getTotalAmount()) != 0)
-            throw new ConflictException("PAYMENT_AMOUNT_MISMATCH", "Payment amount differs from the current bill");
     }
 }

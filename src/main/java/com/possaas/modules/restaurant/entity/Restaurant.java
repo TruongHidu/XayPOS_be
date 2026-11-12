@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -29,4 +30,24 @@ public class Restaurant extends BaseAuditable {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private RestaurantStatus status = RestaurantStatus.ACTIVE;
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private Map<String, Object> settings = new HashMap<>();
     @Column(name = "deleted_at") private Instant deletedAt;
+
+    // Three columns, read and written only as a whole TransferAccount.
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    @Column(name = "transfer_bank_bin", length = 6) private String transferBankBin;
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    @Column(name = "transfer_account_number", length = 19) private String transferAccountNumber;
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    @Column(name = "transfer_account_name", length = TransferAccount.MAX_NAME_LENGTH) private String transferAccountName;
+
+    public Optional<TransferAccount> transferAccount() {
+        return transferBankBin == null ? Optional.empty()
+            : Optional.of(new TransferAccount(transferBankBin, transferAccountNumber, transferAccountName));
+    }
+
+    /** Null removes the account. */
+    public void changeTransferAccount(TransferAccount account) {
+        transferBankBin = account == null ? null : account.bankBin();
+        transferAccountNumber = account == null ? null : account.accountNumber();
+        transferAccountName = account == null ? null : account.accountName();
+    }
 }
