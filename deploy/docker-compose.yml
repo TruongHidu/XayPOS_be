@@ -1,4 +1,5 @@
-# Production stack: PostgreSQL + Spring Boot backend + Caddy (frontend static + reverse proxy + HTTPS).
+# Production stack: PostgreSQL + Spring Boot backend + Caddy nội bộ (frontend static + reverse proxy).
+# HTTPS và cổng 80/443 do Caddy edge dùng chung giữ (/opt/edge-proxy trên VPS).
 # Expected layout on the server:
 #   ~/pos-saas/pos-saas-be   (this repo)
 #   ~/pos-saas/pos-saas-web  (frontend repo)
@@ -69,7 +70,7 @@ services:
     mem_limit: ${BACKEND_MEM_LIMIT:-1g}
     # No "ports:" on purpose: only Caddy talks to the backend.
 
-   web:
+  web:
     build:
       context: ${FE_DIR:-../../pos-saas-web}
       args:
