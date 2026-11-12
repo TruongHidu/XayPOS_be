@@ -69,7 +69,7 @@ services:
     mem_limit: ${BACKEND_MEM_LIMIT:-1g}
     # No "ports:" on purpose: only Caddy talks to the backend.
 
-  web:
+   web:
     build:
       context: ${FE_DIR:-../../pos-saas-web}
       args:
@@ -82,16 +82,24 @@ services:
     depends_on:
       - backend
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN}}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      # Caddy này chỉ phục vụ HTTP nội bộ. Cổng 80/443 và HTTPS do Caddy edge (/opt/edge-proxy) giữ.
+      # Gán cứng ":80" (không lấy từ .env) để tránh vòng lặp redirect http->https sau edge.
+      SITE_ADDRESS: ":80"
+    # Không mở cổng ra host: edge-caddy gọi vào qua network "edge" (alias pos-saas-web).
+    networks:
+      default: {}
+      edge:
+        aliases:
+          - pos-saas-web
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     mem_limit: 128m
+
+networks:
+  edge:
+    external: true
 
 volumes:
   postgres_data:

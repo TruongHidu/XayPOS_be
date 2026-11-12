@@ -1,5 +1,13 @@
-# SITE_ADDRESS is the domain (e.g. pos.example.com). Caddy obtains and renews
-# the Let's Encrypt certificate automatically. Use ":80" for a plain-HTTP test.
+# Đứng sau Caddy edge (/opt/edge-proxy): tin X-Forwarded-For/Proto do edge (IP nội bộ Docker)
+# gửi tới, để backend vẫn thấy IP thật của khách và biết request gốc là https.
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# SITE_ADDRESS = ":80" khi chạy sau Caddy edge (HTTPS do edge lo).
+# Chạy độc lập không có edge thì đặt SITE_ADDRESS là domain để Caddy tự cấp SSL.
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
