@@ -2,6 +2,7 @@ package com.possaas.modules.subscription.service;
 
 import com.possaas.common.exception.BusinessException;
 import com.possaas.modules.subscription.application.port.CurrentEntitlementQuery;
+import com.possaas.modules.subscription.application.port.EffectiveEntitlementLookup;
 import com.possaas.modules.subscription.application.port.FeatureAccessChecker;
 import com.possaas.modules.subscription.domain.CurrentEntitlement;
 import com.possaas.modules.subscription.domain.SubscriptionFeatureSnapshot;
@@ -9,6 +10,7 @@ import com.possaas.modules.subscription.entity.RestaurantSubscription;
 import com.possaas.modules.subscription.repository.RestaurantSubscriptionRepository;
 import java.time.Clock;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,29 +19,32 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class EntitlementService implements FeatureAccessChecker, CurrentEntitlementQuery {
+public class EntitlementService implements FeatureAccessChecker, CurrentEntitlementQuery, EffectiveEntitlementLookup {
     private final RestaurantSubscriptionRepository subscriptionRepository;
     private final Clock clock;
 
     @Override
     @Transactional(readOnly = true)
     public CurrentEntitlement getForRestaurant(UUID restaurantId) {
-        RestaurantSubscription subscription = subscriptionRepository
-            .findEffectiveSubscription(restaurantId, clock.instant())
-            .orElseThrow(EntitlementService::subscriptionNotActive);
-        SubscriptionFeatureSnapshot snapshot = SubscriptionFeatureSnapshot.fromMap(
-            subscription.getFeatureSnapshot()
-        );
-        return new CurrentEntitlement(
-            subscription.getId(),
-            restaurantId,
-            snapshot.packageCode(),
-            subscription.getStatus(),
-            subscription.getStartAt(),
-            subscription.getEndAt(),
-            snapshot.features(),
-            snapshot.effectiveMaxStaff()
-        );
+        return findForRestaurant(restaurantId).orElseThrow(EntitlementService::subscriptionNotActive);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<CurrentEntitlement> findForRestaurant(UUID restaurantId) {
+        return subscriptionRepository.findEffectiveSubscription(restaurantId, clock.instant()).map(subscription -> {
+            SubscriptionFeatureSnapshot snapshot = SubscriptionFeatureSnapshot.fromMap(subscription.getFeatureSnapshot());
+            return new CurrentEntitlement(
+                subscription.getId(),
+                restaurantId,
+                snapshot.packageCode(),
+                subscription.getStatus(),
+                subscription.getStartAt(),
+                subscription.getEndAt(),
+                snapshot.features(),
+                snapshot.effectiveMaxStaff()
+            );
+        });
     }
 
     @Override

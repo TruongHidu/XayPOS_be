@@ -74,7 +74,7 @@ services:
       context: ${FE_DIR:-../../pos-saas-web}
       args:
         VITE_API_BASE_URL: /api/v1
-        VITE_APP_NAME: ${VITE_APP_NAME:-POS SaaS}
+        VITE_APP_NAME: ${VITE_APP_NAME:-Xây POS}
         VITE_ENABLE_QR_API: "true"
         VITE_REALTIME_ENABLED: "true"
     image: pos-saas-web:latest

@@ -62,8 +62,9 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("45");
-            assertThat(countTables(schema)).isEqualTo(46);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("46");
+            assertThat(countTables(schema)).isEqualTo(47);
+            assertThat(tableExists(schema, "restaurant_admin_notes")).isTrue();
             for (String column : new String[] {"transfer_bank_bin", "transfer_account_number", "transfer_account_name"})
                 assertThat(columnExists(schema, "restaurants", column)).as(column).isTrue();
             assertThat(tableExists(schema, "subscription_purchases")).isTrue();

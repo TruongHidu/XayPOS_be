@@ -1,6 +1,17 @@
 package com.possaas.modules.user.controller;
 
+import com.possaas.common.security.CurrentUserProvider;
 import com.possaas.modules.subscription.dto.PageResponse;
+import com.possaas.modules.user.dto.AdminUserSupportDtos.TemporaryPasswordRequest;
+import com.possaas.modules.user.dto.AdminUserSupportDtos.TemporaryPasswordResponse;
+import com.possaas.modules.user.dto.AdminUserSupportDtos.UpdateUserStatusRequest;
+import com.possaas.modules.user.service.AdminRestaurantUserCommandService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import com.possaas.modules.user.dto.AdminRestaurantUserResponse;
 import com.possaas.modules.user.service.AdminRestaurantUserQueryService;
 import jakarta.validation.constraints.Max;
@@ -22,7 +33,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/admin/restaurants/{restaurantId}/users")
 @PreAuthorize("@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('RESTAURANT_VIEW')")
 public class AdminRestaurantUserController {
+    private static final String MANAGE = "@adminSecurity.isSystemSuperAdmin(authentication) and hasAuthority('RESTAURANT_MANAGE')";
+
     private final AdminRestaurantUserQueryService queryService;
+    private final AdminRestaurantUserCommandService commandService;
+    private final CurrentUserProvider currentUser;
 
     @GetMapping
     ResponseEntity<PageResponse<AdminRestaurantUserResponse>> search(
@@ -40,5 +55,21 @@ public class AdminRestaurantUserController {
     @GetMapping("/{userId}")
     ResponseEntity<AdminRestaurantUserResponse> detail(@PathVariable UUID restaurantId, @PathVariable UUID userId) {
         return ResponseEntity.ok(queryService.findDetail(restaurantId, userId));
+    }
+
+    @PatchMapping("/{userId}/status")
+    @PreAuthorize(MANAGE)
+    ResponseEntity<AdminRestaurantUserResponse> updateStatus(@PathVariable UUID restaurantId, @PathVariable UUID userId,
+            @Valid @RequestBody UpdateUserStatusRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok(commandService.updateStatus(restaurantId, userId, request,
+            currentUser.getRequired().userId(), http.getRemoteAddr()));
+    }
+
+    @PostMapping("/{userId}/temporary-password")
+    @PreAuthorize(MANAGE)
+    ResponseEntity<TemporaryPasswordResponse> temporaryPassword(@PathVariable UUID restaurantId, @PathVariable UUID userId,
+            @Valid @RequestBody TemporaryPasswordRequest request, HttpServletRequest http) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(commandService.issueTemporaryPassword(
+            restaurantId, userId, request, currentUser.getRequired().userId(), http.getRemoteAddr()));
     }
 }

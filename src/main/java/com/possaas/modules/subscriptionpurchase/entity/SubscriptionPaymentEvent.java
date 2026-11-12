@@ -48,6 +48,10 @@ public class SubscriptionPaymentEvent implements Persistable<UUID> {
     @Column(name = "last_received_at", nullable = false) private Instant lastReceivedAt;
     @Column(name = "processed_at") private Instant processedAt;
     @Column(name = "last_error_code", length = 60) private String lastErrorCode;
+    @Column(name = "reviewed_by") private UUID reviewedBy;
+    @Column(name = "reviewed_at") private Instant reviewedAt;
+    @Column(name = "review_note", length = 1000) private String reviewNote;
+    @Column(name = "resolution_reference", length = 200) private String resolutionReference;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @Version @Column(nullable = false) private long version;
@@ -100,6 +104,17 @@ public class SubscriptionPaymentEvent implements Persistable<UUID> {
 
     public void retryLater(Instant next, String errorCode, Instant now) {
         state = PaymentEventState.RETRY_PENDING; retryCount++; nextAttemptAt = next; lastErrorCode = errorCode; release(now);
+    }
+
+    /** Operator decision on a reviewed event; the V41 check requires reviewer, note and resolution reference. */
+    public void closeReview(UUID reviewer, String note, String reference, Instant now) {
+        state = PaymentEventState.CLOSED; reviewedBy = reviewer; reviewedAt = now;
+        reviewNote = note; resolutionReference = reference; release(now);
+    }
+
+    /** Operator asks the worker to settle the event again (e.g. after a conflict was cleared). */
+    public void requeue(Instant now) {
+        state = PaymentEventState.RETRY_PENDING; nextAttemptAt = now; lastErrorCode = "OPERATOR_RETRY"; release(now);
     }
 
     private void release(Instant now) { leaseUntil = null; processingToken = null; updatedAt = now; }

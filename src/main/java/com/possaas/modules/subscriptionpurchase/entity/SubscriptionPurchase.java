@@ -96,6 +96,15 @@ public class SubscriptionPurchase implements Persistable<UUID> {
         status = PurchaseStatus.REVIEW_REQUIRED; reviewReason = reason; clearActivationJob(); updatedAt = now;
     }
 
+    /** Operator resumes activation of a reviewed purchase that already holds paid evidence. */
+    public void resumeActivation(Instant now) {
+        status = PurchaseStatus.PAID; activationNextAt = now; activationRetryCount = 0; activationErrorCode = null;
+        activationLeaseUntil = null; activationToken = null; updatedAt = now;
+    }
+
+    /** Operator closes a reviewed purchase; frees the open-purchase slot of the restaurant. */
+    public void close(Instant now) { status = PurchaseStatus.CLOSED; closedAt = now; clearActivationJob(); updatedAt = now; }
+
     private void clearActivationJob() { activationNextAt = null; activationLeaseUntil = null; activationToken = null; }
 
     @Override public boolean isNew() { return newRecord; }
