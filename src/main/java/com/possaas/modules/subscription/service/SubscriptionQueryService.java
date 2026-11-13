@@ -1,7 +1,8 @@
 package com.possaas.modules.subscription.service;
 
-import com.possaas.modules.subscription.application.port.CurrentEntitlementQuery;
+import com.possaas.modules.subscription.application.port.EffectiveEntitlementLookup;
 import com.possaas.modules.subscription.domain.CurrentEntitlement;
+import com.possaas.modules.subscription.domain.SubscriptionNotActiveException;
 import com.possaas.modules.subscription.dto.CurrentEntitlementResponse;
 import com.possaas.modules.subscription.dto.PageResponse;
 import com.possaas.modules.subscription.dto.SubscriptionResponse;
@@ -24,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class SubscriptionQueryService {
-    private final CurrentEntitlementQuery currentEntitlementQuery;
+    private final EffectiveEntitlementLookup effectiveEntitlements;
     private final RestaurantSubscriptionRepository subscriptionRepository;
     private final PackagePlanRepository packageRepository;
     private final SubscriptionMapper subscriptionMapper;
@@ -32,7 +33,12 @@ public class SubscriptionQueryService {
 
     @Transactional(readOnly = true)
     public CurrentEntitlementResponse getCurrent(UUID restaurantId) {
-        CurrentEntitlement entitlement = currentEntitlementQuery.getForRestaurant(restaurantId);
+        // Same SUBSCRIPTION_NOT_ACTIVE as before, now saying whether to subscribe or renew.
+        CurrentEntitlement entitlement = effectiveEntitlements.findForRestaurant(restaurantId)
+            .orElseThrow(() -> new SubscriptionNotActiveException(
+                subscriptionRepository.hasLapsedSubscription(restaurantId, clock.instant())
+                    ? SubscriptionNotActiveException.Reason.EXPIRED
+                    : SubscriptionNotActiveException.Reason.NONE));
         String packageName = packageRepository.findByCode(entitlement.packageCode())
             .map(PackagePlan::getName)
             .orElse(null);

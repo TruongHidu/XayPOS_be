@@ -52,6 +52,17 @@ public interface RestaurantSubscriptionRepository extends
         @Param("now") Instant now
     );
 
+    boolean existsByRestaurantIdAndStatus(UUID restaurantId, SubscriptionStatus status);
+
+    boolean existsByRestaurantIdAndStatusAndEndAtLessThanEqual(
+        UUID restaurantId, SubscriptionStatus status, Instant endAt);
+
+    /** A subscription that was in effect and has run out (including one the expiry job has not marked yet). */
+    default boolean hasLapsedSubscription(UUID restaurantId, Instant now) {
+        return existsByRestaurantIdAndStatus(restaurantId, SubscriptionStatus.EXPIRED)
+            || existsByRestaurantIdAndStatusAndEndAtLessThanEqual(restaurantId, SubscriptionStatus.ACTIVE, now);
+    }
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select s from RestaurantSubscription s
