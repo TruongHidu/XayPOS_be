@@ -288,13 +288,28 @@ class OrderBulkItemTransitionIntegrationTest {
     }
 
     @Test
-    void readyRejectsPendingAtomicallyIncludingEarlierEligibleLines() throws Exception {
+    void readyTakesPendingAndCookingInOneMutationWithActualHistorySources() throws Exception {
         var order = prepare(false, OrderItemStatus.COOKING, OrderItemStatus.PENDING, OrderItemStatus.READY);
         var counts = historyCounts(order);
-        bulk(order, "mark-ready").error(409, "INVALID_ORDER_ITEM_TRANSITION");
-        assertThat(detail(order).body).isEqualTo(order.body);
-        assertThat(historyCounts(order)).isEqualTo(counts);
-        assertThat(events("ORDER_ITEMS_MARKED_READY")).isZero();
+        long sequence = mutation(order);
+        var updated = bulk(order, "mark-ready");
+        updated.expect(200);
+        assertStatuses(updated, "READY", "READY", "READY");
+        assertThat(updated.body.path("status").asText()).isEqualTo("READY");
+        assertThat(updated.version()).isEqualTo(order.version() + 1);
+        assertThat(mutation(updated)).isEqualTo(sequence + 1);
+        assertThat(historyCounts(updated)).containsExactly(counts.get(0) + 1, counts.get(1) + 1, counts.get(2));
+        assertLastHistory(updated, 0, OrderItemStatus.COOKING, OrderItemStatus.READY, sequence + 1);
+        assertLastHistory(updated, 1, OrderItemStatus.PENDING, OrderItemStatus.READY, sequence + 1);
+        assertThat(events("ORDER_ITEMS_MARKED_READY")).isEqualTo(1);
+        assertUnchangedSnapshotsAndMoney(order, updated);
+        assertAuditSnapshots(order, updated, "ORDER_ITEMS_MARKED_READY");
+
+        var retry = bulk(order, "mark-ready");
+        retry.expect(200);
+        assertThat(retry.body).isEqualTo(updated.body);
+        assertThat(historyCounts(retry)).isEqualTo(historyCounts(updated));
+        assertThat(events("ORDER_ITEMS_MARKED_READY")).isEqualTo(1);
     }
 
     @ParameterizedTest
@@ -361,7 +376,8 @@ class OrderBulkItemTransitionIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"mark-ready,COOKING", "mark-served,READY", "mark-served,PENDING", "mark-served,COOKING"})
+    @CsvSource({"mark-ready,COOKING", "mark-ready,PENDING", "mark-served,READY", "mark-served,PENDING",
+        "mark-served,COOKING"})
     void staleVersionCannotChangeEligibleItems(String action, String source) throws Exception {
         var order = prepare(false, OrderItemStatus.valueOf(source));
         var counts = historyCounts(order);
@@ -656,7 +672,8 @@ class OrderBulkItemTransitionIntegrationTest {
             assertStatuses(current, "READY");
             assertThat(events("ORDER_ITEMS_ADDED")).isZero();
         } else {
-            responses.get(0).error(409, "INVALID_ORDER_ITEM_TRANSITION");
+            // The appended PENDING line is eligible now, but the old version still loses.
+            responses.get(0).error(409, "CONCURRENT_ORDER_UPDATE");
             assertStatuses(current, "COOKING", "PENDING");
             assertThat(events("ORDER_ITEMS_MARKED_READY")).isZero();
             assertThat(current.body.path("totalAmount").decimalValue()).isEqualByComparingTo("100000.00");

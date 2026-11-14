@@ -76,9 +76,9 @@ public class OrderBulkItemTransitionService {
         lifecycle.requireVersion(order, expectedVersion);
         var before = audit.snapshot(order, lines);
         var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        if (target == OrderItemStatus.SERVED)
-            inventory.consume(order, changed.stream().filter(line -> line.getStatus() == OrderItemStatus.PENDING).toList(), actor, now, ip);
-        // Capture real source states before mutation; direct serving may contain several states.
+        // Skipping COOKING must not skip its stock deduction: consume PENDING lines once, as start-cooking does.
+        inventory.consume(order, changed.stream().filter(line -> line.getStatus() == OrderItemStatus.PENDING).toList(), actor, now, ip);
+        // Capture real source states before mutation; a bulk change may contain several states.
         var byPreviousStatus = changed.stream().collect(Collectors.groupingBy(
             OrderItem::getStatus, () -> new EnumMap<>(OrderItemStatus.class), Collectors.toList()));
         for (var line : changed) {

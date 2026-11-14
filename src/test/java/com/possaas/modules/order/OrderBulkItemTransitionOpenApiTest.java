@@ -94,7 +94,7 @@ class OrderBulkItemTransitionOpenApiTest {
     }
 
     @Test
-    void directBulkServingIsDocumentedWithoutRelaxingSingleItemOrReadyTransitions() throws Exception {
+    void directBulkServingAndReadyAreDocumentedWithoutRelaxingSingleItemTransitions() throws Exception {
         var root = documents().get(LIFECYCLE);
         var paths = root.path("paths");
         var bulk = paths.path("/api/v1/orders/{orderId}/mark-served").path("post");
@@ -106,7 +106,9 @@ class OrderBulkItemTransitionOpenApiTest {
         assertThat(paths.path("/api/v1/orders/{orderId}/items/{orderItemId}/mark-served")
             .path("post").path("description").asText()).contains("READY -> SERVED only");
         assertThat(paths.path("/api/v1/orders/{orderId}/mark-ready")
-            .path("post").path("description").asText()).contains("Any PENDING item rejects");
+            .path("post").path("description").asText()).contains(
+                "PENDING and COOKING become READY directly", "actual PENDING/COOKING -> READY",
+                "CONCURRENT_ORDER_UPDATE");
     }
 
     @Test

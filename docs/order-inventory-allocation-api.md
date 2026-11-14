@@ -49,9 +49,9 @@ Chỉ dòng mới đánh giá lại. Mỗi allocation dùng một kho default ac
 không chia kho hoặc lấy bù kho khác. Chỉ dòng thực sự cần reserve mới cần kho.
 Đổi default/đổi bàn không chuyển allocation cũ; gọi thêm có thể dùng default mới.
 
-PENDING -> COOKING và bulk PENDING -> SERVED consume. COOKING -> READY và
-COOKING/READY -> SERVED không trừ lần hai. Single mark-served vẫn chỉ READY ->
-SERVED; bulk mark-ready vẫn từ chối nếu có PENDING. Cancel PENDING release;
+PENDING -> COOKING, bulk PENDING -> READY và bulk PENDING -> SERVED consume.
+COOKING -> READY và COOKING/READY -> SERVED không trừ lần hai. Single
+mark-served vẫn chỉ READY -> SERVED. Cancel PENDING release;
 không mở quyền hủy món đã nấu. Payment/complete/refund không trừ hoặc trả kho.
 Complete từ chối khi còn RESERVED hoặc dữ liệu phục vụ không nhất quán.
 

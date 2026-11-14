@@ -33,14 +33,14 @@ Từng món chỉ chuyển `PENDING → COOKING → READY → SERVED`, không nh
 
 ## Cập nhật tất cả món theo đơn
 
-Hai endpoint theo đơn không có chế độ vận hành riêng. Bulk mark-ready vẫn tuân thủ COOKING → READY; bulk mark-served cho phép PENDING/COOKING/READY → SERVED, khác API mark-served từng món vẫn chỉ READY → SERVED. Áp dụng cho cả DINE_IN và TAKEAWAY. “Món hiệu lực” là dòng có status khác CANCELLED; đơn phải có ít nhất một dòng hiệu lực và root đang CONFIRMED/PREPARING/READY/SERVED. OPEN chưa gửi bếp và root COMPLETED/CANCELLED bị từ chối, kể cả mọi dòng đã đạt trạng thái đích.
+Hai endpoint theo đơn không có chế độ vận hành riêng. Bulk mark-ready cho phép PENDING/COOKING → READY để bếp báo xong cả đơn mà không phải bắt đầu nấu từng món; bulk mark-served cho phép PENDING/COOKING/READY → SERVED, khác API mark-served từng món vẫn chỉ READY → SERVED. Áp dụng cho cả DINE_IN và TAKEAWAY. “Món hiệu lực” là dòng có status khác CANCELLED; đơn phải có ít nhất một dòng hiệu lực và root đang CONFIRMED/PREPARING/READY/SERVED. OPEN chưa gửi bếp và root COMPLETED/CANCELLED bị từ chối, kể cả mọi dòng đã đạt trạng thái đích.
 
 | API | Permission hiệu lực | Feature trong subscription snapshot |
 | --- | --- | --- |
 | `POST /api/v1/orders/{orderId}/mark-ready` | `KITCHEN_MARK_READY` | `KITCHEN_DISPLAY` |
 | `POST /api/v1/orders/{orderId}/mark-served` | `ORDER_MARK_SERVED` | `ORDER_MANAGEMENT` |
 
-Migration V23 bổ sung hai permission hiện có cho role hệ thống CASHIER và KITCHEN. Không cấp thêm KITCHEN_START_COOKING, ORDER_COMPLETE hoặc TABLE_CLOSE trong migration này, không sửa role tenant-custom hoặc user GRANT/DENY. CASHIER và mọi actor khác có quyền hiệu lực phù hợp được gọi bulk mark-served chỉ với ORDER_MARK_SERVED + ORDER_MANAGEMENT, kể cả món còn PENDING/COOKING; không cần KITCHEN_DISPLAY hoặc các API bếp trước đó. Khi muốn dùng mark-ready, món PENDING vẫn phải được người có KITCHEN_START_COOKING chuyển sang COOKING qua API từng món. DENY của user vẫn thắng. Sau migration cần login/refresh để JWT nhận role grants mới. Grant permission không bổ sung feature vào snapshot của tenant. Thay đổi direct bulk serving không thêm migration, permission hoặc chế độ mới.
+Migration V23 bổ sung hai permission hiện có cho role hệ thống CASHIER và KITCHEN. Không cấp thêm KITCHEN_START_COOKING, ORDER_COMPLETE hoặc TABLE_CLOSE trong migration này, không sửa role tenant-custom hoặc user GRANT/DENY. CASHIER và mọi actor khác có quyền hiệu lực phù hợp được gọi bulk mark-served chỉ với ORDER_MARK_SERVED + ORDER_MANAGEMENT, kể cả món còn PENDING/COOKING; không cần KITCHEN_DISPLAY hoặc các API bếp trước đó. API mark-ready từng món vẫn chỉ COOKING → READY; bulk mark-ready chỉ cần KITCHEN_MARK_READY + KITCHEN_DISPLAY kể cả khi còn PENDING. DENY của user vẫn thắng. Sau migration cần login/refresh để JWT nhận role grants mới. Grant permission không bổ sung feature vào snapshot của tenant. Thay đổi direct bulk serving không thêm migration, permission hoặc chế độ mới.
 
 Headers cho cả hai request:
 
@@ -68,13 +68,13 @@ expectedOrderVersion bắt buộc, là số nguyên không âm và là Order.ver
 | SERVED | Giữ nguyên, không chuyển lùi | Giữ nguyên |
 | CANCELLED | Bỏ qua | Bỏ qua |
 
-mark-ready kiểm tra toàn bộ dòng trước khi đổi COOKING → READY. Ví dụ `[COOKING, READY, SERVED, CANCELLED]` thành `[READY, READY, SERVED, CANCELLED]`. Nếu có một PENDING thì trả 409, mọi dòng và root giữ nguyên. Khi toàn bộ dòng hiệu lực đã READY/SERVED thì trả 200 no-op; order toàn SERVED vẫn giữ SERVED.
+mark-ready kiểm tra toàn bộ dòng trước khi đổi PENDING/COOKING → READY. Ví dụ `[PENDING, COOKING, READY, SERVED, CANCELLED]` thành `[READY, READY, READY, SERVED, CANCELLED]`. Dòng PENDING consume allocation đã giữ một lần trong cùng transaction như start-cooking; history ghi đúng PENDING → READY, không tạo bước COOKING giả. Khi toàn bộ dòng hiệu lực đã READY/SERVED thì trả 200 no-op; order toàn SERVED vẫn giữ SERVED.
 
 mark-served đổi tất cả dòng PENDING/COOKING/READY → SERVED để xác nhận đã giao món, giữ SERVED và bỏ qua CANCELLED. Ví dụ `[PENDING, COOKING, READY, SERVED, CANCELLED]` thành `[SERVED, SERVED, SERVED, SERVED, CANCELLED]`; root thành SERVED. Khi mọi dòng hiệu lực đã SERVED thì trả 200 no-op. API không tự tạo các bước COOKING/READY hoặc set lại sentToKitchenAt. Endpoint từng món vẫn chỉ READY → SERVED, phù hợp phục vụ từng phần khi những món khác chưa xong.
 
 Mỗi request dùng một transaction và restaurant pessimistic lock theo thứ tự mutation hiện có. Một command có thay đổi cập nhật root một lần, tăng aggregate version/mutationSequence một lần, tổng hợp order.status từ các dòng hiệu lực, ghi một history cho mỗi dòng thực sự đổi và một audit `ORDER_ITEMS_MARKED_READY` hoặc `ORDER_ITEMS_MARKED_SERVED`. History bulk phục vụ dùng đúng trạng thái nguồn từng dòng: PENDING → SERVED, COOKING → SERVED hoặc READY → SERVED. Dòng đã đạt/vượt mục tiêu và CANCELLED không có history mới. Lỗi giữa transaction rollback toàn bộ.
 
-No-op được nhận diện sau kiểm tra tenant, permission, feature, trạng thái root và toàn bộ dòng, trước kiểm version. Vì vậy retry bằng version cũ có thể trả 200 khi mục tiêu đã được thỏa mãn; version/mutationSequence, updatedAt, audit và history không thay đổi. Nếu còn dòng cần chuyển, version cũ trả 409 CONCURRENT_ORDER_UPDATE. Nếu sau lần gửi cũ đã phát sinh món PENDING, retry mark-ready bị transition policy chặn; retry mark-served cần mutation nên version cũ trả CONCURRENT_ORDER_UPDATE, không tự phục vụ món mới bằng ý định cũ. No-op không cho bỏ qua root COMPLETED/CANCELLED.
+No-op được nhận diện sau kiểm tra tenant, permission, feature, trạng thái root và toàn bộ dòng, trước kiểm version. Vì vậy retry bằng version cũ có thể trả 200 khi mục tiêu đã được thỏa mãn; version/mutationSequence, updatedAt, audit và history không thay đổi. Nếu còn dòng cần chuyển, version cũ trả 409 CONCURRENT_ORDER_UPDATE. Nếu sau lần gửi cũ đã phát sinh món PENDING, retry mark-ready hoặc mark-served cần mutation nên version cũ trả CONCURRENT_ORDER_UPDATE, không tự phục vụ món mới bằng ý định cũ. No-op không cho bỏ qua root COMPLETED/CANCELLED.
 
 Đơn đã PAID vẫn được cập nhật món nếu root còn phục vụ. Hai endpoint giữ nguyên paymentStatus, paidAmount, mọi amount, quantity, snapshot tên/đơn vị/giá, customer, tableSessionId và sentToKitchenAt. Không đọc giá menu để tính lại tiền. mark-served không tự complete order hoặc đóng phiên; gọi complete khi đã thỏa điều kiện. Với DINE_IN, complete sẽ đóng phiên cùng transaction, không cần request close riêng.
 
@@ -135,7 +135,7 @@ Gọi mark-served sau đó với expectedOrderVersion 8 trả cùng shape, order
 | 401 | UNAUTHORIZED / ACCOUNT_INACTIVE theo security guard |
 | 403 | FORBIDDEN, TENANT_ACCESS_DENIED, RESTAURANT_INACTIVE, SUBSCRIPTION_NOT_ACTIVE, FEATURE_NOT_ENTITLED |
 | 404 | ORDER_NOT_FOUND: missing hoặc order tenant khác |
-| 409 | INVALID_ORDER_ITEM_TRANSITION: mark-ready còn PENDING hoặc root OPEN/COMPLETED/CANCELLED; bulk mark-served không chặn vì PENDING/COOKING |
+| 409 | INVALID_ORDER_ITEM_TRANSITION: root OPEN/COMPLETED/CANCELLED; bulk mark-ready/mark-served không chặn vì PENDING/COOKING |
 | 409 | EMPTY_ORDER: không có dòng hiệu lực |
 | 409 | CONCURRENT_ORDER_UPDATE: version cũ khi còn cần mutation hoặc locking conflict |
 
@@ -154,16 +154,16 @@ Ví dụ lỗi, message chỉ minh họa; FE quyết định theo HTTP/code:
 ## Postman và đồng bộ FE cho bulk actions
 
 1. Đặt baseUrl, accessToken, orderId; login/refresh sau V23. Dùng tenant có feature yêu cầu. Để đọc chi tiết cần ORDER_VIEW + ORDER_MANAGEMENT; start-cooking cần KITCHEN_START_COOKING + KITCHEN_DISPLAY.
-2. Tạo đơn SUBMIT hoặc confirm draft, lưu items[].id và version. Gọi mark-ready lúc dòng còn PENDING để kiểm 409 và GET lại xác nhận không dòng nào đổi.
+2. Tạo đơn SUBMIT hoặc confirm draft, lưu items[].id và version. Gọi mark-ready từng món lúc dòng còn PENDING để kiểm 409 và GET lại xác nhận không dòng nào đổi.
 3. Gọi start-cooking từng dòng còn PENDING, mỗi request gửi expectedOrderVersion từ response mới nhất. Không có API bulk start-cooking.
-4. Khi không còn PENDING, POST `{{baseUrl}}/api/v1/orders/{{orderId}}/mark-ready` với version mới nhất; kiểm chỉ COOKING đổi READY và root tổng hợp đúng. Nếu có CANCELLED/SERVED, các dòng đó giữ nguyên.
+4. POST `{{baseUrl}}/api/v1/orders/{{orderId}}/mark-ready` với version mới nhất, kể cả khi còn PENDING; kiểm PENDING/COOKING đổi READY, kho chỉ trừ một lần cho dòng PENDING và root tổng hợp đúng. Nếu có CANCELLED/SERVED, các dòng đó giữ nguyên.
 5. Gửi lại request bước 4 với version cũ để kiểm 200 no-op, version và updatedAt không đổi. Có thể đối chiếu DB history/audit để chắc không ghi trùng.
 6. POST `{{baseUrl}}/api/v1/orders/{{orderId}}/mark-served` với version từ bước 4; kiểm READY đổi SERVED, tiền giữ nguyên, completedAt vẫn null và session vẫn OPEN.
 7. Retry mark-served cùng body để kiểm no-op. Dùng một đơn SUBMIT khác còn PENDING/COOKING/READY, gọi bulk mark-served với version mới nhất để kiểm 200, mọi dòng hiệu lực thành SERVED và history lưu đúng từng nguồn; không cần gọi API bếp. Có thể dùng token chỉ có ORDER_MARK_SERVED và tenant chỉ có ORDER_MANAGEMENT để kiểm không phụ thuộc KITCHEN_DISPLAY. Dùng version cũ khi còn món cần đổi để kiểm CONCURRENT_ORDER_UPDATE và không dòng nào đổi; sau append PENDING mới cũng phải bị version cũ chặn. API mark-served từng món với nguồn PENDING/COOKING vẫn trả 409.
 8. Thử thiếu permission, user DENY, thiếu feature và order tenant khác. Bulk no-op cũng phải bị chặn bởi những guard này.
 9. Có thể thanh toán trước bước 3–6; các transition vẫn thành công khi PAID và root chưa terminal. Khi mọi món hiệu lực SERVED và đã thanh toán đủ, gọi complete; DINE_IN sẽ đóng phiên trong cùng request, TAKEAWAY chỉ complete. Sau complete, cả hai bulk endpoints trả 409.
 
-FE hiện “Xong tất cả” khi có KITCHEN_MARK_READY + KITCHEN_DISPLAY, root đang phục vụ, có dòng COOKING và không có PENDING. Hiện “Đã phục vụ tất cả” khi có ORDER_MARK_SERVED + ORDER_MANAGEMENT, root đang phục vụ và có ít nhất một dòng PENDING/COOKING/READY; không chặn nút vì chưa COOKING/READY, không kiểm thêm feature bếp hoặc role CASHIER. Tính điều kiện trên danh sách loại CANCELLED; đơn không có dòng hiệu lực hoặc tất cả đã SERVED không cần thao tác bulk. Nút này là xác nhận món đã thực sự được phục vụ, không phải nút thanh toán/complete.
+FE hiện “Xong tất cả” khi có KITCHEN_MARK_READY + KITCHEN_DISPLAY, root đang phục vụ và có dòng PENDING hoặc COOKING. Hiện “Đã phục vụ tất cả” khi có ORDER_MARK_SERVED + ORDER_MANAGEMENT, root đang phục vụ và có ít nhất một dòng PENDING/COOKING/READY; không chặn nút vì chưa COOKING/READY, không kiểm thêm feature bếp hoặc role CASHIER. Tính điều kiện trên danh sách loại CANCELLED; đơn không có dòng hiệu lực hoặc tất cả đã SERVED không cần thao tác bulk. Nút này là xác nhận món đã thực sự được phục vụ, không phải nút thanh toán/complete.
 
 Disable nút trong lúc request chạy; gửi Order.version hiện tại và thay state bằng OrderResponse backend trả. Khi 409, tải lại đơn và để người dùng kiểm tra trước thao tác lại. Không tự tăng version, không tự chuyển trạng thái mọi dòng để giả lập thành công, không tự complete/close. API từng món dùng cho các bước hoặc lần phục vụ riêng lẻ. Permission/feature ở UI hỗ trợ hiển thị; backend là nơi quyết định cuối cùng.
 

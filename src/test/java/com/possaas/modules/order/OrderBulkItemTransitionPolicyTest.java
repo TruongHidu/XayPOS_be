@@ -17,24 +17,27 @@ class OrderBulkItemTransitionPolicyTest {
     private final OrderBulkItemTransitionPolicy policy = new OrderBulkItemTransitionPolicy();
 
     @Test
-    void readySelectsOnlyCookingAndNeverMutatesInputs() {
+    void readySelectsPendingAndCookingAndNeverMutatesInputs() {
+        var pending = line(OrderItemStatus.PENDING);
         var cooking = line(OrderItemStatus.COOKING);
         var ready = line(OrderItemStatus.READY);
         var served = line(OrderItemStatus.SERVED);
         var cancelled = line(OrderItemStatus.CANCELLED);
 
-        assertThat(policy.readyItems(List.of(cooking, ready, served, cancelled))).containsExactly(cooking);
+        assertThat(policy.readyItems(List.of(pending, cooking, ready, served, cancelled)))
+            .containsExactly(pending, cooking);
+        assertThat(pending.getStatus()).isEqualTo(OrderItemStatus.PENDING);
         assertThat(cooking.getStatus()).isEqualTo(OrderItemStatus.COOKING);
         assertThat(served.getStatus()).isEqualTo(OrderItemStatus.SERVED);
         assertThat(cancelled.getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
     }
 
-    @Test
-    void readyRejectsPendingEvenAfterAnEligibleCookingLine() {
-        var cooking = line(OrderItemStatus.COOKING);
-        assertConflict(() -> policy.readyItems(List.of(cooking, line(OrderItemStatus.PENDING))),
-            "INVALID_ORDER_ITEM_TRANSITION");
-        assertThat(cooking.getStatus()).isEqualTo(OrderItemStatus.COOKING);
+    @ParameterizedTest
+    @EnumSource(value = OrderItemStatus.class, names = {"PENDING", "COOKING"})
+    void readyAllowsEachUnstartedOrCookingStatusAlone(OrderItemStatus status) {
+        var eligible = line(status);
+        assertThat(policy.readyItems(List.of(eligible))).containsExactly(eligible);
+        assertThat(eligible.getStatus()).isEqualTo(status);
     }
 
     @Test

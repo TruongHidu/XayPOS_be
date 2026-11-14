@@ -236,6 +236,16 @@ class OrderInventoryAllocationIntegrationTest {
         assertThat(recipeUses()).isEqualTo(4);balance(warehouse,"1580","0","1580");
         for(int i=0;i<4;i++){assertThat(served.body.at("/items/"+i+"/status").asText()).isEqualTo("SERVED");assertThat(allocation(served,i).body.path("status").asText()).isEqualTo("CONSUMED");}assertInvariant();
     }
+    @Test void mixedBulkReadyConsumesPendingOnceAndLaterServingDoesNotDeductAgain() throws Exception {
+        stock("2000");var request=body(true,"1");request.put("items",java.util.stream.IntStream.range(0,4).mapToObj(i->line(menu.getId(),"1","line"+i)).toList());
+        var order=call(post("/api/v1/orders").header("Idempotency-Key",UUID.randomUUID().toString()),request,ORDER).expect(201);
+        order=single(order,2,"start-cooking").expect(200);order=single(order,3,"start-cooking").expect(200);order=single(order,3,"mark-ready").expect(200);
+        assertThat(recipeUses()).isEqualTo(2);
+        var ready=bulk(order,"mark-ready").expect(200);bulk(order,"mark-ready").expect(200);
+        assertThat(recipeUses()).isEqualTo(4);balance(warehouse,"1580","0","1580");
+        for(int i=0;i<4;i++){assertThat(ready.body.at("/items/"+i+"/status").asText()).isEqualTo("READY");assertThat(allocation(ready,i).body.path("status").asText()).isEqualTo("CONSUMED");}
+        bulk(ready,"mark-served").expect(200);assertThat(recipeUses()).isEqualTo(4);balance(warehouse,"1580","0","1580");assertInvariant();
+    }
     @Test void paidOrderWithoutKdsConsumesThroughBulkServingAndCompleteDoesNotDeductAgain() throws Exception {
         stock("1000");withoutFeature("KITCHEN_DISPLAY");var order=create(true,"3").expect(201);
         var paid=call(post(path(order)+"/payments").header("Idempotency-Key",UUID.randomUUID().toString()),Map.of("expectedOrderVersion",order.version(),"paymentMethod","CASH","amount",order.body.path("totalAmount").decimalValue()),ORDER).expect(201);

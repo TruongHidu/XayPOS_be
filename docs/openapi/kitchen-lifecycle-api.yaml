@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: POS SaaS kitchen and order completion
   version: 1.2.1
-  description: "PAID and serving status are separate; KDS continues after payment. V24 complete DINE_IN atomically completes the order and closes exactly order.tableSessionId after full payment, all live items SERVED and session-wide readiness; TAKEAWAY completion has no TABLE side effect or access dependency. All resources are tenant-scoped from JWT without a tenant header. V23 grants existing KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including existing manual close/cancel endpoints; user DENY and snapshot features still apply. Login/refresh is required for new JWT authorities. Bulk actions preserve money and do not automatically complete the order or close the session. V33 consumes RESERVED allocation on PENDING to COOKING and bulk PENDING to SERVED, once in the same transaction; later READY/SERVED transitions do not deduct again. Existing action permissions are sufficient, with no INVENTORY_ISSUE/RECIPE_VIEW requirement. Allocation stays valid after inventory/recipe entitlement loss. Complete/payment never consume and complete rejects unresolved RESERVED allocations. Single mark-served remains READY-only and bulk mark-ready still rejects PENDING. No allocation/ingredient/cost details enter OrderResponse. See kitchen-completion-api.md and order-inventory-allocation-fe-sync.md for examples and Postman/FE flow."
+  description: "PAID and serving status are separate; KDS continues after payment. V24 complete DINE_IN atomically completes the order and closes exactly order.tableSessionId after full payment, all live items SERVED and session-wide readiness; TAKEAWAY completion has no TABLE side effect or access dependency. All resources are tenant-scoped from JWT without a tenant header. V23 grants existing KITCHEN_MARK_READY and ORDER_MARK_SERVED to system CASHIER/KITCHEN. V24 grants TABLE_CLOSE to global system CASHIER/MANAGER, including existing manual close/cancel endpoints; user DENY and snapshot features still apply. Login/refresh is required for new JWT authorities. Bulk actions preserve money and do not automatically complete the order or close the session. V33 consumes RESERVED allocation on PENDING to COOKING and bulk PENDING to READY or SERVED, once in the same transaction; later READY/SERVED transitions do not deduct again. Existing action permissions are sufficient, with no INVENTORY_ISSUE/RECIPE_VIEW requirement. Allocation stays valid after inventory/recipe entitlement loss. Complete/payment never consume and complete rejects unresolved RESERVED allocations. Single mark-served remains READY-only; bulk mark-ready takes PENDING and COOKING. No allocation/ingredient/cost details enter OrderResponse. See kitchen-completion-api.md and order-inventory-allocation-fe-sync.md for examples and Postman/FE flow."
 security:
   - BearerAuth: []
 paths:
@@ -42,19 +42,23 @@ paths:
   /api/v1/orders/{orderId}/mark-ready:
     post:
       operationId: markAllOrderItemsReady
-      summary: Mark all cooking items in an order ready
+      summary: Mark all pending or cooking items in an order ready
       x-permission: KITCHEN_MARK_READY
       x-feature: KITCHEN_DISPLAY
       description: >-
         Requires effective KITCHEN_MARK_READY and KITCHEN_DISPLAY snapshot entitlement.
         Root must be CONFIRMED/PREPARING/READY/SERVED with at least one non-CANCELLED item.
-        Any PENDING item rejects the whole command with INVALID_ORDER_ITEM_TRANSITION;
-        otherwise COOKING becomes READY, READY/SERVED stay unchanged and CANCELLED is ignored.
+        PENDING and COOKING become READY directly, READY/SERVED stay unchanged and CANCELLED
+        is ignored, so a kitchen can finish a whole order without starting each dish first.
+        PENDING lines consume their RESERVED allocation once in the same transaction, exactly
+        as start-cooking would; no fabricated COOKING step enters history.
         Validate all items before any mutation; restaurant lock and one atomic transaction.
         No-op after auth/tenant/feature/root/item checks accepts a stale expectedOrderVersion
         without changing version, updatedAt, history or audit. Actual changes require current
-        Order.version and advance the root once, record history for each changed item and
-        one ORDER_ITEMS_MARKED_READY audit. Aggregate root status from live items, never
+        Order.version and advance the root once, record actual PENDING/COOKING -> READY
+        history for each changed item and one ORDER_ITEMS_MARKED_READY audit. Newly appended
+        PENDING items make a stale-version retry a mutation and return CONCURRENT_ORDER_UPDATE
+        rather than readying the new items. Aggregate root status from live items, never
         rewind SERVED. PAID orders may still be served; preserve prices, quantities, amounts,
         payment state, session and sentToKitchenAt. No Idempotency-Key required. Root OPEN,
         COMPLETED/CANCELLED or empty live items reject even when the target would be a no-op.
@@ -81,7 +85,7 @@ paths:
         is ignored. This confirms actual service even without a kitchen screen; no operating
         mode, KITCHEN_DISPLAY entitlement or prior kitchen API calls are required. Applies
         to every actor with the effective permission, not only CASHIER. Single-item
-        mark-served remains READY -> SERVED only; bulk mark-ready still rejects PENDING.
+        mark-served remains READY -> SERVED only.
         Validate all items before any mutation; restaurant lock and one atomic transaction.
         No-op after auth/tenant/feature/root/item checks accepts a stale expectedOrderVersion
         without changing version, updatedAt, history or audit. Actual changes require current
