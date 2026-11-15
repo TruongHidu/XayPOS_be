@@ -118,9 +118,16 @@ public class AuthenticationService {
         return response;
     }
 
+    /**
+     * Revokes the presented refresh token. With an authenticated caller only that user's token is revoked;
+     * a browser holding the HttpOnly cookie may log out without a (possibly expired) access token.
+     */
     @Transactional
-    public void logout(UUID userId, RefreshRequest request, String ipAddress) {
-        refreshTokenService.revokeOwnedToken(userId, request.refreshToken());
+    public void logout(UUID authenticatedUserId, String refreshToken, String ipAddress) {
+        UUID userId = authenticatedUserId;
+        if (userId != null) refreshTokenService.revokeOwnedToken(userId, refreshToken);
+        else userId = refreshTokenService.revokeByToken(refreshToken).orElse(null);
+        if (userId == null) return;
         User user = userRepository.findByIdAndDeletedAtIsNull(userId).orElse(null);
         auditService.record(
             user == null ? null : user.getRestaurantId(),

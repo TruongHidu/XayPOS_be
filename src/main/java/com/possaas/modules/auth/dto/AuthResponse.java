@@ -10,6 +10,11 @@ public record AuthResponse(
     long expiresIn,
     UserSummary user
 ) {
+    /** Same tokens without the refresh token, for clients that receive it in an HttpOnly cookie instead. */
+    public AuthResponse withoutRefreshToken() {
+        return new AuthResponse(accessToken, null, tokenType, expiresIn, user);
+    }
+
     public record UserSummary(
         UUID id,
         UUID restaurantId,

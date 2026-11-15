@@ -105,7 +105,12 @@ app:
       secret: ${SEPAY_WEBHOOK_SECRET:}
       timestamp-tolerance: PT5M
       max-body-bytes: 65536
+  auth:
+    refresh-cookie:
+      # Browsers receive the refresh token in this HttpOnly cookie (X-Auth-Transport: cookie).
+      secure: ${AUTH_COOKIE_SECURE:true}
   jwt:
-    access-token-ttl: ${JWT_ACCESS_TTL:7d}
+    # Short-lived: web and mobile renew it silently with the refresh token.
+    access-token-ttl: ${JWT_ACCESS_TTL:15m}
     refresh-token-ttl: ${JWT_REFRESH_TTL:30d}
     secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes-long}

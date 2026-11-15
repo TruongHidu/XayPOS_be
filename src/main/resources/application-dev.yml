@@ -8,3 +8,8 @@ spring:
     password: ${DB_PASSWORD:12345}
   jpa:
     show-sql: true
+app:
+  auth:
+    refresh-cookie:
+      # http://localhost has no TLS; production keeps Secure.
+      secure: ${AUTH_COOKIE_SECURE:false}

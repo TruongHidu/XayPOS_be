@@ -47,6 +47,8 @@ public class SecurityConfig {
                 .requestMatchers(PublicMenuRequests.GET_ENDPOINTS).permitAll()
                 .requestMatchers(PublicQrOrderRequests.ENDPOINTS).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register-restaurant", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                // Logout proves possession of the refresh token itself (cookie or body); see AuthController.
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/packages", "/api/v1/packages/**").permitAll()
                 // SePay is authenticated by HMAC in SepayWebhookAuthenticationFilter, never by JWT; only this exact path.
                 .requestMatchers(HttpMethod.POST, SepayWebhookAuthenticationFilter.PATH).hasAuthority(SepayWebhookAuthenticationFilter.AUTHORITY)

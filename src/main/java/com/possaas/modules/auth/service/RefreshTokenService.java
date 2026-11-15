@@ -82,6 +82,14 @@ public class RefreshTokenService {
             .ifPresent(this::revoke);
     }
 
+    /** Possession of the raw token is the proof; returns the owner when the token exists. */
+    @Transactional
+    public java.util.Optional<UUID> revokeByToken(String rawToken) {
+        var token = refreshTokenRepository.findByTokenHash(hash(rawToken));
+        token.ifPresent(this::revoke);
+        return token.map(AuthRefreshToken::getUserId);
+    }
+
     @Transactional
     public int revokeAllActiveForRestaurant(UUID restaurantId) {
         return refreshTokenRepository.revokeAllActiveByRestaurantId(restaurantId, clock.instant());
