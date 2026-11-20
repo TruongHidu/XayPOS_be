@@ -513,7 +513,9 @@ class MenuIntegrationTest {
     void realJwtRespectsManagerOverridesAndAccountRestaurantGuards() throws Exception {
         jdbc.update("update users set role_id=(select id from roles where code='MANAGER' and restaurant_id is null) where id=?", owner.getId());
         var defaults = permissions.getEffectivePermissionCodes(owner.getId());
-        assertThat(defaults).doesNotContain("MENU_CREATE");
+        assertThat(defaults).contains("MENU_VIEW", "MENU_AVAILABILITY_UPDATE")
+            .doesNotContain("MENU_CREATE", "MENU_UPDATE", "MENU_DELETE");
+        bearer(get("/api/v1/menu/items"), defaults).expect(200);
         bearer(post("/api/v1/menu/groups").content("{\"name\":\"Denied\"}"), defaults)
             .error(403, "FORBIDDEN");
         jdbc.update("insert into user_permissions(user_id,permission_id,effect,created_by) select ?,id,'GRANT',? from permissions where code in ('MENU_CREATE','MENU_VIEW')", owner.getId(), owner.getId());

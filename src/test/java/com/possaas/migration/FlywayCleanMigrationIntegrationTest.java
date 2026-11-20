@@ -62,7 +62,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("46");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("47");
             assertThat(countTables(schema)).isEqualTo(47);
             assertThat(tableExists(schema, "restaurant_admin_notes")).isTrue();
             for (String column : new String[] {"transfer_bank_bin", "transfer_account_number", "transfer_account_name"})
@@ -807,6 +807,79 @@ class FlywayCleanMigrationIntegrationTest {
                 assertThat(tableSnapshot(statement, prefix, "role_permissions")).isEqualTo(allGrants);
             }
         } finally { dropTestSchema(schema); }
+    }
+
+    private static final String V47_MANAGER_GRANTS = "KITCHEN_MARK_READY,KITCHEN_START_COOKING,KITCHEN_VIEW,"
+            + "MENU_AVAILABILITY_UPDATE,MENU_VIEW,ORDER_MARK_SERVED,PAYMENT_CONFIRM,PAYMENT_CREATE,PAYMENT_VIEW,"
+            + "REPORT_DAILY_VIEW,TABLE_OPEN";
+
+    @Test
+    void v47GrantsOperationalPermissionsOnlyToSystemManager() throws Exception {
+        String schema = TEST_SCHEMA_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String prefix = "\"" + schema + "\".";
+        createSchema(schema);
+        try {
+            Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("46").load().migrate();
+            var before = new java.util.LinkedHashMap<String, String>();
+            String otherGrants;
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO " + prefix + "restaurants(id,code,name,status) VALUES "
+                    + "('00000000-0000-0000-0000-000000000001','UP47','Fixture','ACTIVE')");
+                statement.execute("INSERT INTO " + prefix + "roles(restaurant_id,code,name,is_system) "
+                    + "SELECT '00000000-0000-0000-0000-000000000001'::uuid,code,'Custom '||code,false "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code='MANAGER'");
+                statement.execute("INSERT INTO " + prefix + "users(id,restaurant_id,role_id,email,password_hash,name) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,"
+                    + "'00000000-0000-0000-0000-000000000001'::uuid,id,'v47@example.test','fixture','Fixture' "
+                    + "FROM " + prefix + "roles WHERE restaurant_id IS NULL AND code='MANAGER'");
+                statement.execute("INSERT INTO " + prefix + "user_permissions(user_id,permission_id,effect) "
+                    + "SELECT '00000000-0000-0000-0000-000000000004'::uuid,id,'DENY' "
+                    + "FROM " + prefix + "permissions WHERE code='PAYMENT_CONFIRM'");
+                for (String table : java.util.List.of("roles", "permissions", "users", "user_permissions"))
+                    before.put(table, tableSnapshot(statement, prefix, table));
+                otherGrants = nonSystemManagerGrants(statement, prefix);
+                try (ResultSet rows = statement.executeQuery(systemManagerGrantsQuery(prefix))) {
+                    rows.next(); assertThat(rows.getString(1)).isNull();
+                }
+            }
+            var flyway = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+                .locations("classpath:db/migration").target("47").load();
+            flyway.migrate();
+            flyway.validate();
+            try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+                for (var entry : before.entrySet())
+                    assertThat(tableSnapshot(statement, prefix, entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+                assertThat(nonSystemManagerGrants(statement, prefix)).isEqualTo(otherGrants);
+                try (ResultSet rows = statement.executeQuery(systemManagerGrantsQuery(prefix))) {
+                    rows.next(); assertThat(rows.getString(1)).isEqualTo(V47_MANAGER_GRANTS);
+                }
+                String allGrants = tableSnapshot(statement, prefix, "role_permissions");
+                String originalSchema = connection.getSchema();
+                connection.setSchema(schema);
+                try (var input = getClass().getResourceAsStream("/db/migration/V47__expand_manager_operational_permissions.sql")) {
+                    String sql = new String(java.util.Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    statement.execute(sql);
+                } finally { connection.setSchema(originalSchema); }
+                assertThat(tableSnapshot(statement, prefix, "role_permissions")).isEqualTo(allGrants);
+            }
+        } finally { dropTestSchema(schema); }
+    }
+
+    /** Grants V47 adds that the system MANAGER role did not hold before. */
+    private static String systemManagerGrantsQuery(String prefix) {
+        return "SELECT string_agg(p.code,',' ORDER BY p.code) FROM " + prefix + "role_permissions rp JOIN " + prefix
+            + "roles r ON r.id=rp.role_id JOIN " + prefix + "permissions p ON p.id=rp.permission_id "
+            + "WHERE r.restaurant_id IS NULL AND r.is_system AND r.code='MANAGER' AND p.code IN ("
+            + "'" + V47_MANAGER_GRANTS.replace(",", "','") + "')";
+    }
+
+    private String nonSystemManagerGrants(Statement statement, String prefix) throws Exception {
+        try (ResultSet rows = statement.executeQuery("SELECT coalesce(jsonb_agg(to_jsonb(rp) ORDER BY to_jsonb(rp)::text),'[]'::jsonb)::text "
+                + "FROM " + prefix + "role_permissions rp JOIN " + prefix + "roles r ON r.id=rp.role_id "
+                + "WHERE NOT (r.restaurant_id IS NULL AND r.is_system AND r.code='MANAGER')")) {
+            rows.next(); return rows.getString(1);
+        }
     }
 
     @Test

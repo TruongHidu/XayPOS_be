@@ -1,5 +1,12 @@
 # POS SaaS Backend
 
+V47: system MANAGER nhận đủ quyền vận hành ca — MENU_VIEW, MENU_AVAILABILITY_UPDATE,
+TABLE_OPEN, ORDER_MARK_SERVED, KITCHEN_VIEW/START_COOKING/MARK_READY,
+PAYMENT_VIEW/CREATE/CONFIRM, REPORT_DAILY_VIEW. Quyền dành cho OWNER (mua gói, phân quyền,
+sửa thực đơn/công thức, kho, sổ thu chi, báo cáo chi tiết) giữ nguyên. Chỉ grant role hệ thống;
+user GRANT/DENY và role tuỳ chỉnh của nhà hàng không đổi, feature snapshot vẫn áp dụng.
+Login/refresh lại để JWT nhận quyền mới. Phân tích use case: [docs/usecase](docs/usecase/00-tong-quan.md).
+
 Staff realtime dùng chung native STOMP `/ws` cho kho, yêu cầu QR, đơn hàng và KDS.
 Mutation vẫn qua REST; gửi đơn `SUBMIT` vẫn tạo và xác nhận trong một lần.
 Xem [kết nối và quyền](docs/realtime-api.md), [ORDER/QR và đồng bộ FE](docs/order-realtime-api.md)

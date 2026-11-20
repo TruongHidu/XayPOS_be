@@ -311,6 +311,9 @@ class OrderIntegrationTest {
         for(String role:List.of("CASHIER","MANAGER")) {
             jdbc.update("update users set role_id=(select id from roles where code=? and restaurant_id is null) where id=?",role,f.user.getId());
             var granted=permissions.getEffectivePermissionCodes(f.user.getId()); assertThat(granted).contains("ORDER_CREATE","ORDER_UPDATE","TABLE_VIEW");
+            if(role.equals("MANAGER")) assertThat(granted).contains("MENU_VIEW","TABLE_OPEN","ORDER_MARK_SERVED","KITCHEN_VIEW",
+                "KITCHEN_START_COOKING","KITCHEN_MARK_READY","PAYMENT_VIEW","PAYMENT_CREATE","PAYMENT_CONFIRM","REPORT_DAILY_VIEW")
+                .doesNotContain("STAFF_PERMISSION_MANAGE","SUBSCRIPTION_PURCHASE_CREATE","REPORT_DETAIL_VIEW","CASHBOOK_VIEW","INVENTORY_VIEW");
             var who=new CurrentUser(f.user.getId(),f.restaurant.getId(),f.user.getEmail(),role,granted);
             bearer(post(ORDERS).header("Idempotency-Key",key()),body(false),who).expect(201);
         }
