@@ -359,9 +359,44 @@ phải gọi cùng lifecycle port khi tạo intent thành công dưới restaura
 | Payment creation rollback | Cancellation rollback cùng transaction | Không để request bị hủy bởi payment thất bại chưa tạo được |
 | TABLE close/cancel/transfer/QR rotate | Grant/epoch/credential và PENDING TABLE requests bị ảnh hưởng | RESTAURANT requests, APPROVED orders/payment |
 | Restaurant menu token rotate | Grant và PENDING RESTAURANT requests của credential cũ | QR_TABLE requests, APPROVED orders/payment |
+| Chủ quán tắt QR bàn (`tableEnabled=false`) | Mọi grant TABLE và PENDING TABLE requests, reason QR_ORDERING_DISABLED | RESTAURANT requests, APPROVED orders/payment |
+| Chủ quán tắt QR mang đi (`takeawayEnabled=false`) | Mọi grant RESTAURANT và PENDING RESTAURANT requests, reason QR_ORDERING_DISABLED | QR_TABLE requests, APPROVED orders/payment |
 | TAKEAWAY payment/cancel/complete | Chỉ order được chọn | Requests khác cùng guest/name/phone/restaurant |
 
 PENDING QR request không là financial obligation và không block payment toàn nhà hàng. Không tự gán observed null vào session vì cùng bàn. Failed/cancelled payment khi hết nghĩa vụ cho phép intent mới, không hồi sinh request CANCELLED. Payment không đòi mọi món SERVED; complete vẫn đòi thanh toán đủ + tất cả món hiệu lực SERVED, DINE_IN auto-close cùng transaction; bulk served PENDING/COOKING/READY → SERVED và single READY → SERVED giữ nguyên.
+
+## Bật/tắt QR gọi món
+
+Chủ quán có thể tạm ngưng nhận đơn QR riêng cho từng cửa vào, ví dụ khi quá tải. Công tắc chỉ thu hẹp
+quyền lợi của gói, không mở thêm: một cửa vào chỉ nhận đơn khi gói có feature **và** công tắc đang bật.
+Mặc định cả hai đều bật (migration V48), nên nhà hàng cũ không đổi hành vi.
+
+```http
+GET /api/v1/restaurants/me/qr-ordering      # RESTAURANT_PROFILE_VIEW
+PUT /api/v1/restaurants/me/qr-ordering      # RESTAURANT_PROFILE_UPDATE (OWNER, MANAGER)
+Content-Type: application/json
+
+{ "tableEnabled": false, "takeawayEnabled": true }
+```
+
+Response `200`, `Cache-Control: no-store`: `{ "tableEnabled": false, "takeawayEnabled": true }`.
+PUT luôn gửi đủ cả hai giá trị; thiếu một trường trả `400 VALIDATION_ERROR`. Gửi lại đúng giá trị
+hiện tại là no-op, không ghi audit. Mỗi lần đổi thật sự ghi một audit `RESTAURANT_QR_ORDERING_UPDATED`
+với before/after.
+
+Khi tắt một cửa vào, backend làm các bước sau trong cùng transaction và dưới restaurant lock dùng chung
+với guest-access và submit:
+
+- Thu hồi mọi guest token của cửa vào đó. Khách đang mở trang gửi yêu cầu sẽ nhận `401 QR_GUEST_ACCESS_INVALID`.
+- Huỷ mọi request PENDING của cửa vào đó với `cancellationReason = QR_ORDERING_DISABLED`, có audit
+  `QR_ORDER_REQUEST_CANCELLED` và sự kiện realtime như các lần huỷ khác. Request đã APPROVED và order không bị ảnh hưởng.
+- Mint guest-access mới trả `403 QR_ORDER_UNAVAILABLE`, cùng mã với trường hợp gói không có feature.
+  Màn duyệt của nhân viên cũng không duyệt được (`canApprove=false`).
+- Menu công khai vẫn xem được và trả `orderingEnabled=false`.
+
+Bật lại thì có hiệu lực ngay: mã QR đã in vẫn dùng được, khách chỉ cần quét lại để lấy guest token mới.
+Response của API này chỉ là công tắc, không phản ánh gói. FE lấy quyền lợi `QR_TABLE_ORDER` / `QR_STATIC_ORDER`
+từ danh sách feature của subscription để disable công tắc khi gói không có.
 
 ## Errors
 

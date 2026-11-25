@@ -1,4 +1,4 @@
-# Nhóm 10 – Quản lý kho (UC46–UC51)
+# Nhóm 10 – Quản lý kho (UC45–UC50)
 
 ## Sơ đồ Use Case
 
@@ -11,32 +11,32 @@ actor "Chủ nhà hàng" as Owner
 actor "Hệ thống\n(sự kiện bán hàng, kiểm kê)" as Sys <<system>>
 
 rectangle "Quản lý kho" {
-  usecase "UC46 Quản lý kho hàng" as UC46
-  usecase "Đặt kho mặc định" as UC46a
-  usecase "UC47 Theo dõi tồn kho\n& đặt ngưỡng tối thiểu" as UC47
-  usecase "UC48 Lập phiếu nhập /\nxuất / điều chỉnh kho" as UC48
-  usecase "Xác nhận phiếu kho" as UC48a
-  usecase "Huỷ phiếu kho" as UC48b
-  usecase "UC49 Kiểm kê kho" as UC49
-  usecase "Chốt kiểm kê" as UC49a
-  usecase "UC50 Xử lý cảnh báo\nsắp hết hàng" as UC50
-  usecase "UC51 Tra cứu lịch sử\nbiến động kho" as UC51
+  usecase "UC45 Quản lý kho hàng" as UC45
+  usecase "Đặt kho mặc định" as UC45a
+  usecase "UC46 Theo dõi tồn kho\n& đặt ngưỡng tối thiểu" as UC46
+  usecase "UC47 Lập phiếu nhập /\nxuất / điều chỉnh kho" as UC47
+  usecase "Xác nhận phiếu kho" as UC47a
+  usecase "Huỷ phiếu kho" as UC47b
+  usecase "UC48 Kiểm kê kho" as UC48
+  usecase "Chốt kiểm kê" as UC48a
+  usecase "UC49 Xử lý cảnh báo\nsắp hết hàng" as UC49
+  usecase "UC50 Tra cứu lịch sử\nbiến động kho" as UC50
   usecase "Cập nhật tồn & sinh cảnh báo" as UCbal
 }
 
+Owner --> UC45
 Owner --> UC46
 Owner --> UC47
 Owner --> UC48
 Owner --> UC49
 Owner --> UC50
-Owner --> UC51
 
-UC46a .> UC46 : <<extend>>
+UC45a .> UC45 : <<extend>>
+UC47a .> UC47 : <<extend>>
+UC47b .> UC47 : <<extend>>
 UC48a .> UC48 : <<extend>>
-UC48b .> UC48 : <<extend>>
-UC49a .> UC49 : <<extend>>
+UC47a ..> UCbal : <<include>>
 UC48a ..> UCbal : <<include>>
-UC49a ..> UCbal : <<include>>
 Sys --> UCbal
 @enduml
 ```
@@ -71,7 +71,7 @@ state "Phiếu kiểm kê" as A {
 
 ---
 
-## UC46 – Quản lý kho hàng
+## UC45 – Quản lý kho hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -97,7 +97,7 @@ state "Phiếu kiểm kê" as A {
 
 ---
 
-## UC47 – Theo dõi tồn kho & đặt ngưỡng tối thiểu
+## UC46 – Theo dõi tồn kho & đặt ngưỡng tối thiểu
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -121,7 +121,7 @@ state "Phiếu kiểm kê" as A {
 
 ---
 
-## UC48 – Lập phiếu nhập / xuất / điều chỉnh kho
+## UC47 – Lập phiếu nhập / xuất / điều chỉnh kho
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -152,12 +152,12 @@ state "Phiếu kiểm kê" as A {
 - 1b. Mã phiếu trùng → `STOCK_DOCUMENT_CODE_EXISTS`.
 
 **Quy tắc nghiệp vụ**
-- BR48-1: Không sửa/huỷ phiếu đã xác nhận; muốn sửa sai thì lập phiếu điều chỉnh.
-- BR48-2: Phiếu nhập không tự sinh khoản chi; khoản chi trả nhà cung cấp ghi ở UC56 (có thể liên kết phiếu nhập).
+- BR47-1: Không sửa/huỷ phiếu đã xác nhận; muốn sửa sai thì lập phiếu điều chỉnh.
+- BR47-2: Phiếu nhập không tự sinh khoản chi; khoản chi trả nhà cung cấp ghi ở UC55 (có thể liên kết phiếu nhập).
 
 ---
 
-## UC49 – Kiểm kê kho
+## UC48 – Kiểm kê kho
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -187,7 +187,7 @@ state "Phiếu kiểm kê" as A {
 
 ---
 
-## UC50 – Xử lý cảnh báo sắp hết hàng
+## UC49 – Xử lý cảnh báo sắp hết hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -198,19 +198,19 @@ state "Phiếu kiểm kê" as A {
 | **Hậu điều kiện** | Cảnh báo chuyển `ACKNOWLEDGED`; ghi nhật ký. Cảnh báo tự chuyển `RESOLVED` khi tồn trở lại ≥ ngưỡng. |
 
 **Luồng chính**
-1. Sau một biến động kho (bán hàng UC38, xuất kho UC48, kiểm kê UC49, đổi ngưỡng UC47) làm tồn < ngưỡng, hệ thống tạo cảnh báo `OPEN` và phát sự kiện realtime.
+1. Sau một biến động kho (bán hàng UC37, xuất kho UC47, kiểm kê UC48, đổi ngưỡng UC46) làm tồn < ngưỡng, hệ thống tạo cảnh báo `OPEN` và phát sự kiện realtime.
 2. Actor mở “Cảnh báo kho”; hệ thống hiển thị danh sách (lọc theo trạng thái, kho).
 3. Actor xem chi tiết cảnh báo (nguyên liệu, tồn hiện tại, ngưỡng).
 4. Actor nhấn “Đã xem”, nhập ghi chú (tuỳ chọn).
 5. Hệ thống chuyển cảnh báo `ACKNOWLEDGED`.
-6. Khi actor nhập kho đủ (UC48), hệ thống tự chuyển cảnh báo `RESOLVED`.
+6. Khi actor nhập kho đủ (UC47), hệ thống tự chuyển cảnh báo `RESOLVED`.
 
 **Ngoại lệ**
 - 5a. Cảnh báo đã được xử lý/đã tự đóng → `409 INVALID_LOW_STOCK_ALERT_TRANSITION`.
 
 ---
 
-## UC51 – Tra cứu lịch sử biến động kho
+## UC50 – Tra cứu lịch sử biến động kho
 
 | Thuộc tính | Nội dung |
 |---|---|

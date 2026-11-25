@@ -1,4 +1,4 @@
-# Nhóm 5 – Bàn & phiên bàn (UC23–UC28)
+# Nhóm 5 – Bàn & phiên bàn (UC22–UC27)
 
 ## Sơ đồ Use Case
 
@@ -14,40 +14,40 @@ actor "Thu ngân" as Cashier
 
 rectangle "Bàn & phiên bàn" {
   usecase "Xem sơ đồ bàn" as UCV
-  usecase "UC23 Quản lý khu vực" as UC23
-  usecase "UC24 Quản lý bàn" as UC24
-  usecase "UC25 Quản lý mã QR bàn" as UC25
-  usecase "Tạo lại mã QR bàn" as UC25a
-  usecase "UC26 Mở bàn" as UC26
-  usecase "UC27 Chuyển bàn" as UC27
-  usecase "UC28 Đóng / huỷ phiên bàn" as UC28
-  usecase "Xem lịch sử chuyển bàn" as UC27a
+  usecase "UC22 Quản lý khu vực" as UC22
+  usecase "UC23 Quản lý bàn" as UC23
+  usecase "UC24 Quản lý mã QR bàn" as UC24
+  usecase "Tạo lại mã QR bàn" as UC24a
+  usecase "UC25 Mở bàn" as UC25
+  usecase "UC26 Chuyển bàn" as UC26
+  usecase "UC27 Đóng / huỷ phiên bàn" as UC27
+  usecase "Xem lịch sử chuyển bàn" as UC26a
 }
 
+Owner --> UC22
 Owner --> UC23
 Owner --> UC24
 Owner --> UC25
 Owner --> UC26
 Owner --> UC27
-Owner --> UC28
 
 Manager --> UCV
+Manager --> UC25
 Manager --> UC26
 Manager --> UC27
-Manager --> UC28
 
 Waiter --> UCV
+Waiter --> UC25
 Waiter --> UC26
 Waiter --> UC27
-Waiter --> UC28
 
 Cashier --> UCV
-Cashier --> UC28
+Cashier --> UC27
 
-UC25a .> UC25 : <<extend>>
-UC27a .> UC27 : <<extend>>
+UC24a .> UC24 : <<extend>>
+UC26a .> UC26 : <<extend>>
+UC25 ..> UCV : <<include>>
 UC26 ..> UCV : <<include>>
-UC27 ..> UCV : <<include>>
 @enduml
 ```
 
@@ -55,10 +55,10 @@ UC27 ..> UCV : <<include>>
 
 ```plantuml
 @startuml ST_TableSession
-[*] --> OPEN : UC26 mở bàn /\nduyệt QR tại bàn / tạo đơn tại bàn
-OPEN --> OPEN : UC27 chuyển bàn\n(cập nhật số khách, ghi chú)
-OPEN --> CLOSED : UC28 đóng /\nUC36 hoàn tất đơn
-OPEN --> CANCELLED : UC28 huỷ (chưa có đơn)
+[*] --> OPEN : UC25 mở bàn /\nduyệt QR tại bàn / tạo đơn tại bàn
+OPEN --> OPEN : UC26 chuyển bàn\n(cập nhật số khách, ghi chú)
+OPEN --> CLOSED : UC27 đóng /\nUC35 hoàn tất đơn
+OPEN --> CANCELLED : UC27 huỷ (chưa có đơn)
 CLOSED --> [*]
 CANCELLED --> [*]
 @enduml
@@ -66,7 +66,7 @@ CANCELLED --> [*]
 
 ---
 
-## UC23 – Quản lý khu vực
+## UC22 – Quản lý khu vực
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -92,7 +92,7 @@ CANCELLED --> [*]
 
 ---
 
-## UC24 – Quản lý bàn
+## UC23 – Quản lý bàn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -118,7 +118,7 @@ CANCELLED --> [*]
 
 ---
 
-## UC25 – Quản lý mã QR bàn
+## UC24 – Quản lý mã QR bàn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -137,7 +137,7 @@ CANCELLED --> [*]
 
 ---
 
-## UC26 – Mở bàn
+## UC25 – Mở bàn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -151,11 +151,11 @@ CANCELLED --> [*]
 2. Actor nhấn “Mở bàn”, nhập số khách và ghi chú (tuỳ chọn).
 3. Hệ thống kiểm tra bàn hoạt động, khu vực hoạt động, bàn chưa có phiên mở.
 4. Hệ thống tạo phiên `OPEN` và trả thông tin phiên.
-5. Actor tiếp tục gọi món cho bàn (UC29).
+5. Actor tiếp tục gọi món cho bàn (UC28).
 
 **Luồng thay thế**
 - 2a. Cập nhật phiên đang mở (số khách, ghi chú) – cùng quyền `TABLE_OPEN`.
-- 1a. Phiên có thể được mở **tự động** khi tạo đơn tại bàn (UC29) hoặc khi duyệt yêu cầu QR tại bàn (UC33).
+- 1a. Phiên có thể được mở **tự động** khi tạo đơn tại bàn (UC28) hoặc khi duyệt yêu cầu QR tại bàn (UC32).
 
 **Ngoại lệ**
 - 3a. Bàn đã có phiên mở → `409 TABLE_ALREADY_OCCUPIED`.
@@ -163,7 +163,7 @@ CANCELLED --> [*]
 
 ---
 
-## UC27 – Chuyển bàn
+## UC26 – Chuyển bàn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -189,11 +189,11 @@ CANCELLED --> [*]
 - E6 / E7 – xung đột phiên bản / gửi lặp.
 
 **Quy tắc nghiệp vụ**
-- BR27-1: Không hỗ trợ gộp bàn, tách bàn, hoán đổi bàn. QR của bàn vật lý không đổi.
+- BR26-1: Không hỗ trợ gộp bàn, tách bàn, hoán đổi bàn. QR của bàn vật lý không đổi.
 
 ---
 
-## UC28 – Đóng / huỷ phiên bàn
+## UC27 – Đóng / huỷ phiên bàn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -209,7 +209,7 @@ CANCELLED --> [*]
 
 **Luồng thay thế**
 - 1a. Huỷ phiên: actor chọn “Huỷ phiên”, nhập lý do → hệ thống kiểm tra phiên chưa phát sinh đơn → chuyển `CANCELLED`.
-- 1b. Thông thường phiên được đóng **tự động** khi hoàn tất đơn tại bàn (UC36).
+- 1b. Thông thường phiên được đóng **tự động** khi hoàn tất đơn tại bàn (UC35).
 
 **Ngoại lệ**
 - 2a. Còn đơn chưa hoàn tất → `409 TABLE_SESSION_NOT_READY_TO_CLOSE` / `TABLE_SESSION_HAS_SERVING_ORDER`.

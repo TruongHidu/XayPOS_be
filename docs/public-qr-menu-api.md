@@ -42,11 +42,18 @@ Example success (200):
   "table": { "code": "B01", "name": "Bàn 1" },
   "groups": [
     { "id": "11111111-1111-4111-8111-111111111111", "name": "Món chính", "displayOrder": 0 }
-  ]
+  ],
+  "orderingEnabled": true
 }
 ```
 
 Only active, undeleted groups of this restaurant are returned. Empty groups are allowed. Sort: `displayOrder ASC, name ASC, id ASC`. An empty menu has `groups: []`.
+
+`orderingEnabled` says whether guests can order from this table right now: the owner's table switch
+(`PUT /api/v1/restaurants/me/qr-ordering`, see [public-qr-order-api.md](public-qr-order-api.md#bậttắt-qr-gọi-món))
+is on **and** the package entitles `QR_TABLE_ORDER`, `ORDER_MANAGEMENT` and `TABLE_MANAGEMENT`. When it is
+`false` the menu stays viewable; hide the cart and order button. It is a display hint only: guest access and
+submission enforce the same rules independently.
 
 ## GET /api/v1/public/menu/tables/{qrToken}/items
 

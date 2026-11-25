@@ -7,6 +7,7 @@ import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.qrorder.entity.*;
 import com.possaas.modules.qrorder.repository.*;
 import com.possaas.modules.qrorder.service.*;
+import com.possaas.modules.restaurant.entity.QrOrderingEntry;
 import com.possaas.modules.table.entity.*;
 import com.possaas.modules.table.repository.*;
 import java.time.Instant;
@@ -67,6 +68,26 @@ class QrLifecycleServiceTest {
         lifecycle.invalidateRestaurantCredential(tenant,"old-menu",actor,now,"127.0.0.1");
         assertThat(grant.getRevokedAt()).isEqualTo(now); assertThat(pending.getStatus()).isEqualTo(QrRequestStatus.CANCELLED);
         assertThat(pending.getCancellationReason()).isEqualTo("RESTAURANT_MENU_TOKEN_ROTATED"); verifyNoInteractions(access,tables,sessions);
+    }
+    @Test void switchingTakeawayOffWithdrawsEveryTakeawayGuestAndPendingRequestButNoTable() {
+        var pending=request(QrEntryType.RESTAURANT,QrRequestStatus.PENDING); var grant=new QrGuestAuthorization();
+        when(grants.findAllByRestaurantIdAndEntryTypeAndRevokedAtIsNull(tenant,QrEntryType.RESTAURANT)).thenReturn(List.of(grant));
+        when(requests.findAllByRestaurantIdAndEntryTypeAndStatus(tenant,QrEntryType.RESTAURANT,QrRequestStatus.PENDING)).thenReturn(List.of(pending));
+        lifecycle.qrOrderingDisabled(tenant,QrOrderingEntry.TAKEAWAY,actor,now,"127.0.0.1");
+        assertThat(grant.getRevokedAt()).isEqualTo(now);
+        assertThat(pending.getStatus()).isEqualTo(QrRequestStatus.CANCELLED); assertThat(pending.getCancellationReason()).isEqualTo("QR_ORDERING_DISABLED");
+        verify(grants,never()).findAllByRestaurantIdAndEntryTypeAndRevokedAtIsNull(tenant,QrEntryType.TABLE);
+        verify(requests,never()).findAllByRestaurantIdAndEntryTypeAndStatus(tenant,QrEntryType.TABLE,QrRequestStatus.PENDING);
+        verifyNoInteractions(access,tables,sessions);
+        verify(audit).record(eq(tenant),eq(actor),eq("QR_ORDER_REQUEST_CANCELLED"),eq("qr_order_requests"),eq(pending.getId()),anyMap(),anyMap(),eq("127.0.0.1"));
+    }
+    @Test void switchingTableOffTargetsTheTableEntryType() {
+        var pending=request(QrEntryType.TABLE,QrRequestStatus.PENDING);
+        when(requests.findAllByRestaurantIdAndEntryTypeAndStatus(tenant,QrEntryType.TABLE,QrRequestStatus.PENDING)).thenReturn(List.of(pending));
+        lifecycle.qrOrderingDisabled(tenant,QrOrderingEntry.TABLE,actor,now,"127.0.0.1");
+        verify(grants).findAllByRestaurantIdAndEntryTypeAndRevokedAtIsNull(tenant,QrEntryType.TABLE);
+        assertThat(pending.getStatus()).isEqualTo(QrRequestStatus.CANCELLED);
+        verifyNoInteractions(access,tables,sessions);
     }
     @Test void alreadyCancelledRowsDoNotProduceDuplicateSuccessAudit() {
         var cancelled=request(QrEntryType.TABLE,QrRequestStatus.CANCELLED); cancelled.setCancelledAt(now.minusSeconds(5)); cancelled.setCancellationReason("ORIGINAL");

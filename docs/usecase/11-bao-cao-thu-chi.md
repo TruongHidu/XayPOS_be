@@ -1,4 +1,4 @@
-# Nhóm 11 – Báo cáo & sổ thu chi (UC52–UC57)
+# Nhóm 11 – Báo cáo & sổ thu chi (UC51–UC56)
 
 ## Sơ đồ Use Case
 
@@ -12,40 +12,40 @@ actor "Thu ngân" as Cashier
 actor "Quản lý" as Manager
 
 rectangle "Báo cáo & sổ thu chi" {
-  usecase "UC52 Xem báo cáo\ntrong ngày" as UC52
-  usecase "UC53 Xem báo cáo chi tiết" as UC53
-  usecase "Doanh thu theo thời gian" as UC53a
-  usecase "Cơ cấu phương thức\nthanh toán" as UC53b
-  usecase "Món bán chạy" as UC53c
-  usecase "Danh sách đơn trong kỳ" as UC53d
-  usecase "UC54 Xem báo cáo\nlãi gộp tham chiếu" as UC54
-  usecase "UC55 Xem sổ thu chi" as UC55
-  usecase "Đối chiếu phiếu nhập kho" as UC55a
-  usecase "UC56 Ghi khoản chi" as UC56
-  usecase "UC57 Huỷ khoản chi" as UC57
+  usecase "UC51 Xem báo cáo\ntrong ngày" as UC51
+  usecase "UC52 Xem báo cáo chi tiết" as UC52
+  usecase "Doanh thu theo thời gian" as UC52a
+  usecase "Cơ cấu phương thức\nthanh toán" as UC52b
+  usecase "Món bán chạy" as UC52c
+  usecase "Danh sách đơn trong kỳ" as UC52d
+  usecase "UC53 Xem báo cáo\nlãi gộp tham chiếu" as UC53
+  usecase "UC54 Xem sổ thu chi" as UC54
+  usecase "Đối chiếu phiếu nhập kho" as UC54a
+  usecase "UC55 Ghi khoản chi" as UC55
+  usecase "UC56 Huỷ khoản chi" as UC56
 }
 
-Cashier --> UC52
-Manager --> UC52
+Cashier --> UC51
+Manager --> UC51
+Owner --> UC51
 Owner --> UC52
 Owner --> UC53
 Owner --> UC54
 Owner --> UC55
 Owner --> UC56
-Owner --> UC57
 
-UC53a .> UC53 : <<extend>>
-UC53b .> UC53 : <<extend>>
-UC53c .> UC53 : <<extend>>
-UC53d .> UC53 : <<extend>>
-UC55a .> UC55 : <<extend>>
-UC57 ..> UC55 : <<include>>
+UC52a .> UC52 : <<extend>>
+UC52b .> UC52 : <<extend>>
+UC52c .> UC52 : <<extend>>
+UC52d .> UC52 : <<extend>>
+UC54a .> UC54 : <<extend>>
+UC56 ..> UC54 : <<include>>
 @enduml
 ```
 
 ---
 
-## UC52 – Xem báo cáo trong ngày
+## UC51 – Xem báo cáo trong ngày
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -64,7 +64,7 @@ UC57 ..> UC55 : <<include>>
 
 ---
 
-## UC53 – Xem báo cáo chi tiết
+## UC52 – Xem báo cáo chi tiết
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -83,12 +83,12 @@ UC57 ..> UC55 : <<include>>
 - 1a. Khoảng ngày đảo ngược hoặc quá dài → `400` (mã lỗi phạm vi báo cáo).
 
 **Quy tắc nghiệp vụ**
-- BR53-1: Tách bạch **tiền thực thu** (theo thời điểm thanh toán thành công) và **doanh số bán** (theo đơn hoàn tất).
-- BR53-2: Mọi mốc ngày tính theo múi giờ của nhà hàng.
+- BR52-1: Tách bạch **tiền thực thu** (theo thời điểm thanh toán thành công) và **doanh số bán** (theo đơn hoàn tất).
+- BR52-2: Mọi mốc ngày tính theo múi giờ của nhà hàng.
 
 ---
 
-## UC54 – Xem báo cáo lãi gộp tham chiếu
+## UC53 – Xem báo cáo lãi gộp tham chiếu
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -104,11 +104,11 @@ UC57 ..> UC55 : <<include>>
 4. Actor chọn một món trong đơn → xem chi tiết snapshot giá vốn.
 
 **Luồng thay thế**
-- 2a. Có đơn thiếu giá nguyên liệu → hệ thống đánh dấu `INCOMPLETE`, hiển thị cảnh báo “số liệu chưa đầy đủ”, gợi ý cập nhật giá vốn (UC19/UC21).
+- 2a. Có đơn thiếu giá nguyên liệu → hệ thống đánh dấu `INCOMPLETE`, hiển thị cảnh báo “số liệu chưa đầy đủ”, gợi ý cập nhật giá vốn (UC18/UC20).
 
 ---
 
-## UC55 – Xem sổ thu chi
+## UC54 – Xem sổ thu chi
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -127,12 +127,12 @@ UC57 ..> UC55 : <<include>>
 - 1a. (Extend) “Đối chiếu phiếu nhập”: hệ thống liệt kê phiếu nhập kho đã xác nhận cùng tổng giá trị và tổng tiền đã ghi chi liên kết.
 
 **Quy tắc nghiệp vụ**
-- BR55-1: Chênh lệch thu chi **không phải** lợi nhuận hay số dư quỹ; không tính giá vốn nguyên liệu tiêu hao.
-- BR55-2: Danh mục chi: mua nguyên liệu, thuê mặt bằng, lương, điện nước, bảo trì, khác.
+- BR54-1: Chênh lệch thu chi **không phải** lợi nhuận hay số dư quỹ; không tính giá vốn nguyên liệu tiêu hao.
+- BR54-2: Danh mục chi: mua nguyên liệu, thuê mặt bằng, lương, điện nước, bảo trì, khác.
 
 ---
 
-## UC56 – Ghi khoản chi
+## UC55 – Ghi khoản chi
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -155,7 +155,7 @@ UC57 ..> UC55 : <<include>>
 
 ---
 
-## UC57 – Huỷ khoản chi
+## UC56 – Huỷ khoản chi
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -165,7 +165,7 @@ UC57 ..> UC55 : <<include>>
 | **Hậu điều kiện** | Phiếu chi `VOIDED` kèm lý do, người huỷ, thời điểm; ghi nhật ký. |
 
 **Luồng chính**
-1. Actor mở chi tiết phiếu chi trong sổ thu chi (include UC55), chọn “Huỷ phiếu chi”.
+1. Actor mở chi tiết phiếu chi trong sổ thu chi (include UC54), chọn “Huỷ phiếu chi”.
 2. Actor nhập lý do và xác nhận.
 3. Hệ thống kiểm tra phiếu đang `POSTED`, phiên bản đúng; chuyển sang `VOIDED`.
 

@@ -1,4 +1,4 @@
-# Nhóm 9 – Thực khách gọi món qua QR (UC43–UC45)
+# Nhóm 9 – Thực khách gọi món qua QR (UC42–UC44)
 
 ## Sơ đồ Use Case
 
@@ -11,27 +11,27 @@ actor "Thực khách" as Diner
 actor "Nhân viên nhà hàng" as Staff
 
 rectangle "Gọi món qua QR" {
-  usecase "UC43 Xem thực đơn qua QR" as UC43
-  usecase "Quét QR tại bàn" as UC43a
-  usecase "Quét QR chung\n(mang đi)" as UC43b
-  usecase "UC44 Gửi yêu cầu gọi món" as UC44
-  usecase "Nhận mã truy cập khách\n(guest token)" as UC44a
-  usecase "UC45 Theo dõi trạng thái\nyêu cầu" as UC45
-  usecase "UC33 Duyệt yêu cầu" as UC33
-  usecase "UC34 Từ chối yêu cầu" as UC34
+  usecase "UC42 Xem thực đơn qua QR" as UC42
+  usecase "Quét QR tại bàn" as UC42a
+  usecase "Quét QR chung\n(mang đi)" as UC42b
+  usecase "UC43 Gửi yêu cầu gọi món" as UC43
+  usecase "Nhận mã truy cập khách\n(guest token)" as UC43a
+  usecase "UC44 Theo dõi trạng thái\nyêu cầu" as UC44
+  usecase "UC32 Duyệt yêu cầu" as UC32
+  usecase "UC33 Từ chối yêu cầu" as UC33
 }
 
+Diner --> UC42
 Diner --> UC43
 Diner --> UC44
-Diner --> UC45
-UC43a -|> UC43
-UC43b -|> UC43
-UC44 ..> UC43 : <<include>>
-UC44 ..> UC44a : <<include>>
+UC42a -|> UC42
+UC42b -|> UC42
+UC43 ..> UC42 : <<include>>
+UC43 ..> UC43a : <<include>>
+Staff --> UC32
 Staff --> UC33
-Staff --> UC34
-UC33 .> UC44 : <<extend>>
-UC34 .> UC44 : <<extend>>
+UC32 .> UC43 : <<extend>>
+UC33 .> UC43 : <<extend>>
 @enduml
 ```
 
@@ -39,16 +39,16 @@ UC34 .> UC44 : <<extend>>
 
 ```plantuml
 @startuml ST_QrRequest
-[*] --> PENDING : UC44 khách gửi
-PENDING --> APPROVED : UC33 nhân viên duyệt\n(tạo / gọi thêm đơn)
-PENDING --> REJECTED : UC34 nhân viên từ chối
+[*] --> PENDING : UC43 khách gửi
+PENDING --> APPROVED : UC32 nhân viên duyệt\n(tạo / gọi thêm đơn)
+PENDING --> REJECTED : UC33 nhân viên từ chối
 PENDING --> CANCELLED : hết hạn / bàn thanh toán /\nQR bàn bị tạo lại
 @enduml
 ```
 
 ---
 
-## UC43 – Xem thực đơn qua QR
+## UC42 – Xem thực đơn qua QR
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -69,14 +69,14 @@ PENDING --> CANCELLED : hết hạn / bàn thanh toán /\nQR bàn bị tạo l�
 
 ---
 
-## UC44 – Gửi yêu cầu gọi món qua QR
+## UC43 – Gửi yêu cầu gọi món qua QR
 
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Thực khách |
-| **Actor phụ** | Nhân viên nhà hàng (nhận thông báo, xử lý ở UC33/UC34) |
+| **Actor phụ** | Nhân viên nhà hàng (nhận thông báo, xử lý ở UC32/UC33) |
 | **Mô tả** | Khách chọn món vào giỏ và gửi yêu cầu. Yêu cầu **chưa phải đơn**: không mở bàn, không gửi bếp, không tính tiền cho đến khi nhân viên duyệt. |
-| **Tiền điều kiện** | Đang ở trang thực đơn QR (UC43). Gói có `QR_TABLE_ORDER` (tại bàn) hoặc `QR_STATIC_ORDER` (mang đi). |
+| **Tiền điều kiện** | Đang ở trang thực đơn QR (UC42). Gói có `QR_TABLE_ORDER` (tại bàn) hoặc `QR_STATIC_ORDER` (mang đi). |
 | **Hậu điều kiện** | Tạo yêu cầu `PENDING` có thời hạn; nhân viên nhận thông báo realtime; ghi nhật ký `QR_ORDER_REQUEST_CREATED`. |
 
 **Luồng chính**
@@ -85,7 +85,7 @@ PENDING --> CANCELLED : hết hạn / bàn thanh toán /\nQR bàn bị tạo l�
 3. Khách nhấn “Gửi yêu cầu”; với mang đi phải nhập **tên người nhận** (SĐT tuỳ chọn). Client gửi kèm `Idempotency-Key`.
 4. Hệ thống kiểm tra guest token, giới hạn tần suất, kích thước yêu cầu, món còn bán, gói còn tính năng QR.
 5. Hệ thống tính tạm tính, lưu yêu cầu `PENDING`, ghi nhận phiên bàn đang mở (nếu có).
-6. Hệ thống đẩy thông báo realtime tới nhân viên; trả mã yêu cầu cho khách và chuyển sang màn hình theo dõi (UC45).
+6. Hệ thống đẩy thông báo realtime tới nhân viên; trả mã yêu cầu cho khách và chuyển sang màn hình theo dõi (UC44).
 
 **Ngoại lệ**
 - 2a. Token QR không hợp lệ / hết hạn → `QR_GUEST_ACCESS_INVALID`; client xin lại token.
@@ -97,18 +97,18 @@ PENDING --> CANCELLED : hết hạn / bàn thanh toán /\nQR bàn bị tạo l�
 - E7 – gửi lặp cùng key → trả lại yêu cầu cũ.
 
 **Quy tắc nghiệp vụ**
-- BR44-1: Guest token không dùng được cho bất kỳ API nội bộ nào (đơn, bàn, thanh toán).
-- BR44-2: Khách không thấy thông tin của khách khác hoặc giá vốn/kho.
+- BR43-1: Guest token không dùng được cho bất kỳ API nội bộ nào (đơn, bàn, thanh toán).
+- BR43-2: Khách không thấy thông tin của khách khác hoặc giá vốn/kho.
 
 ---
 
-## UC45 – Theo dõi trạng thái yêu cầu gọi món
+## UC44 – Theo dõi trạng thái yêu cầu gọi món
 
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Thực khách |
 | **Mô tả** | Khách xem yêu cầu của mình đang chờ duyệt, đã được xác nhận (kèm mã đơn), bị từ chối (kèm lý do) hay đã huỷ/hết hạn. |
-| **Tiền điều kiện** | Đã gửi yêu cầu (UC44) và còn giữ guest token. |
+| **Tiền điều kiện** | Đã gửi yêu cầu (UC43) và còn giữ guest token. |
 | **Hậu điều kiện** | Không thay đổi dữ liệu. |
 
 **Luồng chính**

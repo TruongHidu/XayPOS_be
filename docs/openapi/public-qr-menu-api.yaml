@@ -121,8 +121,11 @@ components:
     PublicQrMenu:
       type: object
       additionalProperties: false
-      required: [restaurant, table, groups]
+      required: [restaurant, table, groups, orderingEnabled]
       properties:
+        orderingEnabled:
+          type: boolean
+          description: 'Whether guests can order from this table right now: the owner''s table switch (PUT /api/v1/restaurants/me/qr-ordering) is on AND the package entitles QR_TABLE_ORDER, ORDER_MANAGEMENT and TABLE_MANAGEMENT. false = view-only menu, hide the cart. Display hint only; guest-access and submit enforce it independently.'
         restaurant:
           type: object
           additionalProperties: false

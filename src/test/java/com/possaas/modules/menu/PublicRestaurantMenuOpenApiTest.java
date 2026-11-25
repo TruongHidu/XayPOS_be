@@ -28,9 +28,11 @@ class PublicRestaurantMenuOpenApiTest {
                 assertThat(operation.path("responses").has("401")).isTrue();
             }
         }));
-        assertThat(operations).hasSize(7); assertThat(root.path("paths").size()).isEqualTo(6);
+        assertThat(operations).hasSize(9); assertThat(root.path("paths").size()).isEqualTo(7);
         var fields = new HashSet<String>(); root.at("/components/schemas/PublicRestaurantMenu/properties").fieldNames().forEachRemaining(fields::add);
-        assertThat(fields).containsExactlyInAnyOrder("restaurant", "groups");
+        assertThat(fields).containsExactlyInAnyOrder("restaurant", "groups", "orderingEnabled");
+        var switches = new HashSet<String>(); root.at("/components/schemas/QrOrderingSettings/required").forEach(f -> switches.add(f.asText()));
+        assertThat(switches).containsExactlyInAnyOrder("tableEnabled", "takeawayEnabled");
         assertThat(root.at("/components/schemas/RotateMenuLink/required").toString()).contains("expectedToken").doesNotContain("expectedVersion");
     }
 

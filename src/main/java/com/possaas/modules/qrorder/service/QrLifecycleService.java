@@ -4,6 +4,7 @@ import com.possaas.modules.audit.service.AuditService;
 import com.possaas.modules.qrorder.application.port.QrRequestLifecycle;
 import com.possaas.modules.qrorder.entity.*;
 import com.possaas.modules.qrorder.repository.*;
+import com.possaas.modules.restaurant.entity.QrOrderingEntry;
 import com.possaas.modules.table.repository.RestaurantTableRepository;
 import com.possaas.modules.table.repository.TableSessionRepository;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @RequiredArgsConstructor
 @Transactional(propagation = Propagation.MANDATORY)
 public class QrLifecycleService implements QrRequestLifecycle {
+    static final String ORDERING_DISABLED = "QR_ORDERING_DISABLED";
     private final QrTableAccessRepository access;
     private final QrGuestAuthorizationRepository grants;
     private final QrRequestEventPublisher events;
@@ -43,6 +45,14 @@ public class QrLifecycleService implements QrRequestLifecycle {
         authorizations.forEach(g -> { g.setRevokedAt(now); g.setUpdatedAt(now); }); grants.saveAll(authorizations);
         cancel(requests.findAllByRestaurantIdAndEntryTypeAndCredentialHashAndStatus(tenant, QrEntryType.RESTAURANT, hash,
             QrRequestStatus.PENDING), "RESTAURANT_MENU_TOKEN_ROTATED", actor, now, ip);
+    }
+
+    @Override public void qrOrderingDisabled(UUID tenant, QrOrderingEntry entry, UUID actor, Instant now, String ip) {
+        var type = QrEntryType.of(entry);
+        var authorizations = grants.findAllByRestaurantIdAndEntryTypeAndRevokedAtIsNull(tenant, type);
+        authorizations.forEach(g -> { g.setRevokedAt(now); g.setUpdatedAt(now); }); grants.saveAll(authorizations);
+        cancel(requests.findAllByRestaurantIdAndEntryTypeAndStatus(tenant, type, QrRequestStatus.PENDING),
+            ORDERING_DISABLED, actor, now, ip);
     }
 
     @Override public void checkoutStarted(UUID tenant, UUID sessionId, UUID actor, Instant now, String ip) {

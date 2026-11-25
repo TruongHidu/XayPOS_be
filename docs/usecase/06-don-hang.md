@@ -1,4 +1,4 @@
-# Nhóm 6 – Gọi món & đơn hàng (UC29–UC36)
+# Nhóm 6 – Gọi món & đơn hàng (UC28–UC35)
 
 ## Sơ đồ Use Case
 
@@ -14,37 +14,38 @@ actor "Nhân viên bếp" as Kitchen
 actor "Chủ nhà hàng" as Owner
 
 rectangle "Đơn hàng" {
-  usecase "UC29 Tạo đơn hàng" as UC29
-  usecase "Tạo đơn tại bàn\n(DINE_IN)" as UC29a
-  usecase "Tạo đơn mang đi\n(TAKEAWAY)" as UC29b
+  usecase "UC28 Tạo đơn hàng" as UC28
+  usecase "Tạo đơn tại bàn\n(DINE_IN)" as UC28a
+  usecase "Tạo đơn mang đi\n(TAKEAWAY)" as UC28b
   usecase "Chọn món từ thực đơn" as UCsel
   usecase "Gửi đơn xuống bếp" as UCsub
   usecase "Giữ chỗ nguyên liệu\n& chụp công thức, giá vốn" as UCinv
-  usecase "UC26 Mở bàn" as UC26
-  usecase "UC30 Gọi thêm /\nchỉnh sửa món" as UC30
-  usecase "UC31 Huỷ món / huỷ đơn" as UC31
-  usecase "UC32 Tra cứu đơn hàng" as UC32
-  usecase "UC33 Duyệt yêu cầu\ngọi món QR" as UC33
-  usecase "UC34 Từ chối yêu cầu\ngọi món QR" as UC34
-  usecase "UC35 Xác nhận đã phục vụ" as UC35
-  usecase "UC36 Hoàn tất đơn hàng" as UC36
-  usecase "UC28 Đóng phiên bàn" as UC28
+  usecase "UC25 Mở bàn" as UC25
+  usecase "UC29 Gọi thêm /\nchỉnh sửa món" as UC29
+  usecase "UC30 Huỷ món / huỷ đơn" as UC30
+  usecase "UC31 Tra cứu đơn hàng" as UC31
+  usecase "UC32 Duyệt yêu cầu\ngọi món QR" as UC32
+  usecase "UC33 Từ chối yêu cầu\ngọi món QR" as UC33
+  usecase "UC34 Xác nhận đã phục vụ" as UC34
+  usecase "UC35 Hoàn tất đơn hàng" as UC35
+  usecase "UC27 Đóng phiên bàn" as UC27
 }
 
+Waiter --> UC28
 Waiter --> UC29
-Waiter --> UC30
+Waiter --> UC31
 Waiter --> UC32
 Waiter --> UC33
 Waiter --> UC34
 Waiter --> UC35
-Waiter --> UC36
+Cashier --> UC28
 Cashier --> UC29
-Cashier --> UC30
+Cashier --> UC31
 Cashier --> UC32
 Cashier --> UC33
 Cashier --> UC34
 Cashier --> UC35
-Cashier --> UC36
+Manager --> UC28
 Manager --> UC29
 Manager --> UC30
 Manager --> UC31
@@ -52,20 +53,19 @@ Manager --> UC32
 Manager --> UC33
 Manager --> UC34
 Manager --> UC35
-Manager --> UC36
-Kitchen --> UC32
-Kitchen --> UC35
-Owner --> UC31
+Kitchen --> UC31
+Kitchen --> UC34
+Owner --> UC30
 
-UC29a -|> UC29
-UC29b -|> UC29
+UC28a -|> UC28
+UC28b -|> UC28
+UC28 ..> UCsel : <<include>>
 UC29 ..> UCsel : <<include>>
-UC30 ..> UCsel : <<include>>
-UCsub .> UC29 : <<extend>>\n(chế độ SUBMIT)
+UCsub .> UC28 : <<extend>>\n(chế độ SUBMIT)
 UCsub ..> UCinv : <<include>>
-UC26 .> UC29a : <<extend>>\n(bàn chưa có phiên)
-UC33 ..> UCinv : <<include>>
-UC36 ..> UC28 : <<include>>\n(đơn tại bàn)
+UC25 .> UC28a : <<extend>>\n(bàn chưa có phiên)
+UC32 ..> UCinv : <<include>>
+UC35 ..> UC27 : <<include>>\n(đơn tại bàn)
 @enduml
 ```
 
@@ -80,9 +80,9 @@ state "Đơn hàng" as O {
   CONFIRMED --> PREPARING : có món đang nấu
   PREPARING --> READY : mọi món đã xong
   READY --> SERVED : mọi món đã mang ra
-  SERVED --> COMPLETED : UC36 (đã PAID)
-  OPEN --> CANCELLED : UC31
-  CONFIRMED --> CANCELLED : UC31 (món còn PENDING)
+  SERVED --> COMPLETED : UC35 (đã PAID)
+  OPEN --> CANCELLED : UC30
+  CONFIRMED --> CANCELLED : UC30 (món còn PENDING)
 }
 state "Món trong đơn" as I {
   state "PENDING" as I_PENDING
@@ -91,17 +91,17 @@ state "Món trong đơn" as I {
   state "SERVED" as I_SERVED
   state "CANCELLED" as I_CANCELLED
   [*] --> I_PENDING
-  I_PENDING --> I_COOKING : UC38
-  I_COOKING --> I_READY : UC39
-  I_READY --> I_SERVED : UC35
-  I_PENDING --> I_CANCELLED : UC31
+  I_PENDING --> I_COOKING : UC37
+  I_COOKING --> I_READY : UC38
+  I_READY --> I_SERVED : UC34
+  I_PENDING --> I_CANCELLED : UC30
 }
 @enduml
 ```
 
 ---
 
-## UC29 – Tạo đơn hàng
+## UC28 – Tạo đơn hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -116,7 +116,7 @@ state "Món trong đơn" as I {
 3. Actor chọn món, số lượng, ghi chú từng món (ví dụ “ít cay”), số khách, ghi chú đơn.
 4. Actor nhấn “Gửi bếp” (chế độ SUBMIT). Client gửi kèm `Idempotency-Key`.
 5. Hệ thống kiểm tra:
-   - bàn/phiên hợp lệ; nếu bàn chưa có phiên → **tự mở phiên** (extend UC26, cần `TABLE_OPEN`);
+   - bàn/phiên hợp lệ; nếu bàn chưa có phiên → **tự mở phiên** (extend UC25, cần `TABLE_OPEN`);
    - phiên chưa có đơn đang phục vụ (mỗi phiên tối đa một đơn đang phục vụ);
    - món tồn tại, đang bán, còn hàng; số lượng hợp lệ; tổng tiền không vượt giới hạn.
 6. Hệ thống tạo đơn, chụp giá, tính tổng tiền, sinh mã đơn.
@@ -125,8 +125,8 @@ state "Món trong đơn" as I {
 
 **Luồng thay thế**
 - 1a. Mang đi: actor chọn “Đơn mang đi”, nhập tên/SĐT khách → bỏ qua bước chọn bàn.
-- 4a. Lưu nháp (DRAFT): đơn ở `OPEN`, chưa gửi bếp, chưa giữ kho; có thể sửa tự do và gửi bếp sau (UC30 – “Gửi bếp”).
-- 5a. Phiên đã có đơn đang phục vụ → `409 TABLE_SESSION_HAS_SERVING_ORDER`; client mở đơn hiện tại (lấy “đơn đang phục vụ của phiên”) và chuyển sang **gọi thêm** (UC30).
+- 4a. Lưu nháp (DRAFT): đơn ở `OPEN`, chưa gửi bếp, chưa giữ kho; có thể sửa tự do và gửi bếp sau (UC29 – “Gửi bếp”).
+- 5a. Phiên đã có đơn đang phục vụ → `409 TABLE_SESSION_HAS_SERVING_ORDER`; client mở đơn hiện tại (lấy “đơn đang phục vụ của phiên”) và chuyển sang **gọi thêm** (UC29).
 
 **Ngoại lệ**
 - 5b. Đơn rỗng → `400 EMPTY_ORDER`.
@@ -138,12 +138,12 @@ state "Món trong đơn" as I {
 - E7 – mất mạng gửi lại → trả lại đơn đã tạo, không tạo trùng.
 
 **Quy tắc nghiệp vụ**
-- BR29-1: Server tự tính giá, tổng tiền; không nhận số tiền/trạng thái từ client.
-- BR29-2: Mỗi phiên bàn tối đa **một** đơn đang phục vụ (`OPEN`…`SERVED`).
+- BR28-1: Server tự tính giá, tổng tiền; không nhận số tiền/trạng thái từ client.
+- BR28-2: Mỗi phiên bàn tối đa **một** đơn đang phục vụ (`OPEN`…`SERVED`).
 
 ---
 
-## UC30 – Gọi thêm / chỉnh sửa món
+## UC29 – Gọi thêm / chỉnh sửa món
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -162,17 +162,17 @@ state "Món trong đơn" as I {
 **Luồng thay thế**
 - 2a. Sửa dòng món: chỉ được sửa dòng ở trạng thái `PENDING` (chưa nấu) – đổi số lượng/ghi chú.
 - 2b. Sửa thông tin đơn: chỉ khi đơn còn `OPEN` (nháp).
-- 2c. Gửi bếp đơn nháp: “Xác nhận đơn” → đơn `CONFIRMED`, các món vào hàng chờ bếp (như bước 7 UC29).
+- 2c. Gửi bếp đơn nháp: “Xác nhận đơn” → đơn `CONFIRMED`, các món vào hàng chờ bếp (như bước 7 UC28).
 
 **Ngoại lệ**
 - 3a. Đơn đã thanh toán → `409 ORDER_HAS_FINANCIAL_OBLIGATIONS` (khách muốn gọi thêm thì tạo đơn mới sau khi hoàn tất).
 - 2a-a. Món đã bắt đầu nấu → `409 ORDER_ITEM_NOT_EDITABLE`.
 - 2b-a. Đơn không còn nháp → `409 ORDER_NOT_EDITABLE`.
-- E6 → `409 CONCURRENT_ORDER_UPDATE`; 4a. thiếu tồn → như UC29-7a.
+- E6 → `409 CONCURRENT_ORDER_UPDATE`; 4a. thiếu tồn → như UC28-7a.
 
 ---
 
-## UC31 – Huỷ món / huỷ đơn
+## UC30 – Huỷ món / huỷ đơn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -197,7 +197,7 @@ state "Món trong đơn" as I {
 
 ---
 
-## UC32 – Tra cứu đơn hàng
+## UC31 – Tra cứu đơn hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -219,12 +219,12 @@ state "Món trong đơn" as I {
 
 ---
 
-## UC33 – Duyệt yêu cầu gọi món QR
+## UC32 – Duyệt yêu cầu gọi món QR
 
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Nhân viên phục vụ, Thu ngân, Quản lý, Chủ nhà hàng |
-| **Mô tả** | Khi thực khách gửi yêu cầu gọi món qua QR (UC44), yêu cầu ở trạng thái **chờ duyệt**; nhân viên kiểm tra rồi duyệt để chuyển thành đơn thật. |
+| **Mô tả** | Khi thực khách gửi yêu cầu gọi món qua QR (UC43), yêu cầu ở trạng thái **chờ duyệt**; nhân viên kiểm tra rồi duyệt để chuyển thành đơn thật. |
 | **Tiền điều kiện** | ĐK-A; ĐK-G(`ORDER_MANAGEMENT` + `QR_TABLE_ORDER`/`QR_STATIC_ORDER`); ĐK-P(`ORDER_CREATE` và `ORDER_UPDATE`; mở phiên mới thêm `TABLE_OPEN`). Yêu cầu `PENDING`, chưa hết hạn. |
 | **Hậu điều kiện** | Yêu cầu `APPROVED` gắn với đơn. QR tại bàn: mở phiên nếu chưa có, tạo đơn mới hoặc **gọi thêm** vào đơn đang phục vụ của phiên. QR mang đi: tạo một đơn TAKEAWAY độc lập. Món vào hàng chờ bếp, giữ kho, chụp công thức/giá vốn; ghi nhật ký `QR_ORDER_REQUEST_APPROVED`. |
 
@@ -234,8 +234,8 @@ state "Món trong đơn" as I {
 3. Hệ thống hiển thị chi tiết: bàn (hoặc tên/SĐT khách mang đi), món, số lượng, ghi chú, tổng tạm tính, phiên/đơn sẽ được gắn.
 4. Actor kiểm tra và nhấn “Duyệt”.
 5. Hệ thống kiểm tra lại: yêu cầu còn `PENDING`, chưa hết hạn, QR bàn chưa bị tạo lại, ngữ cảnh duyệt (phiên/đơn đích) không thay đổi so với lúc xem, món còn bán, gói còn tính năng QR.
-6. Hệ thống tạo/gọi thêm đơn như UC29/UC30 ở chế độ gửi bếp, gắn yêu cầu với đơn.
-7. Hệ thống phát realtime tới bếp; thực khách thấy trạng thái “Đã xác nhận” (UC45).
+6. Hệ thống tạo/gọi thêm đơn như UC28/UC29 ở chế độ gửi bếp, gắn yêu cầu với đơn.
+7. Hệ thống phát realtime tới bếp; thực khách thấy trạng thái “Đã xác nhận” (UC44).
 
 **Ngoại lệ**
 - 5a. Yêu cầu đã được người khác duyệt/từ chối → `409 INVALID_QR_REQUEST_TRANSITION` / `CONCURRENT_QR_REQUEST_UPDATE`.
@@ -246,7 +246,7 @@ state "Món trong đơn" as I {
 
 ---
 
-## UC34 – Từ chối yêu cầu gọi món QR
+## UC33 – Từ chối yêu cầu gọi món QR
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -256,10 +256,10 @@ state "Món trong đơn" as I {
 | **Hậu điều kiện** | Yêu cầu `REJECTED` kèm lý do; không tạo đơn, không giữ kho; ghi nhật ký `QR_ORDER_REQUEST_REJECTED`. |
 
 **Luồng chính**
-1. Actor mở chi tiết yêu cầu (như UC33 bước 2–3), chọn “Từ chối”.
+1. Actor mở chi tiết yêu cầu (như UC32 bước 2–3), chọn “Từ chối”.
 2. Actor nhập lý do (bắt buộc) và xác nhận.
 3. Hệ thống kiểm tra yêu cầu còn `PENDING`, cập nhật `REJECTED`, phát realtime.
-4. Thực khách thấy “Yêu cầu bị từ chối” kèm lý do (UC45).
+4. Thực khách thấy “Yêu cầu bị từ chối” kèm lý do (UC44).
 
 **Ngoại lệ**
 - 2a. Không nhập lý do → `400 VALIDATION_ERROR`.
@@ -267,7 +267,7 @@ state "Món trong đơn" as I {
 
 ---
 
-## UC35 – Xác nhận đã phục vụ
+## UC34 – Xác nhận đã phục vụ
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -277,7 +277,7 @@ state "Món trong đơn" as I {
 | **Hậu điều kiện** | Món `SERVED`; nếu mọi món còn sống đã `SERVED` thì đơn chuyển `SERVED`; ghi nhật ký `ORDER_ITEMS_MARKED_SERVED`; phát realtime. |
 
 **Luồng chính**
-1. Hệ thống thông báo realtime món đã xong (từ UC39).
+1. Hệ thống thông báo realtime món đã xong (từ UC38).
 2. Actor mang món ra, chọn món trên đơn → “Đã phục vụ” (hoặc “Phục vụ tất cả” cho cả đơn).
 3. Hệ thống kiểm tra món đang `READY`, phiên bản đơn đúng.
 4. Hệ thống cập nhật trạng thái món/đơn, phát realtime.
@@ -291,7 +291,7 @@ state "Món trong đơn" as I {
 
 ---
 
-## UC36 – Hoàn tất đơn hàng
+## UC35 – Hoàn tất đơn hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -301,10 +301,10 @@ state "Món trong đơn" as I {
 | **Hậu điều kiện** | Đơn `COMPLETED`; đơn tại bàn: phiên `CLOSED` trong **cùng giao dịch**; ghi nhật ký `ORDER_COMPLETED` (+ `TABLE_SESSION_CLOSED`); phát realtime. |
 
 **Luồng chính**
-1. Sau khi thanh toán (UC40), actor nhấn “Hoàn tất đơn”.
+1. Sau khi thanh toán (UC39), actor nhấn “Hoàn tất đơn”.
 2. Hệ thống kiểm tra: đơn đã thanh toán đủ, mọi món chưa huỷ đã phục vụ, không còn nguyên liệu bị giữ chỗ bỏ quên, phiên bản đơn đúng.
 3. Hệ thống chuyển đơn `COMPLETED`.
-4. Nếu đơn tại bàn và mọi đơn của phiên đã đủ điều kiện → đóng phiên bàn (include UC28).
+4. Nếu đơn tại bàn và mọi đơn của phiên đã đủ điều kiện → đóng phiên bàn (include UC27).
 5. Hệ thống phát realtime; sơ đồ bàn hiển thị bàn trống.
 
 **Ngoại lệ**

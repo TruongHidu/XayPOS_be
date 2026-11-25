@@ -47,6 +47,22 @@ The request JSON converter is limited to the four QR request DTO types, ensuring
 Jackson 2 deserializers run with Boot 4 MVC. It does not change the global mapper or staff API
 serialization/fingerprint bytes. QR POST bodies are bounded to 32 KiB, including chunked input.
 
+## Owner on/off switches (V48)
+
+The restaurant owns two typed switches, `restaurants.qr_table_ordering_enabled` and
+`qr_takeaway_ordering_enabled` (default true). Code reads them only as one `QrOrderingSettings` value,
+via `Restaurant.qrOrdering()`. They are a third gate, separate from credential validity and package
+entitlement. `QrScopePolicy.validate` checks it on every path: mint, submit, own receipt and staff review.
+Each entry point's feature list lives in `QrEntryType.requiredFeatures()`.
+
+`PUT /api/v1/restaurants/me/qr-ordering` (`RestaurantQrOrderingCommandService`) runs under the
+restaurant lock. For each entry point switched from on to off, it calls the consumer-owned
+`RestaurantQrOrderingLifecycle` port, implemented by `QrLifecycleService`. That call revokes the
+entry point's grants and cancels its PENDING requests with reason `QR_ORDERING_DISABLED`. The public
+menus get `orderingEnabled` through the MENU-owned `PublicOrderingAvailabilityQuery` port, implemented
+by `QrPublicOrderingAvailabilityAdapter`. The adapter uses non-throwing `hasFeature` checks so it never
+marks the menu's read-only transaction rollback-only.
+
 ## Migration
 
 `V25__create_qr_order_requests.sql` adds `qr_table_access`, `qr_guest_authorizations`,

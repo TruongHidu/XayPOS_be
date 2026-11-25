@@ -7,16 +7,16 @@ Tài liệu được rút ra trực tiếp từ mã nguồn backend `XayPOS_be` 
 | [00-tong-quan.md](00-tong-quan.md) | Actor, sơ đồ UC tổng quát, quy ước chung, ma trận Actor – UC |
 | [01-xac-thuc-tai-khoan.md](01-xac-thuc-tai-khoan.md) | UC01–UC04: Đăng ký, đăng nhập, đăng xuất, thông tin tài khoản |
 | [02-nha-hang-nhan-su.md](02-nha-hang-nhan-su.md) | UC05–UC10: Hồ sơ nhà hàng, nhân viên, phân quyền |
-| [03-goi-dich-vu.md](03-goi-dich-vu.md) | UC11–UC17: Gói dịch vụ, mua gói, thanh toán SePay |
-| [04-thuc-don-cong-thuc.md](04-thuc-don-cong-thuc.md) | UC18–UC22: Nhóm món, món, nguyên liệu, công thức |
-| [05-ban-phien-ban.md](05-ban-phien-ban.md) | UC23–UC28: Khu vực, bàn, QR bàn, phiên bàn |
-| [06-don-hang.md](06-don-hang.md) | UC29–UC36: Gọi món, đơn hàng, duyệt QR, hoàn tất |
-| [07-bep.md](07-bep.md) | UC37–UC39: Màn hình bếp (KDS) |
-| [08-thanh-toan.md](08-thanh-toan.md) | UC40–UC42: Thanh toán đơn hàng |
-| [09-goi-mon-qr.md](09-goi-mon-qr.md) | UC43–UC45: Thực khách gọi món qua QR |
-| [10-kho.md](10-kho.md) | UC46–UC51: Kho, phiếu kho, kiểm kê, cảnh báo |
-| [11-bao-cao-thu-chi.md](11-bao-cao-thu-chi.md) | UC52–UC57: Báo cáo, sổ thu chi |
-| [12-quan-tri-he-thong.md](12-quan-tri-he-thong.md) | UC58–UC64: Quản trị nền tảng SaaS |
+| [03-goi-dich-vu.md](03-goi-dich-vu.md) | UC11–UC16: Gói dịch vụ, mua gói, thanh toán SePay |
+| [04-thuc-don-cong-thuc.md](04-thuc-don-cong-thuc.md) | UC17–UC21: Nhóm món, món, nguyên liệu, công thức |
+| [05-ban-phien-ban.md](05-ban-phien-ban.md) | UC22–UC27: Khu vực, bàn, QR bàn, phiên bàn |
+| [06-don-hang.md](06-don-hang.md) | UC28–UC35: Gọi món, đơn hàng, duyệt QR, hoàn tất |
+| [07-bep.md](07-bep.md) | UC36–UC38: Màn hình bếp (KDS) |
+| [08-thanh-toan.md](08-thanh-toan.md) | UC39–UC41: Thanh toán đơn hàng |
+| [09-goi-mon-qr.md](09-goi-mon-qr.md) | UC42–UC44: Thực khách gọi món qua QR |
+| [10-kho.md](10-kho.md) | UC45–UC50: Kho, phiếu kho, kiểm kê, cảnh báo |
+| [11-bao-cao-thu-chi.md](11-bao-cao-thu-chi.md) | UC51–UC56: Báo cáo, sổ thu chi |
+| [12-quan-tri-he-thong.md](12-quan-tri-he-thong.md) | UC57–UC63: Quản trị nền tảng SaaS |
 
 ---
 
@@ -193,7 +193,7 @@ Mỗi UC được đặc tả theo mẫu: *Mã – Tên – Actor chính/phụ �
 | PRO | 399.000đ | BASIC + bàn, nhân viên, phân quyền, màn hình bếp, QR tại bàn, báo cáo chi tiết |
 | PREMIUM | 699.000đ | PRO + kho, công thức, cảnh báo tồn, kiểm kê, phân tích nâng cao |
 
-(Danh mục gói/tính năng do quản trị viên chỉnh được – UC61.)
+(Danh mục gói/tính năng do quản trị viên chỉnh được – UC60.)
 
 ---
 
@@ -210,29 +210,29 @@ Ký hiệu: ● mặc định có quyền; ○ cần chủ nhà hàng cấp thê
 | UC10 | Phân quyền nhân viên | ● | ○ | ○ | ○ | ○ | – | |
 | UC11 | Xem bảng giá gói | ● | ● | ● | ● | ● | ● | Khách vãng lai |
 | UC12 | Xem gói đang dùng | ● | ○ | ○ | ○ | ○ | – | |
-| UC13–15 | Mua gói, thanh toán, huỷ đơn mua | ● (chỉ Owner) | – | – | – | – | – | SePay |
-| UC16–17 | Đối soát / kích hoạt / hết hạn tự động | – | – | – | – | – | – | SePay, Scheduler |
-| UC18–19 | Quản lý nhóm món, món | ● | xem | xem | xem | ○ | – | |
-| UC20 | Bật/tắt còn món | ● | ● | ○ | ○ | ○ | – | |
-| UC21–22 | Nguyên liệu, công thức | ● | ○ | ○ | ○ | ○ | – | |
-| UC23–25 | Khu vực, bàn, QR bàn | ● | xem | xem | xem | ○ | – | |
-| UC26 | Mở bàn | ● | ● | ● | ○ | ○ | – | |
-| UC27 | Chuyển bàn | ● | ● | ● | ○ | ○ | – | |
-| UC28 | Đóng / huỷ phiên bàn | ● | ● | ● | ● | ○ | – | |
-| UC29–30 | Tạo đơn, gọi thêm | ● | ● | ● | ● | ○ | – | |
-| UC31 | Huỷ món / huỷ đơn | ● | ● | huỷ món nháp | huỷ món nháp | ○ | – | |
-| UC32 | Tra cứu đơn | ● | ● | ● | ● | ● | – | |
-| UC33–34 | Duyệt / từ chối yêu cầu QR | ● | ● | ● | ● | ○ | – | |
-| UC35 | Xác nhận đã phục vụ | ● | ● | ● | ● | ● | – | |
-| UC36 | Hoàn tất đơn | ● | ● | ● | ● | ○ | – | |
-| UC37–39 | Màn hình bếp | ● | ● | ○ | báo xong | ● | – | |
-| UC40–42 | Thanh toán đơn | ● | ● | ○ | ● | ○ | – | |
-| UC43–45 | Gọi món qua QR | – | – | – | – | – | – | Thực khách |
-| UC46–51 | Kho | ● | ○ | ○ | ○ | ○ | – | |
-| UC52 | Báo cáo trong ngày | ● | ● | ○ | ● | ○ | – | |
-| UC53–54 | Báo cáo chi tiết, lãi gộp | ● | ○ | ○ | ○ | ○ | – | |
-| UC55–57 | Sổ thu chi | ● | ○ | ○ | ○ | ○ | – | |
-| UC58–64 | Quản trị nền tảng | – | – | – | – | – | ● | |
+| UC13–14 | Mua gói, thanh toán, huỷ đơn mua | ● (chỉ Owner) | – | – | – | – | – | SePay |
+| UC15–16 | Đối soát / kích hoạt / hết hạn tự động | – | – | – | – | – | – | SePay, Scheduler |
+| UC17–18 | Quản lý nhóm món, món | ● | xem | xem | xem | ○ | – | |
+| UC19 | Bật/tắt còn món | ● | ● | ○ | ○ | ○ | – | |
+| UC20–21 | Nguyên liệu, công thức | ● | ○ | ○ | ○ | ○ | – | |
+| UC22–24 | Khu vực, bàn, QR bàn | ● | xem | xem | xem | ○ | – | |
+| UC25 | Mở bàn | ● | ● | ● | ○ | ○ | – | |
+| UC26 | Chuyển bàn | ● | ● | ● | ○ | ○ | – | |
+| UC27 | Đóng / huỷ phiên bàn | ● | ● | ● | ● | ○ | – | |
+| UC28–29 | Tạo đơn, gọi thêm | ● | ● | ● | ● | ○ | – | |
+| UC30 | Huỷ món / huỷ đơn | ● | ● | huỷ món nháp | huỷ món nháp | ○ | – | |
+| UC31 | Tra cứu đơn | ● | ● | ● | ● | ● | – | |
+| UC32–33 | Duyệt / từ chối yêu cầu QR | ● | ● | ● | ● | ○ | – | |
+| UC34 | Xác nhận đã phục vụ | ● | ● | ● | ● | ● | – | |
+| UC35 | Hoàn tất đơn | ● | ● | ● | ● | ○ | – | |
+| UC36–38 | Màn hình bếp | ● | ● | ○ | báo xong | ● | – | |
+| UC39–41 | Thanh toán đơn | ● | ● | ○ | ● | ○ | – | |
+| UC42–44 | Gọi món qua QR | – | – | – | – | – | – | Thực khách |
+| UC45–50 | Kho | ● | ○ | ○ | ○ | ○ | – | |
+| UC51 | Báo cáo trong ngày | ● | ● | ○ | ● | ○ | – | |
+| UC52–53 | Báo cáo chi tiết, lãi gộp | ● | ○ | ○ | ○ | ○ | – | |
+| UC54–56 | Sổ thu chi | ● | ○ | ○ | ○ | ○ | – | |
+| UC57–63 | Quản trị nền tảng | – | – | – | – | – | ● | |
 
 ---
 
@@ -252,55 +252,54 @@ Ký hiệu: ● mặc định có quyền; ○ cần chủ nhà hàng cấp thê
 | | UC10 | Phân quyền riêng cho nhân viên | Chủ nhà hàng |
 | **3. Gói dịch vụ** | UC11 | Xem bảng giá gói dịch vụ | Khách vãng lai, Chủ nhà hàng |
 | | UC12 | Xem gói đang dùng & lịch sử gói | Chủ nhà hàng |
-| | UC13 | Mua / gia hạn gói dịch vụ | Chủ nhà hàng |
-| | UC14 | Thanh toán đơn mua gói bằng QR chuyển khoản | Chủ nhà hàng, SePay |
-| | UC15 | Huỷ đơn mua gói | Chủ nhà hàng |
-| | UC16 | Đối soát giao dịch chuyển khoản tự động | SePay, Bộ lập lịch |
-| | UC17 | Tự động kích hoạt / hết hạn gói | Bộ lập lịch |
-| **4. Thực đơn & công thức** | UC18 | Quản lý nhóm món | Chủ nhà hàng |
-| | UC19 | Quản lý món ăn | Chủ nhà hàng |
-| | UC20 | Cập nhật tình trạng còn / hết món | Chủ nhà hàng, Quản lý |
-| | UC21 | Quản lý nguyên liệu | Chủ nhà hàng |
-| | UC22 | Quản lý công thức định lượng | Chủ nhà hàng |
-| **5. Bàn & phiên bàn** | UC23 | Quản lý khu vực | Chủ nhà hàng |
-| | UC24 | Quản lý bàn | Chủ nhà hàng |
-| | UC25 | Quản lý mã QR bàn | Chủ nhà hàng |
-| | UC26 | Mở bàn | Phục vụ, Quản lý |
-| | UC27 | Chuyển bàn | Phục vụ, Quản lý |
-| | UC28 | Đóng / huỷ phiên bàn | Phục vụ, Thu ngân, Quản lý |
-| **6. Đơn hàng** | UC29 | Tạo đơn hàng | Phục vụ, Thu ngân, Quản lý |
-| | UC30 | Gọi thêm / chỉnh sửa món | Phục vụ, Thu ngân, Quản lý |
-| | UC31 | Huỷ món / huỷ đơn | Quản lý |
-| | UC32 | Tra cứu đơn hàng | Nhân viên nhà hàng |
-| | UC33 | Duyệt yêu cầu gọi món QR | Phục vụ, Thu ngân, Quản lý |
-| | UC34 | Từ chối yêu cầu gọi món QR | Phục vụ, Thu ngân, Quản lý |
-| | UC35 | Xác nhận đã phục vụ | Phục vụ, Thu ngân, Bếp, Quản lý |
-| | UC36 | Hoàn tất đơn hàng | Phục vụ, Thu ngân, Quản lý |
-| **7. Bếp** | UC37 | Xem hàng chờ bếp | Bếp, Quản lý |
-| | UC38 | Bắt đầu chế biến | Bếp, Quản lý |
-| | UC39 | Báo món đã xong | Bếp, Thu ngân, Quản lý |
-| **8. Thanh toán** | UC40 | Thanh toán đơn hàng | Thu ngân, Quản lý |
-| | UC41 | Hiển thị QR chuyển khoản cho đơn | Thu ngân, Quản lý |
-| | UC42 | Xem lịch sử thanh toán của đơn | Thu ngân, Quản lý |
-| **9. Gọi món qua QR** | UC43 | Xem thực đơn qua QR | Thực khách |
-| | UC44 | Gửi yêu cầu gọi món qua QR | Thực khách |
-| | UC45 | Theo dõi trạng thái yêu cầu gọi món | Thực khách |
-| **10. Kho** | UC46 | Quản lý kho hàng | Chủ nhà hàng |
-| | UC47 | Theo dõi tồn kho & đặt ngưỡng tối thiểu | Chủ nhà hàng |
-| | UC48 | Lập phiếu nhập / xuất / điều chỉnh kho | Chủ nhà hàng |
-| | UC49 | Kiểm kê kho | Chủ nhà hàng |
-| | UC50 | Xử lý cảnh báo sắp hết hàng | Chủ nhà hàng |
-| | UC51 | Tra cứu lịch sử biến động kho | Chủ nhà hàng |
-| **11. Báo cáo & thu chi** | UC52 | Xem báo cáo trong ngày | Chủ nhà hàng, Thu ngân, Quản lý |
-| | UC53 | Xem báo cáo chi tiết | Chủ nhà hàng |
-| | UC54 | Xem báo cáo lãi gộp tham chiếu | Chủ nhà hàng |
-| | UC55 | Xem sổ thu chi | Chủ nhà hàng |
-| | UC56 | Ghi khoản chi | Chủ nhà hàng |
-| | UC57 | Huỷ khoản chi | Chủ nhà hàng |
-| **12. Quản trị nền tảng** | UC58 | Xem bảng điều khiển & doanh thu hệ thống | Quản trị viên |
-| | UC59 | Quản lý nhà hàng | Quản trị viên |
-| | UC60 | Hỗ trợ tài khoản người dùng nhà hàng | Quản trị viên |
-| | UC61 | Quản lý gói & tính năng | Quản trị viên |
-| | UC62 | Quản lý subscription của nhà hàng | Quản trị viên |
-| | UC63 | Xử lý đơn mua gói & giao dịch cần duyệt | Quản trị viên |
-| | UC64 | Xem nhật ký hệ thống | Quản trị viên |
+| | UC13 | Mua / gia hạn gói dịch vụ (kèm thanh toán QR chuyển khoản) | Chủ nhà hàng, SePay |
+| | UC14 | Huỷ đơn mua gói | Chủ nhà hàng |
+| | UC15 | Đối soát giao dịch chuyển khoản tự động | SePay, Bộ lập lịch |
+| | UC16 | Tự động kích hoạt / hết hạn gói | Bộ lập lịch |
+| **4. Thực đơn & công thức** | UC17 | Quản lý nhóm món | Chủ nhà hàng |
+| | UC18 | Quản lý món ăn | Chủ nhà hàng |
+| | UC19 | Cập nhật tình trạng còn / hết món | Chủ nhà hàng, Quản lý |
+| | UC20 | Quản lý nguyên liệu | Chủ nhà hàng |
+| | UC21 | Quản lý công thức định lượng | Chủ nhà hàng |
+| **5. Bàn & phiên bàn** | UC22 | Quản lý khu vực | Chủ nhà hàng |
+| | UC23 | Quản lý bàn | Chủ nhà hàng |
+| | UC24 | Quản lý mã QR bàn | Chủ nhà hàng |
+| | UC25 | Mở bàn | Phục vụ, Quản lý |
+| | UC26 | Chuyển bàn | Phục vụ, Quản lý |
+| | UC27 | Đóng / huỷ phiên bàn | Phục vụ, Thu ngân, Quản lý |
+| **6. Đơn hàng** | UC28 | Tạo đơn hàng | Phục vụ, Thu ngân, Quản lý |
+| | UC29 | Gọi thêm / chỉnh sửa món | Phục vụ, Thu ngân, Quản lý |
+| | UC30 | Huỷ món / huỷ đơn | Quản lý |
+| | UC31 | Tra cứu đơn hàng | Nhân viên nhà hàng |
+| | UC32 | Duyệt yêu cầu gọi món QR | Phục vụ, Thu ngân, Quản lý |
+| | UC33 | Từ chối yêu cầu gọi món QR | Phục vụ, Thu ngân, Quản lý |
+| | UC34 | Xác nhận đã phục vụ | Phục vụ, Thu ngân, Bếp, Quản lý |
+| | UC35 | Hoàn tất đơn hàng | Phục vụ, Thu ngân, Quản lý |
+| **7. Bếp** | UC36 | Xem hàng chờ bếp | Bếp, Quản lý |
+| | UC37 | Bắt đầu chế biến | Bếp, Quản lý |
+| | UC38 | Báo món đã xong | Bếp, Thu ngân, Quản lý |
+| **8. Thanh toán** | UC39 | Thanh toán đơn hàng | Thu ngân, Quản lý |
+| | UC40 | Hiển thị QR chuyển khoản cho đơn | Thu ngân, Quản lý |
+| | UC41 | Xem lịch sử thanh toán của đơn | Thu ngân, Quản lý |
+| **9. Gọi món qua QR** | UC42 | Xem thực đơn qua QR | Thực khách |
+| | UC43 | Gửi yêu cầu gọi món qua QR | Thực khách |
+| | UC44 | Theo dõi trạng thái yêu cầu gọi món | Thực khách |
+| **10. Kho** | UC45 | Quản lý kho hàng | Chủ nhà hàng |
+| | UC46 | Theo dõi tồn kho & đặt ngưỡng tối thiểu | Chủ nhà hàng |
+| | UC47 | Lập phiếu nhập / xuất / điều chỉnh kho | Chủ nhà hàng |
+| | UC48 | Kiểm kê kho | Chủ nhà hàng |
+| | UC49 | Xử lý cảnh báo sắp hết hàng | Chủ nhà hàng |
+| | UC50 | Tra cứu lịch sử biến động kho | Chủ nhà hàng |
+| **11. Báo cáo & thu chi** | UC51 | Xem báo cáo trong ngày | Chủ nhà hàng, Thu ngân, Quản lý |
+| | UC52 | Xem báo cáo chi tiết | Chủ nhà hàng |
+| | UC53 | Xem báo cáo lãi gộp tham chiếu | Chủ nhà hàng |
+| | UC54 | Xem sổ thu chi | Chủ nhà hàng |
+| | UC55 | Ghi khoản chi | Chủ nhà hàng |
+| | UC56 | Huỷ khoản chi | Chủ nhà hàng |
+| **12. Quản trị nền tảng** | UC57 | Xem bảng điều khiển & doanh thu hệ thống | Quản trị viên |
+| | UC58 | Quản lý nhà hàng | Quản trị viên |
+| | UC59 | Hỗ trợ tài khoản người dùng nhà hàng | Quản trị viên |
+| | UC60 | Quản lý gói & tính năng | Quản trị viên |
+| | UC61 | Quản lý subscription của nhà hàng | Quản trị viên |
+| | UC62 | Xử lý đơn mua gói & giao dịch cần duyệt | Quản trị viên |
+| | UC63 | Xem nhật ký hệ thống | Quản trị viên |

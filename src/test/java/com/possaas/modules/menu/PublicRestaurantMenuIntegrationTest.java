@@ -117,7 +117,8 @@ class PublicRestaurantMenuIntegrationTest {
 
     @Test void anonymousContextAndItemsHaveStrictPublicAllowlistWithoutTables() throws Exception {
         item("Pho", group.getId()); var context = body(get(path()), 200);
-        assertThat(fields(context)).containsExactlyInAnyOrder("restaurant", "groups");
+        assertThat(fields(context)).containsExactlyInAnyOrder("restaurant", "groups", "orderingEnabled");
+        assertThat(context.path("orderingEnabled").isBoolean()).isTrue();
         assertThat(fields(context.path("restaurant"))).containsExactlyInAnyOrder("name", "currencyCode");
         assertThat(fields(context.path("groups").get(0))).containsExactlyInAnyOrder("id", "name", "displayOrder");
         var result = body(get(path() + "/items"), 200);

@@ -18,17 +18,20 @@ import org.springframework.stereotype.Component;
 public class PublicMenuResponseMapper {
     private final ItemGroupRepository groups;
 
-    public PublicRestaurantMenuResponse context(PublicRestaurantMenuContext context, List<ItemGroup> visibleGroups) {
+    public PublicRestaurantMenuResponse context(PublicRestaurantMenuContext context, List<ItemGroup> visibleGroups,
+            boolean orderingEnabled) {
         return new PublicRestaurantMenuResponse(
                 new PublicRestaurantMenuResponse.Restaurant(context.restaurantName(), context.currencyCode()),
-                visibleGroups.stream().map(g -> new PublicRestaurantMenuResponse.Group(g.getId(), g.getName(), g.getDisplayOrder())).toList());
+                visibleGroups.stream().map(g -> new PublicRestaurantMenuResponse.Group(g.getId(), g.getName(), g.getDisplayOrder())).toList(),
+                orderingEnabled);
     }
 
-    public PublicQrMenuResponse context(PublicQrTableContext context, List<ItemGroup> visibleGroups) {
+    public PublicQrMenuResponse context(PublicQrTableContext context, List<ItemGroup> visibleGroups, boolean orderingEnabled) {
         return new PublicQrMenuResponse(
                 new PublicQrMenuResponse.Restaurant(context.restaurantName(), context.currencyCode()),
                 new PublicQrMenuResponse.Table(context.tableCode(), context.tableName()),
-                visibleGroups.stream().map(g -> new PublicQrMenuResponse.Group(g.getId(), g.getName(), g.getDisplayOrder())).toList());
+                visibleGroups.stream().map(g -> new PublicQrMenuResponse.Group(g.getId(), g.getName(), g.getDisplayOrder())).toList(),
+                orderingEnabled);
     }
 
     public List<PublicMenuItemResponse> items(UUID tenant, List<Item> items) {

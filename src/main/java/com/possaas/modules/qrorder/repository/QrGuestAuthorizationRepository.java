@@ -8,5 +8,6 @@ public interface QrGuestAuthorizationRepository extends JpaRepository<QrGuestAut
     Optional<QrGuestAuthorization> findByTokenHash(String hash);
     Optional<QrGuestAuthorization> findByIdAndRestaurantId(UUID id,UUID tenant);
     List<QrGuestAuthorization> findAllByRestaurantIdAndTableIdAndRevokedAtIsNull(UUID tenant,UUID tableId);
+    List<QrGuestAuthorization> findAllByRestaurantIdAndEntryTypeAndRevokedAtIsNull(UUID tenant,QrEntryType type);
     List<QrGuestAuthorization> findAllByRestaurantIdAndEntryTypeAndCredentialHashAndRevokedAtIsNull(UUID tenant,QrEntryType type,String credentialHash);
 }

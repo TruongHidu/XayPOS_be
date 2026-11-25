@@ -1,4 +1,4 @@
-# Nhóm 4 – Thực đơn & công thức (UC18–UC22)
+# Nhóm 4 – Thực đơn & công thức (UC17–UC21)
 
 ## Sơ đồ Use Case
 
@@ -12,38 +12,38 @@ actor "Quản lý" as Manager
 actor "Nhân viên nhà hàng\n(được cấp quyền)" as Staff
 
 rectangle "Thực đơn & công thức" {
-  usecase "UC18 Quản lý nhóm món" as UC18
-  usecase "UC19 Quản lý món ăn" as UC19
-  usecase "Tải ảnh món" as UC19a
-  usecase "Chuyển nhóm cho món" as UC19b
-  usecase "Bật / tắt món" as UC19c
-  usecase "UC20 Cập nhật tình trạng\ncòn / hết món" as UC20
-  usecase "UC21 Quản lý nguyên liệu" as UC21
-  usecase "UC22 Quản lý công thức\nđịnh lượng" as UC22
-  usecase "Xem giá vốn ước tính" as UC22a
-  usecase "Tạo phiên bản công thức mới" as UC22b
+  usecase "UC17 Quản lý nhóm món" as UC17
+  usecase "UC18 Quản lý món ăn" as UC18
+  usecase "Tải ảnh món" as UC18a
+  usecase "Chuyển nhóm cho món" as UC18b
+  usecase "Bật / tắt món" as UC18c
+  usecase "UC19 Cập nhật tình trạng\ncòn / hết món" as UC19
+  usecase "UC20 Quản lý nguyên liệu" as UC20
+  usecase "UC21 Quản lý công thức\nđịnh lượng" as UC21
+  usecase "Xem giá vốn ước tính" as UC21a
+  usecase "Tạo phiên bản công thức mới" as UC21b
 }
 
+Owner --> UC17
 Owner --> UC18
 Owner --> UC19
 Owner --> UC20
 Owner --> UC21
-Owner --> UC22
-Staff --> UC20
-Manager --> UC20
+Staff --> UC19
+Manager --> UC19
 
-UC19a .> UC19 : <<extend>>
-UC19b .> UC19 : <<extend>>
-UC19c .> UC19 : <<extend>>
-UC22a .> UC22 : <<extend>>
-UC22b .> UC22 : <<extend>>
-UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
+UC18a .> UC18 : <<extend>>
+UC18b .> UC18 : <<extend>>
+UC18c .> UC18 : <<extend>>
+UC21a .> UC21 : <<extend>>
+UC21b .> UC21 : <<extend>>
+UC21 ..> UC20 : <<include>>\n(chọn nguyên liệu)
 @enduml
 ```
 
 ---
 
-## UC18 – Quản lý nhóm món
+## UC17 – Quản lý nhóm món
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -69,7 +69,7 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 
 ---
 
-## UC19 – Quản lý món ăn
+## UC18 – Quản lý món ăn
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -100,12 +100,12 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 - 2d-a. Món đang có công thức hoạt động → `MENU_ITEM_HAS_ACTIVE_RECIPE` (phải ngừng công thức trước).
 
 **Quy tắc nghiệp vụ**
-- BR19-1: Một món chỉ trừ kho theo **một** cách: theo công thức (UC22) hoặc trực tiếp như hàng hoá (ví dụ nước đóng chai).
-- BR19-2: Đổi đơn vị tính bị chặn khi đơn vị đang được công thức/kho sử dụng (`MENU_ITEM_UNIT_IN_USE`).
+- BR18-1: Một món chỉ trừ kho theo **một** cách: theo công thức (UC21) hoặc trực tiếp như hàng hoá (ví dụ nước đóng chai).
+- BR18-2: Đổi đơn vị tính bị chặn khi đơn vị đang được công thức/kho sử dụng (`MENU_ITEM_UNIT_IN_USE`).
 
 ---
 
-## UC20 – Cập nhật tình trạng còn / hết món
+## UC19 – Cập nhật tình trạng còn / hết món
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -124,7 +124,7 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 
 ---
 
-## UC21 – Quản lý nguyên liệu
+## UC20 – Quản lý nguyên liệu
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -150,7 +150,7 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 
 ---
 
-## UC22 – Quản lý công thức định lượng
+## UC21 – Quản lý công thức định lượng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -162,7 +162,7 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 **Luồng chính – Tạo công thức đầu tiên**
 1. Actor mở chi tiết món, chọn tab “Công thức”.
 2. Hệ thống hiển thị công thức đang hoạt động (nếu có) và lịch sử phiên bản.
-3. Actor chọn “Tạo công thức”, thêm các dòng: nguyên liệu (include UC21 – chọn từ danh mục), định lượng, ghi chú.
+3. Actor chọn “Tạo công thức”, thêm các dòng: nguyên liệu (include UC20 – chọn từ danh mục), định lượng, ghi chú.
 4. Hệ thống kiểm tra: món chưa có công thức hoạt động, có ít nhất một nguyên liệu, không trùng nguyên liệu, nguyên liệu đang hoạt động, đơn vị khớp, định lượng trong giới hạn.
 5. Hệ thống chụp tên/SKU/đơn vị nguyên liệu, lưu công thức phiên bản 1.
 6. (Extend) Actor chọn “Giá vốn ước tính” → hệ thống tính tổng (định lượng × giá tham chiếu) và cảnh báo nguyên liệu chưa có giá.
@@ -179,5 +179,5 @@ UC22 ..> UC21 : <<include>>\n(chọn nguyên liệu)
 - 3b-a. Món vẫn đang áp dụng công thức → `409 RECIPE_APPLICATION_ENABLED`.
 
 **Quy tắc nghiệp vụ**
-- BR22-1: Khi đơn được gửi bếp, hệ thống **chụp (snapshot)** công thức và giá vốn tham chiếu vào từng dòng đơn – dùng để trừ kho (UC38) và tính lãi gộp (UC54).
-- BR22-2: Công thức không hiển thị ra thực đơn công khai/QR.
+- BR21-1: Khi đơn được gửi bếp, hệ thống **chụp (snapshot)** công thức và giá vốn tham chiếu vào từng dòng đơn – dùng để trừ kho (UC37) và tính lãi gộp (UC53).
+- BR21-2: Công thức không hiển thị ra thực đơn công khai/QR.

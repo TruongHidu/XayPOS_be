@@ -10,5 +10,6 @@ public interface QrOrderRequestRepository extends JpaRepository<QrOrderRequest,U
     List<QrOrderRequest> findAllByRestaurantIdAndStatus(UUID tenant,QrRequestStatus status);
     List<QrOrderRequest> findAllByRestaurantIdAndTableIdAndStatus(UUID tenant,UUID tableId,QrRequestStatus status);
     List<QrOrderRequest> findAllByRestaurantIdAndObservedSessionIdAndStatus(UUID tenant,UUID sessionId,QrRequestStatus status);
+    List<QrOrderRequest> findAllByRestaurantIdAndEntryTypeAndStatus(UUID tenant,QrEntryType type,QrRequestStatus status);
     List<QrOrderRequest> findAllByRestaurantIdAndEntryTypeAndCredentialHashAndStatus(UUID tenant,QrEntryType type,String credentialHash,QrRequestStatus status);
 }

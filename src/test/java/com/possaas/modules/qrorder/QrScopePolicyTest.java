@@ -72,6 +72,20 @@ class QrScopePolicyTest {
         when(areas.findByIdAndRestaurantId(table.getAreaId(),tenant)).thenReturn(Optional.of(area));
         assertUnavailable(()->policy.validate(grant));
     }
+    @Test void ownerSwitchClosesOnlyItsEntryPointWithTheStablePublicCode() {
+        var restaurant=restaurant(); table(); restaurant.changeQrOrdering(new QrOrderingSettings(false,true));
+        assertUnavailable(()->policy.validate(grant(QrEntryType.TABLE)));
+        assertThat(policy.validate(grant(QrEntryType.RESTAURANT)).table()).isNull();
+        restaurant.changeQrOrdering(new QrOrderingSettings(true,false));
+        assertThat(policy.validate(grant(QrEntryType.TABLE)).table()).isNotNull();
+        assertUnavailable(()->policy.validate(grant(QrEntryType.RESTAURANT)));
+    }
+    @Test void switchedOffEntryPointCannotBeApprovedEvenWithAValidCredential() {
+        var restaurant=restaurant(); var grant=grant(QrEntryType.RESTAURANT); var request=request(grant);
+        when(grants.findByIdAndRestaurantId(grant.getId(),tenant)).thenReturn(Optional.of(grant));
+        restaurant.changeQrOrdering(new QrOrderingSettings(true,false));
+        assertThat(policy.isCredentialValid(request)).isTrue(); assertThat(policy.isValid(request)).isFalse();
+    }
     private Restaurant restaurant() {
         var value=new Restaurant(); value.setId(tenant); value.setPublicOrderToken("credential"); value.setName("Restaurant");
         when(restaurants.findByIdAndDeletedAtIsNull(tenant)).thenReturn(Optional.of(value)); return value;

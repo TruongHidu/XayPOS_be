@@ -108,6 +108,35 @@ paths:
         '404': {$ref: '#/components/responses/LinkNotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/restaurants/me/qr-ordering:
+    get:
+      operationId: getRestaurantQrOrdering
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_VIEW (RESTAURANT_PROFILE_UPDATE is needed only to change it). Owner switches for guest QR ordering. They do not reflect the package; read entitlements (QR_TABLE_ORDER / QR_STATIC_ORDER) from the subscription features.
+      security:
+        - BearerAuth: []
+      responses:
+        '200': {$ref: '#/components/responses/QrOrdering'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: updateRestaurantQrOrdering
+      description: Requires authenticated tenant and RESTAURANT_PROFILE_UPDATE. Replaces both switches under the pessimistic restaurant lock shared with guest access and submission. Switching an entry point off revokes its guest sessions and cancels its PENDING requests (cancellationReason QR_ORDERING_DISABLED) atomically; approved orders are untouched. Guests then get 403 QR_ORDER_UNAVAILABLE on guest-access and 401 QR_GUEST_ACCESS_INVALID with an old guest token; the public menu stays viewable with orderingEnabled=false. Switching back on needs no rescan of printed codes. No-op when unchanged; otherwise one RESTAURANT_QR_ORDERING_UPDATED audit.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QrOrderingSettings'}
+      responses:
+        '200': {$ref: '#/components/responses/QrOrdering'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/LinkNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/v1/restaurants/me/menu-link/qr/image:
     get:
       operationId: getRestaurantMenuLinkQrImage
@@ -187,6 +216,13 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/RestaurantMenuLink'}
+    QrOrdering:
+      description: Current owner switches for guest QR ordering.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/QrOrderingSettings'}
     BadRequest:
       description: VALIDATION_ERROR or INVALID_REQUEST_BODY; no rejected values are echoed.
       headers:
@@ -250,12 +286,22 @@ components:
     PublicRestaurantMenu:
       type: object
       additionalProperties: false
-      required: [restaurant, groups]
+      required: [restaurant, groups, orderingEnabled]
       properties:
         restaurant:
           $ref: 'public-qr-menu-api.yaml#/components/schemas/PublicQrMenu/properties/restaurant'
         groups:
           $ref: 'public-qr-menu-api.yaml#/components/schemas/PublicQrMenu/properties/groups'
+        orderingEnabled:
+          type: boolean
+          description: 'Whether guests can place takeaway orders right now: the owner''s takeaway switch is on AND the package entitles QR_STATIC_ORDER and ORDER_MANAGEMENT. false = view-only menu, hide the cart. Display hint only; guest-access and submit enforce it independently.'
+    QrOrderingSettings:
+      type: object
+      additionalProperties: false
+      required: [tableEnabled, takeawayEnabled]
+      properties:
+        tableEnabled: {type: boolean, description: 'Owner switch for ordering from table QR codes (DINE_IN / QR_TABLE). Default true.'}
+        takeawayEnabled: {type: boolean, description: 'Owner switch for ordering from the restaurant menu QR (TAKEAWAY / QR_STATIC). Default true.'}
     RestaurantMenuLink:
       type: object
       additionalProperties: false

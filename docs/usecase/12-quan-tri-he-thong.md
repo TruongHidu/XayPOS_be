@@ -1,4 +1,4 @@
-# Nhóm 12 – Quản trị nền tảng SaaS (UC58–UC64)
+# Nhóm 12 – Quản trị nền tảng SaaS (UC57–UC63)
 
 ## Sơ đồ Use Case
 
@@ -10,40 +10,40 @@ skinparam packageStyle rectangle
 actor "Quản trị viên hệ thống" as Admin
 
 rectangle "Quản trị nền tảng" {
-  usecase "UC58 Xem bảng điều khiển\n& doanh thu hệ thống" as UC58
-  usecase "UC59 Quản lý nhà hàng" as UC59
-  usecase "Khoá / mở khoá nhà hàng" as UC59a
-  usecase "Xem mức sử dụng" as UC59b
-  usecase "Ghi chú nội bộ" as UC59c
-  usecase "UC60 Hỗ trợ tài khoản\nngười dùng nhà hàng" as UC60
-  usecase "Khoá / mở khoá người dùng" as UC60a
-  usecase "Cấp mật khẩu tạm" as UC60b
-  usecase "UC61 Quản lý gói\n& tính năng" as UC61
-  usecase "UC62 Quản lý subscription\ncủa nhà hàng" as UC62
-  usecase "UC63 Xử lý đơn mua gói\n& giao dịch cần duyệt" as UC63
-  usecase "UC64 Xem nhật ký hệ thống" as UC64
+  usecase "UC57 Xem bảng điều khiển\n& doanh thu hệ thống" as UC57
+  usecase "UC58 Quản lý nhà hàng" as UC58
+  usecase "Khoá / mở khoá nhà hàng" as UC58a
+  usecase "Xem mức sử dụng" as UC58b
+  usecase "Ghi chú nội bộ" as UC58c
+  usecase "UC59 Hỗ trợ tài khoản\nngười dùng nhà hàng" as UC59
+  usecase "Khoá / mở khoá người dùng" as UC59a
+  usecase "Cấp mật khẩu tạm" as UC59b
+  usecase "UC60 Quản lý gói\n& tính năng" as UC60
+  usecase "UC61 Quản lý subscription\ncủa nhà hàng" as UC61
+  usecase "UC62 Xử lý đơn mua gói\n& giao dịch cần duyệt" as UC62
+  usecase "UC63 Xem nhật ký hệ thống" as UC63
   usecase "Ghi nhật ký thao tác" as UCaudit
 }
 
+Admin --> UC57
 Admin --> UC58
 Admin --> UC59
 Admin --> UC60
 Admin --> UC61
 Admin --> UC62
 Admin --> UC63
-Admin --> UC64
 
+UC58a .> UC58 : <<extend>>
+UC58b .> UC58 : <<extend>>
+UC58c .> UC58 : <<extend>>
 UC59a .> UC59 : <<extend>>
 UC59b .> UC59 : <<extend>>
-UC59c .> UC59 : <<extend>>
-UC60a .> UC60 : <<extend>>
-UC60b .> UC60 : <<extend>>
-UC60 ..> UC59 : <<include>>
-UC59a ..> UCaudit : <<include>>
+UC59 ..> UC58 : <<include>>
+UC58a ..> UCaudit : <<include>>
+UC59 ..> UCaudit : <<include>>
 UC60 ..> UCaudit : <<include>>
 UC61 ..> UCaudit : <<include>>
 UC62 ..> UCaudit : <<include>>
-UC63 ..> UCaudit : <<include>>
 @enduml
 ```
 
@@ -51,7 +51,7 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC58 – Xem bảng điều khiển & doanh thu hệ thống
+## UC57 – Xem bảng điều khiển & doanh thu hệ thống
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -71,7 +71,7 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC59 – Quản lý nhà hàng
+## UC58 – Quản lý nhà hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -96,7 +96,7 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC60 – Hỗ trợ tài khoản người dùng nhà hàng
+## UC59 – Hỗ trợ tài khoản người dùng nhà hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -106,7 +106,7 @@ UC63 ..> UCaudit : <<include>>
 | **Hậu điều kiện** | Trạng thái tài khoản / mật khẩu thay đổi; **mọi phiên đăng nhập của người đó bị thu hồi**; ghi nhật ký `ADMIN_USER_DISABLED`/`ENABLED`/`PASSWORD_RESET` (không ghi mật khẩu vào nhật ký). |
 
 **Luồng chính – Cấp mật khẩu tạm**
-1. Admin mở chi tiết nhà hàng (include UC59) → tab “Người dùng”; hệ thống liệt kê người dùng.
+1. Admin mở chi tiết nhà hàng (include UC58) → tab “Người dùng”; hệ thống liệt kê người dùng.
 2. Admin chọn người dùng → “Cấp mật khẩu tạm”, nhập lý do (xác minh yêu cầu hỗ trợ).
 3. Hệ thống sinh mật khẩu ngẫu nhiên 12 ký tự, cập nhật mật khẩu băm, thu hồi phiên.
 4. Hệ thống trả mật khẩu tạm **một lần duy nhất** (không lưu cache); admin chuyển cho người dùng qua kênh an toàn.
@@ -119,7 +119,7 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC61 – Quản lý gói & tính năng
+## UC60 – Quản lý gói & tính năng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -148,7 +148,7 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC62 – Quản lý subscription của nhà hàng
+## UC61 – Quản lý subscription của nhà hàng
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -175,12 +175,12 @@ UC63 ..> UCaudit : <<include>>
 
 ---
 
-## UC63 – Xử lý đơn mua gói & giao dịch cần duyệt
+## UC62 – Xử lý đơn mua gói & giao dịch cần duyệt
 
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Quản trị viên hệ thống |
-| **Mô tả** | Xử lý thủ công các trường hợp UC16/UC17 không tự xử lý được: chuyển khoản sai số tiền/sai nội dung, tiền về sau khi đơn hết hạn, kích hoạt bị chặn… |
+| **Mô tả** | Xử lý thủ công các trường hợp UC15/UC16 không tự xử lý được: chuyển khoản sai số tiền/sai nội dung, tiền về sau khi đơn hết hạn, kích hoạt bị chặn… |
 | **Tiền điều kiện** | ĐK-S; xem đơn: `SUBSCRIPTION_VIEW`; xử lý: `SUBSCRIPTION_PAYMENT_REVIEW`. |
 | **Hậu điều kiện** | Giao dịch/đơn được giải quyết: đơn `PAID` → kích hoạt gói, hoặc `CLOSED` kèm lý do và mã bằng chứng xử lý ngoài hệ thống; ghi nhật ký `SUBSCRIPTION_PAYMENT_MANUALLY_ACCEPTED`, `..._REVIEW_CLOSED`, `..._REVIEW_RETRIED`, `SUBSCRIPTION_PURCHASE_CLOSED`, `..._ACTIVATION_RESUMED`. |
 
@@ -189,7 +189,7 @@ UC63 ..> UCaudit : <<include>>
 2. Admin mở “Giao dịch chuyển khoản”, lọc trạng thái `REVIEW_REQUIRED`; chọn một giao dịch để xem chi tiết (số tiền, nội dung, thời điểm, lý do cần duyệt).
 3. Admin xác minh với chủ nhà hàng, chọn “Chấp nhận”, nhập ghi chú và chọn đơn mua tương ứng (nếu giao dịch chưa gắn đơn).
 4. Hệ thống kiểm tra: giao dịch là tiền vào, đang chờ duyệt, chưa gắn đơn khác; đơn chưa có tiền và ở `PENDING_PAYMENT`/`EXPIRED`/`REVIEW_REQUIRED`.
-5. Hệ thống ghi đơn `PAID`, giao dịch `CLOSED`, rồi kích hoạt gói (như UC17a).
+5. Hệ thống ghi đơn `PAID`, giao dịch `CLOSED`, rồi kích hoạt gói (như UC16a).
 
 **Luồng thay thế**
 - 3a. “Thử lại”: trả giao dịch về worker xử lý lại (sau khi lỗi tạm thời đã khắc phục).
@@ -203,11 +203,11 @@ UC63 ..> UCaudit : <<include>>
 - 4b. Đơn đã có tiền → `PURCHASE_ALREADY_PAID`; đơn không ở diện duyệt / không kích hoạt lại được → `PURCHASE_NOT_IN_REVIEW` / `PURCHASE_NOT_RESUMABLE`.
 
 **Quy tắc nghiệp vụ**
-- BR63-1: Không tạo hoàn tiền giả, không xoá tiền đã nhận; mọi quyết định thủ công đều có lý do và người thực hiện trong nhật ký.
+- BR62-1: Không tạo hoàn tiền giả, không xoá tiền đã nhận; mọi quyết định thủ công đều có lý do và người thực hiện trong nhật ký.
 
 ---
 
-## UC64 – Xem nhật ký hệ thống
+## UC63 – Xem nhật ký hệ thống
 
 | Thuộc tính | Nội dung |
 |---|---|
@@ -226,4 +226,4 @@ UC63 ..> UCaudit : <<include>>
 - 2a. Bộ lọc không hợp lệ (khoảng thời gian đảo ngược…) → `400 VALIDATION_ERROR`.
 
 **Quy tắc nghiệp vụ**
-- BR64-1: Nhật ký chỉ-thêm, không sửa/xoá; mật khẩu, token và dữ liệu nhạy cảm được che trước khi lưu.
+- BR63-1: Nhật ký chỉ-thêm, không sửa/xoá; mật khẩu, token và dữ liệu nhạy cảm được che trước khi lưu.

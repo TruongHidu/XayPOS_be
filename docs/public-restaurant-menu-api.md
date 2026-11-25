@@ -43,9 +43,14 @@ Response 200:
   "restaurant": { "name": "Nhà hàng Demo", "currencyCode": "VND" },
   "groups": [
     { "id": "11111111-1111-4111-8111-111111111111", "name": "Món chính", "displayOrder": 0 }
-  ]
+  ],
+  "orderingEnabled": true
 }
 ```
+
+`orderingEnabled`: khách có đặt mang đi được ngay lúc này không. Giá trị là `true` khi công tắc mang đi của
+chủ quán đang bật (xem [Bật/tắt QR gọi món](public-qr-order-api.md#bậttắt-qr-gọi-món)) **và** gói có `QR_STATIC_ORDER`, `ORDER_MANAGEMENT`.
+Khi `false`, menu vẫn xem được nhưng FE ẩn giỏ hàng / nút gọi món. Đây chỉ là gợi ý hiển thị; backend vẫn chặn ở guest-access và submit.
 
 Không có table/session hoặc restaurant UUID. Nhóm cùng nhà hàng, active, undeleted; cho phép nhóm rỗng; thứ tự `displayOrder ASC, name ASC, id ASC`.
 
@@ -141,6 +146,8 @@ Lưu token và audit `RESTAURANT_MENU_LINK_ROTATED` trong cùng transaction. Aud
 Thẻ in PNG 1240×1748 (A6 @300 dpi): tên nhà hàng, QR của `menuUrl`, dòng "Menu nhà hàng" và hướng dẫn quét. Query `download` như trên; filename `the-qr-menu.png`.
 
 Ảnh render theo yêu cầu, không lưu Cloudinary/disk (đổi token thì ảnh cũ tự vô hiệu ở lần quét tiếp theo, nhưng bản đã in phải in lại). Endpoint cần Bearer nên frontend không dùng thẳng `<img src>`: `fetch` kèm `Authorization` → `response.blob()` → `URL.createObjectURL(blob)`.
+
+Công tắc bật/tắt QR gọi món (`GET/PUT /api/v1/restaurants/me/qr-ordering`) nằm cùng nhóm quản lý nhà hàng; xem [public-qr-order-api.md](public-qr-order-api.md#bậttắt-qr-gọi-món).
 
 V25 bổ sung cùng transaction: revoke guest grants và cancel PENDING RESTAURANT QR requests của credential cũ với reason RESTAURANT_MENU_TOKEN_ROTATED. Không tác động QR_TABLE requests, APPROVED orders hoặc payments. Body/response/permission menu-link không đổi; initialize/read vẫn không tạo request hoặc order.
 

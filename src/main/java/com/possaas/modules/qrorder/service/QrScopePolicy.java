@@ -28,10 +28,12 @@ public class QrScopePolicy {
 
     public Scope validate(QrGuestAuthorization grant) {
         var state=credentialState(grant.getRestaurantId(),grant.getEntryType(),grant.getTableId(),grant.getTableAccessEpoch(),grant.getCredentialHash());
+        requireSwitchedOn(state.restaurant(),grant.getEntryType());
         requireFeatures(grant.getRestaurantId(),grant.getEntryType()); return state;
     }
     public Scope validate(QrOrderRequest request) {
-        var state=credentialState(request); requireFeatures(request.getRestaurantId(),request.getEntryType()); return state;
+        var state=credentialState(request); requireSwitchedOn(state.restaurant(),request.getEntryType());
+        requireFeatures(request.getRestaurantId(),request.getEntryType()); return state;
     }
     public Scope credentialState(QrOrderRequest request) {
         grants.findByIdAndRestaurantId(request.getGuestAuthorizationId(),request.getRestaurantId())
@@ -53,11 +55,12 @@ public class QrScopePolicy {
     }
     public void requireFeatures(UUID tenant,QrEntryType type) {
         try {
-            features.requireFeature(tenant,"QR_MENU_VIEW");
-            features.requireFeature(tenant,"ORDER_MANAGEMENT");
-            features.requireFeature(tenant,type==QrEntryType.TABLE?"QR_TABLE_ORDER":"QR_STATIC_ORDER");
-            if(type==QrEntryType.TABLE) features.requireFeature(tenant,"TABLE_MANAGEMENT");
+            for(String feature:type.requiredFeatures()) features.requireFeature(tenant,feature);
         } catch (BusinessException unavailable) { throw unavailable(); }
+    }
+    /** The owner's own switch, independent of what the package entitles. */
+    private static void requireSwitchedOn(Restaurant restaurant,QrEntryType type) {
+        if(!restaurant.qrOrdering().allows(type.orderingEntry())) throw unavailable();
     }
     private Scope credentialState(UUID tenant,QrEntryType type,UUID tableId,Long epoch,String fingerprint) {
         var restaurant=restaurants.findByIdAndDeletedAtIsNull(tenant).filter(r->r.getStatus()==RestaurantStatus.ACTIVE).orElseThrow(QrScopePolicy::unavailable);

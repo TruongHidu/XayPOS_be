@@ -108,7 +108,8 @@ class PublicQrMenuIntegrationTest {
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(response.getHeader("Cache-Control")).contains("no-store");
         var body = json.readTree(response.getContentAsString());
-        assertThat(fields(body)).containsExactlyInAnyOrder("restaurant", "table", "groups");
+        assertThat(fields(body)).containsExactlyInAnyOrder("restaurant", "table", "groups", "orderingEnabled");
+        assertThat(body.path("orderingEnabled").isBoolean()).isTrue();
         assertThat(fields(body.path("restaurant"))).containsExactlyInAnyOrder("name", "currencyCode");
         assertThat(fields(body.path("table"))).containsExactlyInAnyOrder("code", "name");
         assertThat(fields(body.path("groups").get(0))).containsExactlyInAnyOrder("id", "name", "displayOrder");

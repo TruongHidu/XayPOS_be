@@ -13,7 +13,7 @@ Khách không chọn `entryType`, `serviceType`, `sourceChannel`, tenant, bàn h
 
 ## Web khách hàng
 
-1. Đọc menu bằng GET hiện có. Giữ món OUT_OF_STOCK để gắn nhãn nhưng không cho thêm vào giỏ; backend vẫn kiểm tra lại lúc gửi và duyệt.
+1. Đọc menu bằng GET hiện có. Nếu `orderingEnabled=false` thì hiển thị menu chỉ để xem: ẩn giỏ hàng và nút gọi món, kèm thông báo kiểu "Nhà hàng tạm ngưng nhận gọi món qua QR". Giữ món OUT_OF_STOCK để gắn nhãn nhưng không cho thêm vào giỏ; backend vẫn kiểm tra lại lúc gửi và duyệt.
 2. Khi khách muốn gửi, mint guest access bằng đúng cửa vào, body `{}`. Không gửi staff JWT. Giữ `guestToken` riêng với token đăng nhập nhân viên; không đưa vào URL, analytics, console, crash report hoặc storage chia sẻ.
 3. Giỏ hàng chỉ là state frontend. Chọn món không mở phiên, không tạo order và không làm bàn bận.
 4. Gửi `POST /api/v1/public/qr-order/requests` với `X-QR-Guest-Token`, một `Idempotency-Key` ổn định cho intent và body customer/note/items. Mang đi bắt buộc tên nhận hàng; số điện thoại tùy chọn. Ăn tại bàn có thể không nhập tên.
@@ -49,6 +49,17 @@ Thêm inbox QR riêng; không dùng order OPEN hoặc dòng món PENDING làm h�
 Approve cần `ORDER_CREATE` và `ORDER_UPDATE`. Nếu thực sự mở phiên TABLE mới, cần thêm `TABLE_OPEN`; không yêu cầu permission/feature TABLE cho QR mang đi. Không hardcode OWNER/WAITER/CASHIER; render theo permissions hiệu lực và backend `canApprove`, nhưng backend luôn quyết định cuối cùng.
 
 Nếu request TABLE chưa quan sát phiên lúc gửi nhưng hiện đã có S, staff phải review lại và tự chọn S sau khi xác nhận đúng nhóm khách. Không tự chọn phiên latest/first. Nếu root order OPEN draft, không auto-confirm draft qua QR; xử lý draft bằng luồng staff riêng rồi review lại. Nếu checkout/nghĩa vụ thanh toán đã bắt đầu, không gọi thêm.
+
+### Cài đặt bật/tắt QR gọi món
+
+Màn cài đặt nhà hàng có 2 công tắc, đọc và ghi qua `GET/PUT /api/v1/restaurants/me/qr-ordering` ([chi tiết](public-qr-order-api.md#bậttắt-qr-gọi-món)):
+
+- **Gọi món tại bàn** (`tableEnabled`) và **Gọi món mang đi** (`takeawayEnabled`). PUT luôn gửi đủ cả hai giá trị.
+- Chỉ cho sửa khi có `RESTAURANT_PROFILE_UPDATE`; chỉ xem cần `RESTAURANT_PROFILE_VIEW`.
+- Disable công tắc nếu gói không có `QR_TABLE_ORDER` / `QR_STATIC_ORDER`, lấy từ danh sách feature của subscription.
+- Trước khi tắt, cảnh báo rằng mọi yêu cầu QR đang chờ của cửa vào đó sẽ bị huỷ. Sau khi tắt, inbox QR sẽ nhận sự kiện huỷ với lý do `QR_ORDERING_DISABLED`; hiển thị lý do này như các lần huỷ khác.
+
+Phía khách, nếu cửa vào bị tắt lúc khách đang mở trang thì submit trả `401 QR_GUEST_ACCESS_INVALID`, và mint lại trả `403 QR_ORDER_UNAVAILABLE`. Khi đó tải lại menu: `orderingEnabled=false` thì chuyển sang chế độ chỉ xem.
 
 ## Xử lý xung đột và replay
 

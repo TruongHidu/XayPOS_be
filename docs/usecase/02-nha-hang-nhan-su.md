@@ -84,7 +84,7 @@ UC10 ..> UC08a : <<include>>
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Chủ nhà hàng, Quản lý |
-| **Mô tả** | Khai báo tài khoản ngân hàng của nhà hàng (mã ngân hàng/BIN, số tài khoản, tên chủ tài khoản) để hệ thống sinh mã **VietQR** khi khách thanh toán đơn bằng chuyển khoản (UC41). |
+| **Mô tả** | Khai báo tài khoản ngân hàng của nhà hàng (mã ngân hàng/BIN, số tài khoản, tên chủ tài khoản) để hệ thống sinh mã **VietQR** khi khách thanh toán đơn bằng chuyển khoản (UC40). |
 | **Tiền điều kiện** | ĐK-A; xem: `RESTAURANT_PROFILE_VIEW`; sửa/xoá: `RESTAURANT_PROFILE_UPDATE`. |
 | **Hậu điều kiện** | Tài khoản nhận tiền được lưu / xoá; ghi nhật ký `RESTAURANT_TRANSFER_ACCOUNT_UPDATED` / `..._CLEARED`. |
 
@@ -95,7 +95,7 @@ UC10 ..> UC08a : <<include>>
 4. Hệ thống kiểm tra định dạng, lưu cấu hình và ghi nhật ký.
 
 **Luồng thay thế / ngoại lệ**
-- 3a. Actor chọn “Xoá cấu hình” → hệ thống xoá tài khoản; từ đó UC41 trả lỗi `TRANSFER_ACCOUNT_NOT_CONFIGURED`.
+- 3a. Actor chọn “Xoá cấu hình” → hệ thống xoá tài khoản; từ đó UC40 trả lỗi `TRANSFER_ACCOUNT_NOT_CONFIGURED`.
 - 4a. Thông tin tài khoản không hợp lệ → `400 INVALID_TRANSFER_ACCOUNT`.
 
 ---
@@ -105,7 +105,7 @@ UC10 ..> UC08a : <<include>>
 | Thuộc tính | Nội dung |
 |---|---|
 | **Actor chính** | Chủ nhà hàng, Quản lý |
-| **Mô tả** | Tạo và quản lý đường link thực đơn công khai của nhà hàng (không gắn bàn) – dùng cho khách xem thực đơn và gọi món **mang đi** (UC43, UC44). Có thể tải ảnh QR / thẻ QR để in, hoặc tạo lại link khi bị lộ. |
+| **Mô tả** | Tạo và quản lý đường link thực đơn công khai của nhà hàng (không gắn bàn) – dùng cho khách xem thực đơn và gọi món **mang đi** (UC42, UC43). Có thể tải ảnh QR / thẻ QR để in, hoặc tạo lại link khi bị lộ. |
 | **Tiền điều kiện** | ĐK-A; ĐK-P(`RESTAURANT_PROFILE_UPDATE`). |
 | **Hậu điều kiện** | Link (menu token) được khởi tạo / thay mới; ghi nhật ký. |
 

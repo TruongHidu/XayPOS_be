@@ -39,6 +39,21 @@ public class Restaurant extends BaseAuditable {
     @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
     @Column(name = "transfer_account_name", length = TransferAccount.MAX_NAME_LENGTH) private String transferAccountName;
 
+    // Two columns, read and written only as a whole QrOrderingSettings.
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    @Column(name = "qr_table_ordering_enabled", nullable = false) private boolean qrTableOrderingEnabled = true;
+    @Getter(AccessLevel.NONE) @Setter(AccessLevel.NONE)
+    @Column(name = "qr_takeaway_ordering_enabled", nullable = false) private boolean qrTakeawayOrderingEnabled = true;
+
+    public QrOrderingSettings qrOrdering() {
+        return new QrOrderingSettings(qrTableOrderingEnabled, qrTakeawayOrderingEnabled);
+    }
+
+    public void changeQrOrdering(QrOrderingSettings settings) {
+        qrTableOrderingEnabled = settings.tableEnabled();
+        qrTakeawayOrderingEnabled = settings.takeawayEnabled();
+    }
+
     public Optional<TransferAccount> transferAccount() {
         return transferBankBin == null ? Optional.empty()
             : Optional.of(new TransferAccount(transferBankBin, transferAccountNumber, transferAccountName));

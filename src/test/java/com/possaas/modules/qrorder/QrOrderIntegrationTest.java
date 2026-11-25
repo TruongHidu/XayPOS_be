@@ -387,6 +387,41 @@ class QrOrderIntegrationTest {
         assertThat(status(first)).isEqualTo("APPROVED"); assertThat(jdbc.queryForMap("select * from orders where id=?",a.orderId())).isEqualTo(orderBefore);
         submit(restaurantGuest,"d",payload()).error(401,"QR_GUEST_ACCESS_INVALID"); submit(tableGuest,"e",payload()).expect(201);
     }
+    @Test void ownerSwitchClosesOneEntryPointCancelsItsPendingAndKeepsTheMenuViewable() throws Exception {
+        String tableGuest=mint(true),takeGuest=mint(false);
+        var tablePending=submit(tableGuest,"a",payload()); var takePending=submit(takeGuest,"b",payload());
+        var off=staff(put("/api/v1/restaurants/me/qr-ordering"),Map.of("tableEnabled",false,"takeawayEnabled",true),ALL);
+        off.expect(200); assertThat(off.cache).contains("no-store");
+        assertThat(off.body.path("tableEnabled").asBoolean()).isFalse(); assertThat(off.body.path("takeawayEnabled").asBoolean()).isTrue();
+        assertThat(status(tablePending)).isEqualTo("CANCELLED"); assertThat(status(takePending)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("select cancellation_reason from qr_order_requests where id=?",String.class,tablePending.requestId()))
+            .isEqualTo("QR_ORDERING_DISABLED");
+        assertThat(events("RESTAURANT_QR_ORDERING_UPDATED")).isEqualTo(1);
+        submit(tableGuest,"c",payload()).error(401,"QR_GUEST_ACCESS_INVALID");
+        perform(post(PUBLIC+"/tables/"+table.getQrToken()+"/guest-access"),Map.of()).error(403,"QR_ORDER_UNAVAILABLE");
+        submit(takeGuest,"d",payload()).expect(201);
+        var tableMenu=perform(get("/api/v1/public/menu/tables/"+table.getQrToken()),null); tableMenu.expect(200);
+        assertThat(tableMenu.body.path("orderingEnabled").asBoolean()).isFalse();
+        var takeMenu=perform(get("/api/v1/public/menu/restaurants/"+restaurant.getPublicOrderToken()),null); takeMenu.expect(200);
+        assertThat(takeMenu.body.path("orderingEnabled").asBoolean()).isTrue();
+
+        staff(put("/api/v1/restaurants/me/qr-ordering"),Map.of("tableEnabled",true,"takeawayEnabled",true),ALL).expect(200);
+        submit(mint(true),"e",payload()).expect(201);
+        assertThat(perform(get("/api/v1/public/menu/tables/"+table.getQrToken()),null).body.path("orderingEnabled").asBoolean()).isTrue();
+    }
+    @Test void switchingQrOrderingNeedsRestaurantProfileUpdateAndBothValues() throws Exception {
+        var withoutUpdate=new HashSet<>(ALL); withoutUpdate.remove("RESTAURANT_PROFILE_UPDATE");
+        staff(put("/api/v1/restaurants/me/qr-ordering"),Map.of("tableEnabled",false,"takeawayEnabled",false),withoutUpdate).expect(403);
+        staff(put("/api/v1/restaurants/me/qr-ordering"),Map.of("tableEnabled",false),ALL).expect(400);
+        var read=staff(get("/api/v1/restaurants/me/qr-ordering"),null,Set.of("RESTAURANT_PROFILE_VIEW")); read.expect(200);
+        assertThat(read.body.path("tableEnabled").asBoolean()).isTrue(); assertThat(read.body.path("takeawayEnabled").asBoolean()).isTrue();
+        mint(true); mint(false);
+    }
+    @Test void entitlementStillGatesTheMenuFlagWhenTheSwitchIsOn() throws Exception {
+        features(List.of("QR_MENU_VIEW","QR_TABLE_ORDER","ORDER_MANAGEMENT","TABLE_MANAGEMENT"));
+        assertThat(perform(get("/api/v1/public/menu/tables/"+table.getQrToken()),null).body.path("orderingEnabled").asBoolean()).isTrue();
+        assertThat(perform(get("/api/v1/public/menu/restaurants/"+restaurant.getPublicOrderToken()),null).body.path("orderingEnabled").asBoolean()).isFalse();
+    }
     @Test void pendingPaymentIntentBlocksTableRequestsUntilCancelledWithoutBlockingTakeaway() throws Exception {
         String tableGuest=mint(true),takeGuest=mint(false); var r=submit(tableGuest,"a",payload()); var a=approve(r,review(r),null,ALL); a.expect(200);
         UUID payment=UUID.randomUUID();
