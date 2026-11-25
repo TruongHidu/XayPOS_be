@@ -20,7 +20,7 @@ Khách không chọn `entryType`, `serviceType`, `sourceChannel`, tenant, bàn h
 5. `201` là request mới; `200` với `Idempotency-Replayed: true` là kết quả intent cũ. Cả hai đều phải chuyển đến cùng receipt của `requestId`, không gửi lại bằng key mới vì timeout.
 6. Hiển thị **Chờ nhà hàng xác nhận**, không hiển thị **Đã vào bếp** hoặc **Đã tính vào hóa đơn** khi status PENDING. `estimatedAmount` là báo giá lúc gửi, không phải số tiền chốt hoặc hóa đơn bàn.
 7. Poll `GET /api/v1/public/qr-order/requests/{requestId}` bằng cùng guest token khi trang đang hiển thị. Dùng khoảng cách có backoff/jitter, dừng hoặc giảm polling khi app/tab background; tôn trọng `429` và `Retry-After`. Không gọi API order private để lấy bill.
-8. APPROVED: hiển thị `approvedOrderCode`, `approvedAmount` và trạng thái các dòng riêng của request nếu response có. Không suy ra quyền xem toàn bộ order/table bill. REJECTED/CANCELLED/expired: hiển thị thông báo phù hợp; không tự submit lại.
+8. APPROVED: hiển thị `approvedOrderCode`, `approvedAmount` và trạng thái các dòng riêng của request nếu response có. Dòng có `rejectionReason` là món nhà hàng **không nhận** (duyệt một phần): gạch/mờ dòng đó, hiện lý do, không cộng vào tiền. Không suy ra quyền xem toàn bộ order/table bill. REJECTED: hiển thị `rejectionReason` của request. CANCELLED/expired: hiển thị thông báo phù hợp; không tự submit lại.
 
 `expired` chỉ là projection thời hạn ban đầu đã đến, có thể true cả trên request terminal. Ưu tiên APPROVED/REJECTED/CANCELLED theo status; chỉ hiển thị “Yêu cầu chờ duyệt đã hết hạn” khi status còn PENDING và expired=true. Không biến receipt APPROVED thành thất bại vì deadline đã qua.
 
@@ -48,6 +48,8 @@ Thêm inbox QR riêng; không dùng order OPEN hoặc dòng món PENDING làm h�
 
 Approve cần `ORDER_CREATE` và `ORDER_UPDATE`. Nếu thực sự mở phiên TABLE mới, cần thêm `TABLE_OPEN`; không yêu cầu permission/feature TABLE cho QR mang đi. Không hardcode OWNER/WAITER/CASHIER; render theo permissions hiệu lực và backend `canApprove`, nhưng backend luôn quyết định cuối cùng.
 
+**Duyệt một phần.** Màn review hiển thị từng dòng của `currentQuote.lines` kèm checkbox "Nhận món". Dòng `available=false` bỏ tick sẵn, khoá lại và hiện `unavailableReason`. Nhân viên có thể bỏ tick thêm dòng còn bán. Mỗi dòng bỏ tick cần một lý do cho khách (gợi ý sẵn "Món đã hết"). Gửi các dòng bỏ tick trong `excludedItems: [{requestItemId, reason}]`. Tổng tiền dự kiến chỉ cộng các dòng được tick. Nếu bỏ hết thì chuyển sang luồng từ chối. Khi approve trả `INSUFFICIENT_AVAILABLE_STOCK`, bỏ tick các dòng có `itemId` trùng `details.lines[].menuItemId`, review lại rồi cho duyệt tiếp. Khi từ chối, ghi chú rằng khách sẽ đọc lý do.
+
 Nếu request TABLE chưa quan sát phiên lúc gửi nhưng hiện đã có S, staff phải review lại và tự chọn S sau khi xác nhận đúng nhóm khách. Không tự chọn phiên latest/first. Nếu root order OPEN draft, không auto-confirm draft qua QR; xử lý draft bằng luồng staff riêng rồi review lại. Nếu checkout/nghĩa vụ thanh toán đã bắt đầu, không gọi thêm.
 
 ### Cài đặt bật/tắt QR gọi món
@@ -65,6 +67,7 @@ Phía khách, nếu cửa vào bị tắt lúc khách đang mở trang thì subm
 
 - `QR_REVIEW_CONTEXT_CHANGED`: tải lại detail, hiển thị phần thay đổi và yêu cầu nhân viên xác nhận lần nữa. Không tự thay hash rồi tự approve.
 - `INSUFFICIENT_AVAILABLE_STOCK` khi approve: request vẫn PENDING; hiển thị `details.lines` cho nhân viên như màn order (món, số còn bán; nguyên liệu thiếu chỉ khi có INVENTORY_VIEW). API của khách không bao giờ trả `details`.
+- `QR_LINE_UNAVAILABLE`: có dòng `available=false` chưa bị bỏ; tải lại review và bỏ tick dòng đó. `QR_APPROVAL_EMPTY`: đã bỏ hết, dùng từ chối. `QR_EXCLUDED_ITEM_INVALID`: `requestItemId` không thuộc request hoặc bị lặp.
 - `CONCURRENT_QR_REQUEST_UPDATE`: tải lại request. Nếu người khác đã xử lý, hiển thị kết quả đó; không chuyển intent sang order/phiên khác.
 - `QR_REQUEST_SESSION_CHANGED`: hiển thị phiên/bàn đã đổi hoặc kết thúc; không tự gắn request cũ vào lượt khách mới.
 - `QR_ORDER_REQUEST_EXPIRED`: request không duyệt được dù stored status vẫn PENDING; dùng `expired` và `canApprove` để thể hiện. Không đợi job dọn dữ liệu.

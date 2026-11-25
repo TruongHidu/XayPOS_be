@@ -355,13 +355,26 @@ components:
           format: uuid
           nullable: true
           description: Explicit property required. RESTAURANT must be null. TABLE null means open only if no current session; UUID chooses reviewed current session.
+        excludedItems:
+          type: array
+          maxItems: 20
+          nullable: true
+          description: 'Partial approval. Request lines to leave out, each with the reason the guest sees on that line. Absent/null/empty approves every line. Every currentQuote line with available=false must be listed (otherwise 409 QR_LINE_UNAVAILABLE); available lines may be listed too. Leaving out every line is 400 QR_APPROVAL_EMPTY (reject instead); an unknown or repeated requestItemId is 400 QR_EXCLUDED_ITEM_INVALID. Ignored on an approved replay.'
+          items: {$ref: '#/components/schemas/ExcludedItem'}
+    ExcludedItem:
+      type: object
+      additionalProperties: false
+      required: [requestItemId, reason]
+      properties:
+        requestItemId: {type: string, format: uuid, description: 'currentQuote.lines[].requestItemId / request.items[].id.'}
+        reason: {type: string, minLength: 1, maxLength: 500, description: 'Trimmed nonblank. Shown to the guest on that receipt line.'}
     RejectQrRequest:
       type: object
       additionalProperties: false
       required: [expectedRequestVersion, reason]
       properties:
         expectedRequestVersion: {type: integer, format: int64, minimum: 0}
-        reason: {type: string, minLength: 1, maxLength: 1000, description: 'Trimmed nonblank rejection reason.'}
+        reason: {type: string, minLength: 1, maxLength: 1000, description: 'Trimmed nonblank rejection reason. Shown to the guest as GuestReceipt.rejectionReason.'}
     GuestAccess:
       type: object
       additionalProperties: false
@@ -393,7 +406,7 @@ components:
     GuestReceipt:
       type: object
       additionalProperties: false
-      required: [requestId, entryType, serviceType, sourceChannel, status, version, expired, currencyCode, estimatedAmount, approvedAmount, approvedOrderCode, createdAt, expiresAt, items]
+      required: [requestId, entryType, serviceType, sourceChannel, status, version, expired, currencyCode, estimatedAmount, approvedAmount, approvedOrderCode, rejectionReason, createdAt, expiresAt, items]
       properties:
         requestId: {type: string, format: uuid}
         entryType: {$ref: '#/components/schemas/EntryType'}
@@ -404,15 +417,16 @@ components:
         expired: {type: boolean}
         currencyCode: {type: string, minLength: 3, maxLength: 3}
         estimatedAmount: {type: number, minimum: 0, description: 'Submitted quote snapshot, not final bill.'}
-        approvedAmount: {type: number, minimum: 0, nullable: true, description: 'Amount for this request only, never entire table bill.'}
+        approvedAmount: {type: number, minimum: 0, nullable: true, description: 'Amount for this request only, counting its approved lines (left-out lines excluded), never entire table bill.'}
         approvedOrderCode: {type: string, nullable: true}
+        rejectionReason: {type: string, nullable: true, description: 'Reason staff gave when rejecting the whole request; set only for status REJECTED.'}
         createdAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}
         items: {type: array, items: {$ref: '#/components/schemas/GuestLine'}}
     GuestLine:
       type: object
       additionalProperties: false
-      required: [requestItemId, itemId, itemName, unit, quantity, estimatedUnitPrice, estimatedLineTotal, note, approvedOrderItemId, approvedUnitPrice, approvedLineTotal, status]
+      required: [requestItemId, itemId, itemName, unit, quantity, estimatedUnitPrice, estimatedLineTotal, note, approvedOrderItemId, approvedUnitPrice, approvedLineTotal, status, rejectionReason]
       properties:
         requestItemId: {type: string, format: uuid}
         itemId: {type: string, format: uuid}
@@ -425,7 +439,8 @@ components:
         approvedOrderItemId: {type: string, format: uuid, nullable: true}
         approvedUnitPrice: {type: number, minimum: 0, nullable: true}
         approvedLineTotal: {type: number, minimum: 0, nullable: true}
-        status: {type: string, enum: [PENDING, COOKING, READY, SERVED, CANCELLED], nullable: true, description: 'Linked order item status after approval; null while request has no order items.'}
+        status: {type: string, enum: [PENDING, COOKING, READY, SERVED, CANCELLED], nullable: true, description: 'Linked order item status after approval; null while request has no order items or the line was left out.'}
+        rejectionReason: {type: string, nullable: true, description: 'Set when staff approved the request but left this line out (partial approval); the line has no approvedOrderItemId.'}
     StaffSummary:
       type: object
       additionalProperties: false
@@ -472,6 +487,8 @@ components:
         lineTotal: {type: number, minimum: 0}
         note: {type: string, nullable: true}
         approvedOrderItemId: {type: string, format: uuid, nullable: true}
+        rejectedAt: {type: string, format: date-time, nullable: true, description: 'Set when the line was left out of a partial approval.'}
+        rejectionReason: {type: string, nullable: true, description: 'Reason the line was left out; the guest sees it.'}
     StaffPage:
       type: object
       additionalProperties: false
@@ -499,20 +516,23 @@ components:
       required: [currencyCode, amount, lines]
       properties:
         currencyCode: {type: string, minLength: 3, maxLength: 3}
-        amount: {type: number, minimum: 0}
+        amount: {type: number, minimum: 0, description: 'Current total of available lines only.'}
         lines: {type: array, items: {$ref: '#/components/schemas/QuoteLine'}}
     QuoteLine:
       type: object
       additionalProperties: false
-      required: [itemId, quantity, itemName, unit, unitPrice, lineTotal]
+      required: [requestItemId, itemId, quantity, itemName, unit, unitPrice, lineTotal, available, unavailableReason]
       properties:
+        requestItemId: {type: string, format: uuid, description: 'The request line; use it in ApproveQrRequest.excludedItems.'}
         itemId: {type: string, format: uuid}
         quantity: {type: number, exclusiveMinimum: true, minimum: 0}
         note: {type: string, nullable: true}
-        itemName: {type: string}
+        itemName: {type: string, description: 'Current menu name; the submitted name when available=false.'}
         unit: {type: string}
-        unitPrice: {type: number, minimum: 0}
-        lineTotal: {type: number, minimum: 0}
+        unitPrice: {type: number, minimum: 0, nullable: true, description: 'Current price; null when available=false.'}
+        lineTotal: {type: number, minimum: 0, nullable: true, description: 'Null when available=false.'}
+        available: {type: boolean, description: 'false: the item cannot be sold now; leave the line out to approve the rest.'}
+        unavailableReason: {type: string, nullable: true, enum: [ITEM_OUT_OF_STOCK, ITEM_NOT_SELLABLE, MENU_ITEM_NOT_FOUND, null]}
     TableReviewContext:
       type: object
       additionalProperties: false

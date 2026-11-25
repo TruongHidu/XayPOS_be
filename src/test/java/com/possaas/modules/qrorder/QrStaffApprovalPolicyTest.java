@@ -65,12 +65,12 @@ class QrStaffApprovalPolicyTest {
         var seating = mock(QrOrderSeatingQuery.class); var serving = mock(OrderSessionServingPolicy.class); var checkout = mock(QrOrderCheckoutQuery.class);
         var request = request(QrEntryType.RESTAURANT); var restaurant = restaurant();
         when(scopes.validate(request)).thenReturn(new QrScopePolicy.Scope(restaurant, null, 0));
-        when(quotes.quote(tenant, "VND", List.of())).thenReturn(quote("30.00"));
+        when(quotes.review(tenant, "VND", List.of())).thenReturn(quote("30.00"));
         var service = new QrReviewContextService(scopes, quotes, seating, serving, checkout, new QrHashes(json));
         var first = service.require(request, List.of(), staff, now);
         var repeated = service.require(request, List.of(), staff, now.plusSeconds(1));
         assertThat(first.hash()).isEqualTo(repeated.hash()); assertThat(first.context()).isNull(); assertThat(first.canApprove()).isTrue();
-        when(quotes.quote(tenant, "VND", List.of())).thenReturn(quote("31.00"));
+        when(quotes.review(tenant, "VND", List.of())).thenReturn(quote("31.00"));
         assertThat(service.require(request, List.of(), staff, now).hash()).isNotEqualTo(first.hash());
         verifyNoInteractions(seating, serving, checkout);
     }
@@ -80,7 +80,7 @@ class QrStaffApprovalPolicyTest {
         var seating = mock(QrOrderSeatingQuery.class); var serving = mock(OrderSessionServingPolicy.class); var checkout = mock(QrOrderCheckoutQuery.class);
         var request = request(QrEntryType.TABLE); var root = order(); root.setStatus(OrderStatus.CONFIRMED);
         when(scopes.validate(request)).thenReturn(new QrScopePolicy.Scope(restaurant(), null, 0));
-        when(quotes.quote(tenant, "VND", List.of())).thenReturn(quote("30.00"));
+        when(quotes.review(tenant, "VND", List.of())).thenReturn(quote("30.00"));
         when(seating.current(tenant, table)).thenReturn(Optional.of(new QrOrderSeatingQuery.CurrentSession(session, (short)2, 0)));
         when(serving.findServing(tenant, session)).thenReturn(Optional.of(root));
         var service = new QrReviewContextService(scopes, quotes, seating, serving, checkout, new QrHashes(json));
@@ -99,7 +99,7 @@ class QrStaffApprovalPolicyTest {
         var scopes = mock(QrScopePolicy.class); var quotes = mock(QrQuoteService.class); var seating = mock(QrOrderSeatingQuery.class);
         var request = request(QrEntryType.TABLE);
         when(scopes.validate(request)).thenReturn(new QrScopePolicy.Scope(restaurant(), null, 0));
-        when(quotes.quote(tenant, "VND", List.of())).thenReturn(quote("30.00"));
+        when(quotes.review(tenant, "VND", List.of())).thenReturn(quote("30.00"));
         when(seating.current(tenant, table)).thenReturn(Optional.empty());
         var service = new QrReviewContextService(scopes, quotes, seating, mock(OrderSessionServingPolicy.class), mock(QrOrderCheckoutQuery.class), new QrHashes(json));
         var actor = new CurrentUser(user, tenant, "private@example.test", "OWNER", Set.of("ORDER_VIEW", "ORDER_CREATE", "ORDER_UPDATE"));

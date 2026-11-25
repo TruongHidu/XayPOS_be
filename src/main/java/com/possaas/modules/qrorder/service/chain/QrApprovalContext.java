@@ -4,6 +4,7 @@ import com.possaas.modules.order.application.port.QrApprovedOrderCommand;
 import com.possaas.modules.order.service.OrderAccessService;
 import com.possaas.modules.qrorder.dto.QrStaffRequests;
 import com.possaas.modules.qrorder.entity.*;
+import com.possaas.modules.qrorder.service.QrApprovalLinePolicy;
 import com.possaas.modules.qrorder.service.QrReviewContextService;
 import java.time.Instant;
 import java.util.List;
@@ -19,6 +20,7 @@ public final class QrApprovalContext {
     private final QrOrderRequest request;
     private final List<QrOrderRequestItem> items;
     private QrReviewContextService.Review review;
+    private QrApprovalLinePolicy.Decision decision;
     private QrApprovedOrderCommand.Preparation prepared;
     private boolean persisted;
     public QrApprovalContext(OrderAccessService.Locked locked, Instant now, String ip, QrStaffRequests.Approve command,

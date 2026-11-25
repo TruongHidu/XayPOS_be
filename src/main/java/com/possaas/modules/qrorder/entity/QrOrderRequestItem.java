@@ -2,6 +2,7 @@ package com.possaas.modules.qrorder.entity;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,5 +19,12 @@ public class QrOrderRequestItem extends QrRecord {
     @Column(name="quoted_unit_price",nullable=false,updatable=false,precision=14,scale=2) private BigDecimal quotedUnitPrice;
     @Column(name="quoted_line_total",nullable=false,updatable=false,precision=14,scale=2) private BigDecimal quotedLineTotal;
     @Column(name="approved_order_item_id") private UUID approvedOrderItemId;
+    /** Set only when staff approved the request but left this line out; the guest sees the reason. */
+    @Column(name="rejected_at") private Instant rejectedAt;
+    @Column(name="rejection_reason",length=500) private String rejectionReason;
+
+    public void reject(String reason, Instant now) {
+        rejectedAt = now; rejectionReason = reason; setUpdatedAt(now);
+    }
     @Override public String toString() { return "QrOrderRequestItem[id="+getId()+"]"; }
 }

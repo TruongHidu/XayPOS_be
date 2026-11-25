@@ -16,11 +16,13 @@ public class QrStaffResponseMapper {
             r.getApprovedOrderId(), r.getApprovedSessionId(), r.getApprovedBy(), r.getApprovedAt(), r.getRejectedBy(), r.getRejectedAt(),
             r.getRejectionReason(), r.getCancelledAt(), r.getCancellationReason(), r.getCreatedAt(), r.getExpiresAt(),
             lines.stream().map(l -> new QrStaffRequestSummary.Line(l.getId(), l.getItemId(), l.getQuotedItemName(), l.getQuotedUnit(),
-                l.getQuantity(), l.getQuotedUnitPrice(), l.getQuotedLineTotal(), l.getNote(), l.getApprovedOrderItemId())).toList());
+                l.getQuantity(), l.getQuotedUnitPrice(), l.getQuotedLineTotal(), l.getNote(), l.getApprovedOrderItemId(),
+                l.getRejectedAt(), l.getRejectionReason())).toList());
     }
+    /** approvedOrderItemIds lists only the lines that became order lines, in request line order. */
     public QrApprovalResponse approved(QrOrderRequest r, List<QrOrderRequestItem> lines, OrderResponse order, boolean replay) {
         return new QrApprovalResponse(r.getId(), r.getStatus(), r.getVersion(), r.getApprovedOrderId(), r.getApprovedSessionId(),
             r.getApprovedBy(), r.getApprovedAt(), r.getApprovedAmount(),
-            lines.stream().map(QrOrderRequestItem::getApprovedOrderItemId).toList(), replay, order);
+            lines.stream().map(QrOrderRequestItem::getApprovedOrderItemId).filter(java.util.Objects::nonNull).toList(), replay, order);
     }
 }

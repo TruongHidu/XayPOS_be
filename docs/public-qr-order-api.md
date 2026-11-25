@@ -231,7 +231,14 @@ Response `200` chỉ chứa request của đúng guest identity và tenant. Có 
 
 Stored PENDING đã `expiresAt <= now` có `expired: true`, không còn approve được dù không có expiry job. Guest GET vẫn phải có grant còn hợp lệ; stale/rotated/revoked guest scope không được dùng để lấy receipt.
 
-GET trả cùng schema như submit. Sau APPROVED, `status` trở thành APPROVED, `approvedAmount`/`approvedOrderCode` có giá trị; từng dòng có `approvedOrderItemId`, `approvedUnitPrice`, `approvedLineTotal` và status order item tương ứng. Estimated fields không đổi theo giá menu mới hoặc root bill mới. Nếu root có món từ staff/guest khác, các món đó không xuất hiện ở receipt này.
+GET trả cùng schema như submit. Sau APPROVED, `status` trở thành APPROVED, `approvedAmount`/`approvedOrderCode` có giá trị; từng dòng có `approvedOrderItemId`, `approvedUnitPrice`, `approvedLineTotal` và status order item tương ứng.
+
+Lý do hiển thị cho khách:
+
+- `rejectionReason` (cấp request): lý do nhân viên ghi khi **từ chối cả yêu cầu**; chỉ có khi `status = REJECTED`.
+- `items[].rejectionReason` (cấp dòng): có khi nhân viên **duyệt một phần** và bỏ dòng đó (xem mục 7). Dòng này không có `approvedOrderItemId`/`approvedUnitPrice`/`approvedLineTotal`/`status` và không nằm trong `approvedAmount`.
+
+Hai lý do này do nhân viên tự gõ và khách đọc nguyên văn. `cancellationReason` (huỷ do hệ thống/checkout/tắt QR) không trả cho khách. Estimated fields không đổi theo giá menu mới hoặc root bill mới. Nếu root có món từ staff/guest khác, các món đó không xuất hiện ở receipt này.
 
 `expired` chỉ phản ánh deadline đã qua, không đổi terminal status. Request APPROVED vẫn APPROVED dù expired=true sau deadline; FE phải ưu tiên terminal status. Chỉ PENDING+expired bị từ chối approval do hết hạn.
 
@@ -257,7 +264,7 @@ approvedBy, approvedAt, rejectedBy, rejectedAt, rejectionReason,
 cancelledAt, cancellationReason, createdAt, expiresAt, items[]
 ```
 
-`items[]`: id (request item), itemId, itemName, unit, quantity, unitPrice, lineTotal, note, approvedOrderItemId. `unitPrice`/`lineTotal` ở summary là submitted snapshot, không phải current quote. TABLE ID/observed session và terminal metadata nullable; RESTAURANT tableId/observedSessionId/approvedSessionId luôn null.
+`items[]`: id (request item), itemId, itemName, unit, quantity, unitPrice, lineTotal, note, approvedOrderItemId, rejectedAt, rejectionReason (hai field cuối chỉ có ở dòng bị bỏ khi duyệt một phần). `unitPrice`/`lineTotal` ở summary là submitted snapshot, không phải current quote. TABLE ID/observed session và terminal metadata nullable; RESTAURANT tableId/observedSessionId/approvedSessionId luôn null.
 
 Empty page hợp lệ:
 
@@ -290,7 +297,14 @@ Detail schema chính xác:
 }
 ```
 
-Current quote lines: itemId, quantity, note, itemName, unit, unitPrice, lineTotal. Serving `currentOrder` nếu có: id, version, status, paymentStatus, currencyCode, totalAmount, paidAmount. TABLE sessionVersion/guestCount nullable khi chưa có phiên và tham gia review hash để phát hiện phiên đã cập nhật. `reviewContext` là TABLE-only; TAKEAWAY trả null. Khi request/scope/quote không approvable, current quote/hash có thể null và reasonCode giải thích; không dùng hash null để approve.
+Current quote lines: requestItemId, itemId, quantity, note, itemName, unit, unitPrice, lineTotal, available, unavailableReason.
+Mỗi dòng được đánh giá riêng: món hết hoặc không còn bán **không làm hỏng cả review** nữa mà chỉ có
+`available: false`, `unavailableReason` (`ITEM_OUT_OF_STOCK`, `ITEM_NOT_SELLABLE`, `MENU_ITEM_NOT_FOUND`), `unitPrice`/`lineTotal` null
+và tên/đơn vị lấy từ lúc khách gửi. `currentQuote.amount` chỉ cộng các dòng còn bán. Tình trạng còn/hết của từng dòng nằm trong
+`reviewContextHash`, nên món hết sau khi nhân viên xem sẽ buộc xem lại (`409 QR_REVIEW_CONTEXT_CHANGED`).
+Nếu **mọi** dòng đều không bán được thì `canApprove=false`, `reasonCode` là mã của dòng đầu tiên; chỉ có thể từ chối.
+
+Serving `currentOrder` nếu có: id, version, status, paymentStatus, currencyCode, totalAmount, paidAmount. TABLE sessionVersion/guestCount nullable khi chưa có phiên và tham gia review hash để phát hiện phiên đã cập nhật. `reviewContext` là TABLE-only; TAKEAWAY trả null. Khi request/scope/quote không approvable, current quote/hash có thể null và reasonCode giải thích; không dùng hash null để approve.
 
 ## 7. Staff approve
 
@@ -325,6 +339,31 @@ approvedBy, approvedAt, approvedAmount, approvedOrderItemIds[], replay, order
 
 `replay` false khi mutation, true khi trả stored approval. `approvedSessionId` null với TAKEAWAY. `order` là [private OrderResponse hiện có](order-api.md), không thay contract root Order; request approvedAmount chỉ là tiền của các dòng request. Không đưa response staff này cho guest/customer website.
 
+### Duyệt một phần
+
+Khi một số món hết (hoặc bếp không làm được), nhân viên vẫn duyệt được phần còn lại bằng `excludedItems`:
+
+```json
+{
+  "expectedRequestVersion": 0,
+  "expectedReviewContextHash": "<64-hex-hash-from-detail>",
+  "targetSessionId": null,
+  "excludedItems": [
+    { "requestItemId": "<currentQuote.lines[].requestItemId>", "reason": "Món đã hết, xin lỗi bạn" }
+  ]
+}
+```
+
+- Thiếu/null/rỗng = duyệt toàn bộ như trước. Tối đa 20 phần tử; `reason` trim, không rỗng, tối đa 500 ký tự; khách thấy nguyên văn.
+- Mọi dòng `available=false` trong `currentQuote` **phải** nằm trong `excludedItems`, nếu không trả `409 QR_LINE_UNAVAILABLE`.
+  Được bỏ cả dòng còn bán (ví dụ bếp quá tải).
+- Bỏ hết mọi dòng trả `400 QR_APPROVAL_EMPTY`: dùng API từ chối. `requestItemId` lạ hoặc lặp trả `400 QR_EXCLUDED_ITEM_INVALID`.
+- Chỉ các dòng còn lại thành order item, được kiểm/giữ kho; `approvedAmount` và `approvedOrderItemIds` chỉ tính các dòng đó.
+  Dòng bị bỏ lưu `rejectedAt`/`rejectionReason`, không tạo order item, không giữ kho.
+- Audit `QR_ORDER_REQUEST_APPROVED` ghi `excludedRequestItemIds` (chỉ ID, không ghi lý do).
+- Thiếu nguyên liệu khi duyệt: `409 INSUFFICIENT_AVAILABLE_STOCK`, request vẫn PENDING. `details.lines[].menuItemId` là `itemId`
+  của dòng request bị thiếu; FE gợi ý bỏ các dòng đó rồi review lại và duyệt phần còn lại.
+
 APPROVED retry trả stored result, không reroute hoặc thêm món/order/phiên, không đổi approvedBy/approvedAt; không yêu cầu session còn OPEN/order còn UNPAID và không kiểm hash cũ theo root state mới. Target UUID khác approved session conflict. TAKEAWAY target luôn null.
 
 Hai TABLE request gửi khi chưa có phiên: A được duyệt mở S; B dùng hash/context “chưa có phiên” cũ trả 409. Staff đọc lại B rồi chọn S để append một lần. Hai TAKEAWAY requests của cùng guest được duyệt thành hai orders riêng; retry không tạo order thứ ba.
@@ -342,7 +381,7 @@ Content-Type: application/json
 }
 ```
 
-Reason trim/nonblank <=1000, version >=0. Response `200` request REJECTED. Không tạo/cập nhật order/session. REJECTED retry là no-op, giữ reason/reviewer/time ban đầu, không audit trùng. Không reject APPROVED, không approve REJECTED/CANCELLED. Không yêu cầu guest/QR entitlement còn hiệu lực để reject backlog.
+Reason trim/nonblank <=1000, version >=0. **Khách thấy lý do này** qua `rejectionReason` trên receipt, nên viết cho khách đọc. Response `200` request REJECTED. Không tạo/cập nhật order/session. REJECTED retry là no-op, giữ reason/reviewer/time ban đầu, không audit trùng. Không reject APPROVED, không approve REJECTED/CANCELLED. Không yêu cầu guest/QR entitlement còn hiệu lực để reject backlog.
 
 Response dùng staff summary như `content[]` ở list, với status REJECTED, rejectedBy/rejectedAt/rejectionReason được chốt. Approved linkage vẫn null; không có private order payload.
 

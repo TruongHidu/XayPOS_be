@@ -422,6 +422,74 @@ class QrOrderIntegrationTest {
         assertThat(perform(get("/api/v1/public/menu/tables/"+table.getQrToken()),null).body.path("orderingEnabled").asBoolean()).isTrue();
         assertThat(perform(get("/api/v1/public/menu/restaurants/"+restaurant.getPublicOrderToken()),null).body.path("orderingEnabled").asBoolean()).isFalse();
     }
+    @Test void partialApprovalLeavesOutTheSoldOutLineAndTheGuestSeesWhy() throws Exception {
+        var tea=extraItem("Tea","5000"); String guest=mint(false);
+        var r=submit(guest,"partial",twoLines(tea)); r.expect(201);
+        tea.setAvailabilityStatus(AvailabilityStatus.OUT_OF_STOCK); items.saveAndFlush(tea);
+        var d=review(r); d.expect(200); assertThat(d.body.path("canApprove").asBoolean()).isTrue();
+        var quoted=d.body.path("currentQuote").path("lines");
+        assertThat(quoted.get(0).path("available").asBoolean()).isTrue();
+        assertThat(quoted.get(1).path("available").asBoolean()).isFalse();
+        assertThat(quoted.get(1).path("unavailableReason").asText()).isEqualTo("ITEM_OUT_OF_STOCK");
+        assertThat(quoted.get(1).hasNonNull("lineTotal")).isFalse();
+        assertThat(d.body.path("currentQuote").path("amount").decimalValue()).isEqualByComparingTo("50000");
+        approve(r,d,null,ALL).error(409,"QR_LINE_UNAVAILABLE"); assertThat(count("orders")).isZero(); assertThat(status(r)).isEqualTo("PENDING");
+
+        UUID teaLine=UUID.fromString(quoted.get(1).path("requestItemId").asText());
+        var leaveOut=List.of(Map.of("requestItemId",teaLine,"reason","Hết trà đá"));
+        var a=staff(post(STAFF+"/"+r.requestId()+"/approve"),approvalBody(d,null,leaveOut),ALL); a.expect(200);
+        assertThat(a.body.path("approvedAmount").decimalValue()).isEqualByComparingTo("50000");
+        assertThat(a.body.path("approvedOrderItemIds").size()).isEqualTo(1);
+        assertThat(count("order_items")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select total_amount from orders where id=?",BigDecimal.class,a.orderId())).isEqualByComparingTo("50000");
+
+        var receipt=guestGet(guest,r); receipt.expect(200);
+        assertThat(receipt.body.path("status").asText()).isEqualTo("APPROVED");
+        assertThat(receipt.body.path("approvedAmount").decimalValue()).isEqualByComparingTo("50000");
+        var lines=receipt.body.path("items");
+        assertThat(lines.get(0).hasNonNull("approvedOrderItemId")).isTrue(); assertThat(lines.get(0).hasNonNull("rejectionReason")).isFalse();
+        assertThat(lines.get(1).hasNonNull("approvedOrderItemId")).isFalse();
+        assertThat(lines.get(1).path("rejectionReason").asText()).isEqualTo("Hết trà đá");
+        var staffLine=staff(get(STAFF+"/"+r.requestId()),null,ALL).body.path("request").path("items").get(1);
+        assertThat(staffLine.path("rejectionReason").asText()).isEqualTo("Hết trà đá"); assertThat(staffLine.hasNonNull("rejectedAt")).isTrue();
+
+        var replay=staff(post(STAFF+"/"+r.requestId()+"/approve"),approvalBody(d,null,leaveOut),ALL); replay.expect(200);
+        assertThat(replay.body.path("replay").asBoolean()).isTrue(); assertThat(replay.body.path("approvedOrderItemIds").size()).isEqualTo(1);
+        assertThat(count("order_items")).isEqualTo(1); assertThat(events("QR_ORDER_REQUEST_APPROVED")).isEqualTo(1);
+    }
+    @Test void staffCanLeaveOutAnAvailableLineButNotEveryLineNorForeignOnes() throws Exception {
+        var tea=extraItem("Tea","5000"); var r=submit(mint(true),"partial-table",twoLines(tea)); r.expect(201);
+        var d=review(r); d.expect(200); var quoted=d.body.path("currentQuote").path("lines");
+        UUID phoLine=UUID.fromString(quoted.get(0).path("requestItemId").asText()), teaLine=UUID.fromString(quoted.get(1).path("requestItemId").asText());
+        String path=STAFF+"/"+r.requestId()+"/approve";
+        staff(post(path),approvalBody(d,null,List.of(Map.of("requestItemId",phoLine,"reason","a"),Map.of("requestItemId",teaLine,"reason","b"))),ALL)
+            .error(400,"QR_APPROVAL_EMPTY");
+        staff(post(path),approvalBody(d,null,List.of(Map.of("requestItemId",UUID.randomUUID(),"reason","a"))),ALL).error(400,"QR_EXCLUDED_ITEM_INVALID");
+        staff(post(path),approvalBody(d,null,List.of(Map.of("requestItemId",phoLine,"reason"," "))),ALL).expect(400);
+        assertThat(status(r)).isEqualTo("PENDING"); assertThat(count("orders")).isZero(); assertThat(count("table_sessions")).isZero();
+        var a=staff(post(path),approvalBody(d,null,List.of(Map.of("requestItemId",phoLine,"reason","Bếp quá tải"))),ALL); a.expect(200);
+        assertThat(a.body.path("approvedAmount").decimalValue()).isEqualByComparingTo("5000");
+        assertThat(jdbc.queryForObject("select item_id from order_items where order_id=?",UUID.class,a.orderId())).isEqualTo(tea.getId());
+    }
+    @Test void everyLineSoldOutCannotBeApprovedOnlyRejectedAndTheGuestSeesTheReason() throws Exception {
+        String guest=mint(false); var r=submit(guest,"all-out",payload()); r.expect(201);
+        item.setAvailabilityStatus(AvailabilityStatus.OUT_OF_STOCK); items.saveAndFlush(item);
+        var d=review(r); assertThat(d.body.path("canApprove").asBoolean()).isFalse(); assertThat(d.body.path("reasonCode").asText()).isEqualTo("ITEM_OUT_OF_STOCK");
+        staff(post(STAFF+"/"+r.requestId()+"/reject"),Map.of("expectedRequestVersion",0,"reason","Món đã hết, mời bạn chọn món khác"),ALL).expect(200);
+        var receipt=guestGet(guest,r); receipt.expect(200);
+        assertThat(receipt.body.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(receipt.body.path("rejectionReason").asText()).isEqualTo("Món đã hết, mời bạn chọn món khác");
+    }
+    @Test void inventoryShortageCanBeResolvedByLeavingOutTheShortLine() throws Exception {
+        inventoryFixture("50"); var tea=extraItem("Tea","5000");
+        var r=submit(mint(false),"short-partial",twoLines(tea)); r.expect(201); var d=review(r); d.expect(200);
+        var shortage=approve(r,d,null,ALL); shortage.error(409,"INSUFFICIENT_AVAILABLE_STOCK");
+        assertThat(shortage.body.path("details").path("lines").get(0).path("menuItemId").asText()).isEqualTo(item.getId().toString());
+        UUID phoLine=UUID.fromString(d.body.path("currentQuote").path("lines").get(0).path("requestItemId").asText());
+        var a=staff(post(STAFF+"/"+r.requestId()+"/approve"),approvalBody(review(r),null,List.of(Map.of("requestItemId",phoLine,"reason","Hết nguyên liệu"))),ALL);
+        a.expect(200); assertThat(count("inventory_reservations")).isZero();
+        assertThat(jdbc.queryForObject("select item_id from order_items where order_id=?",UUID.class,a.orderId())).isEqualTo(tea.getId());
+    }
     @Test void pendingPaymentIntentBlocksTableRequestsUntilCancelledWithoutBlockingTakeaway() throws Exception {
         String tableGuest=mint(true),takeGuest=mint(false); var r=submit(tableGuest,"a",payload()); var a=approve(r,review(r),null,ALL); a.expect(200);
         UUID payment=UUID.randomUUID();
@@ -795,6 +863,18 @@ class QrOrderIntegrationTest {
     Map<String,Object> approvalBody(Reply d,UUID target) {
         var body=new LinkedHashMap<String,Object>(); body.put("expectedRequestVersion",d.body.path("request").path("version").asLong());
         body.put("expectedReviewContextHash",d.body.path("reviewContextHash").asText("0".repeat(64))); body.put("targetSessionId",target); return body;
+    }
+    Map<String,Object> approvalBody(Reply d,UUID target,List<? extends Map<String,?>> excludedItems) {
+        var body=approvalBody(d,target); body.put("excludedItems",excludedItems); return body;
+    }
+    Item extraItem(String name,String price) {
+        var extra=new Item(); extra.initialize(restaurant.getId(),NOW); extra.setItemType(ItemType.MENU_ITEM); extra.setName(name);
+        extra.setBaseUnit("glass"); extra.setSalePrice(new BigDecimal(price)); extra.setCostPrice(new BigDecimal("1000")); extra.setCostConfigured(true);
+        return items.saveAndFlush(extra);
+    }
+    Map<String,Object> twoLines(Item other) {
+        var body=payload(); body.put("items",List.of(Map.of("itemId",item.getId(),"quantity",1,"note","Hot"),Map.of("itemId",other.getId(),"quantity",1)));
+        return body;
     }
     Reply pay(Reply a) throws Exception { return staff(post("/api/v1/orders/"+a.orderId()+"/payments").header("Idempotency-Key","pay-"+UUID.randomUUID()),
         Map.of("expectedOrderVersion",a.orderVersion(),"paymentMethod","CASH","amount",a.body.path("order").path("totalAmount").decimalValue()),ALL); }

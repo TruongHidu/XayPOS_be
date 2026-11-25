@@ -106,7 +106,11 @@ class QrOrderOpenApiTest {
         assertThat(values(approve.path("required")))
             .containsExactlyInAnyOrder("expectedRequestVersion", "expectedReviewContextHash", "targetSessionId");
         assertThat(names(approve.path("properties")))
-            .containsExactlyInAnyOrder("expectedRequestVersion", "expectedReviewContextHash", "targetSessionId");
+            .containsExactlyInAnyOrder("expectedRequestVersion", "expectedReviewContextHash", "targetSessionId", "excludedItems");
+        assertThat(approve.at("/properties/excludedItems/maxItems").asInt()).isEqualTo(20);
+        var excluded = document(FILE).at("/components/schemas/ExcludedItem");
+        assertThat(values(excluded.path("required"))).containsExactlyInAnyOrder("requestItemId", "reason");
+        assertThat(excluded.at("/properties/reason/maxLength").asInt()).isEqualTo(500);
         assertThat(approve.path("additionalProperties").asBoolean()).isFalse();
         assertThat(approve.at("/properties/targetSessionId/nullable").asBoolean()).isTrue();
         assertThat(approve.at("/properties/targetSessionId/description").asText()).contains("Explicit", "RESTAURANT", "null");

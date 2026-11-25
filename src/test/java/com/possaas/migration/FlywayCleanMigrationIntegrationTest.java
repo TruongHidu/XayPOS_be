@@ -62,7 +62,7 @@ class FlywayCleanMigrationIntegrationTest {
 
             flyway.migrate();
 
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("48");
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("49");
             assertThat(countTables(schema)).isEqualTo(47);
             assertThat(tableExists(schema, "restaurant_admin_notes")).isTrue();
             for (String column : new String[] {"transfer_bank_bin", "transfer_account_number", "transfer_account_name"})

@@ -15,8 +15,10 @@ public record QrStaffRequestSummary(UUID requestId, QrEntryType entryType, Servi
         BigDecimal estimatedAmount, BigDecimal approvedAmount, UUID approvedOrderId, UUID approvedSessionId,
         UUID approvedBy, Instant approvedAt, UUID rejectedBy, Instant rejectedAt, String rejectionReason,
         Instant cancelledAt, String cancellationReason, Instant createdAt, Instant expiresAt, List<Line> items) {
+    /** {@code rejectionReason}/{@code rejectedAt} are set on a line left out of a partial approval. */
     public record Line(UUID id, UUID itemId, String itemName, String unit, BigDecimal quantity,
-            BigDecimal unitPrice, BigDecimal lineTotal, String note, UUID approvedOrderItemId) {
+            BigDecimal unitPrice, BigDecimal lineTotal, String note, UUID approvedOrderItemId,
+            Instant rejectedAt, String rejectionReason) {
         @Override public String toString() { return "QrStaffRequestLine[id=" + id + ", private fields omitted]"; }
     }
     @Override public String toString() { return "QrStaffRequestSummary[requestId=" + requestId + ", status=" + status + "]"; }

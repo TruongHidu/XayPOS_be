@@ -19,18 +19,21 @@ public class QrApprovalPersistHandler implements OrderHandler<QrApprovalContext,
     private final QrRequestAudit audit;
     private final QrStaffResponseMapper mapper;
     @Override public QrApprovalResponse handle(QrApprovalContext c, OrderNext<QrApprovalContext,QrApprovalResponse> next) {
-        var r = c.getRequest(); var before = audit.snapshot(r); var approved = orders.persist(c.getPrepared());
-        if (approved.createdOrderItemIds().size() != c.getItems().size()) throw new IllegalStateException("Approval linkage mismatch");
-        for (int i = 0; i < c.getItems().size(); i++) {
-            c.getItems().get(i).setApprovedOrderItemId(approved.createdOrderItemIds().get(i));
-            c.getItems().get(i).setUpdatedAt(c.getNow());
+        var r = c.getRequest(); var decision = c.getDecision(); var before = audit.snapshot(r);
+        var approved = orders.persist(c.getPrepared());
+        var included = decision.included();
+        if (approved.createdOrderItemIds().size() != included.size()) throw new IllegalStateException("Approval linkage mismatch");
+        for (int i = 0; i < included.size(); i++) {
+            included.get(i).setApprovedOrderItemId(approved.createdOrderItemIds().get(i));
+            included.get(i).setUpdatedAt(c.getNow());
         }
+        decision.excluded().forEach(left -> left.item().reject(left.reason(), c.getNow()));
         items.saveAllAndFlush(c.getItems());
         r.setStatus(QrRequestStatus.APPROVED); r.setApprovedOrderId(approved.order().id());
         r.setApprovedSessionId(approved.order().tableSessionId()); r.setApprovedBy(c.getLocked().actor().userId());
-        r.setApprovedAt(c.getNow()); r.setApprovedAmount(c.getReview().quote().amount());
+        r.setApprovedAt(c.getNow()); r.setApprovedAmount(decision.approvedAmount());
         r.setApprovedOrderCode(approved.order().orderCode()); r.setUpdatedAt(c.getNow()); requests.saveAndFlush(r);
-        audit.record(r, c.getLocked().actor().userId(), "QR_ORDER_REQUEST_APPROVED", before, c.getIp()); requests.flush();
+        audit.recordApproval(r, c.getLocked().actor().userId(), before, decision.excludedIds(), c.getIp()); requests.flush();
         events.publish(r,Change.APPROVED);
         c.setPersisted(true);
         return next.complete(mapper.approved(r, c.getItems(), approved.order(), false));

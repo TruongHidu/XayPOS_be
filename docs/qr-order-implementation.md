@@ -63,6 +63,19 @@ menus get `orderingEnabled` through the MENU-owned `PublicOrderingAvailabilityQu
 by `QrPublicOrderingAvailabilityAdapter`. The adapter uses non-throwing `hasFeature` checks so it never
 marks the menu's read-only transaction rollback-only.
 
+## Partial approval and guest-visible reasons (V49)
+
+Staff review judges each line separately, through the non-throwing `OrderMenuQuery.inspectSellable`
+and `QrQuoteService.review`. An unavailable line is shown with `available=false` and its reason code;
+it no longer fails the whole review. Line availability is part of the review hash. Submission still
+uses the strict `quote`, so a guest cannot submit an unavailable item.
+
+On approval, `QrApprovalLinePolicy` splits the lines into included and excluded. Only included lines
+reach `OrderQrApprovalOperation`, so ORDER, the recipe snapshot and inventory never see excluded lines.
+Excluded lines store `rejected_at`/`rejection_reason`; a DB check forbids a line from being both
+approved and rejected. The guest receipt now exposes the request-level `rejectionReason` and each
+line's `rejectionReason`.
+
 ## Migration
 
 `V25__create_qr_order_requests.sql` adds `qr_table_access`, `qr_guest_authorizations`,

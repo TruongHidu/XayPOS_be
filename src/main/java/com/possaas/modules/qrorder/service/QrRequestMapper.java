@@ -24,10 +24,11 @@ public class QrRequestMapper {
         var lines=items.stream().map(i->{var line=i.getApprovedOrderItemId()==null?null:approved.get(i.getApprovedOrderItemId());
             return new QrPublicResponse.Line(i.getId(),i.getItemId(),i.getQuotedItemName(),i.getQuotedUnit(),i.getQuantity(),
                     i.getQuotedUnitPrice(),i.getQuotedLineTotal(),i.getNote(),i.getApprovedOrderItemId(),
-                    line==null?null:line.getUnitPrice(),line==null?null:line.getLineTotal(),line==null?null:line.getStatus());}).toList();
+                    line==null?null:line.getUnitPrice(),line==null?null:line.getLineTotal(),line==null?null:line.getStatus(),
+                    i.getRejectionReason());}).toList();
         return new QrPublicResponse(request.getId(),request.getEntryType(),request.getEntryType().serviceType(),
                 request.getEntryType().sourceChannel(),request.getStatus(),request.getVersion(),!request.getExpiresAt().isAfter(clock.instant()),
                 request.getCurrencyCode(),request.getEstimatedAmount(),request.getApprovedAmount(),request.getApprovedOrderCode(),
-                request.getCreatedAt(),request.getExpiresAt(),lines);
+                request.getRejectionReason(),request.getCreatedAt(),request.getExpiresAt(),lines);
     }
 }
