@@ -51,7 +51,7 @@ UC01 ..> UC02 : <<extend>>\n(tự đăng nhập sau đăng ký)
 **Luồng chính**
 1. Hệ thống hiển thị form đăng ký.
 2. Người dùng nhập: mã nhà hàng (2–50 ký tự), tên nhà hàng, tên pháp lý, số điện thoại, địa chỉ, múi giờ, đơn vị tiền tệ (3 ký tự, ví dụ VND), họ tên chủ, email chủ, SĐT chủ, mật khẩu (≥ 8 ký tự).
-3. Người dùng nhấn “Đăng ký”.
+3. Người dùng hoàn tất bước xác minh CAPTCHA (thường tự động) và nhấn “Đăng ký”.
 4. Hệ thống kiểm tra dữ liệu hợp lệ, múi giờ hợp lệ, mã nhà hàng và email chưa tồn tại.
 5. Hệ thống mã hoá mật khẩu, tạo nhà hàng, tạo tài khoản OWNER trong cùng một giao dịch.
 6. Hệ thống phát hành access token (JWT) và refresh token (cookie httpOnly), ghi nhật ký.
@@ -59,6 +59,7 @@ UC01 ..> UC02 : <<extend>>\n(tự đăng nhập sau đăng ký)
 
 **Luồng thay thế / ngoại lệ**
 - 3a. Cùng một IP gửi quá nhiều yêu cầu đăng ký (mặc định 10 lần/giờ, tính cả yêu cầu lỗi) → `429 TOO_MANY_REQUESTS` kèm `Retry-After`; hệ thống không kiểm tra dữ liệu, không truy cập CSDL.
+- 3b. Chưa qua CAPTCHA (Cloudflare Turnstile) → `400 CAPTCHA_REQUIRED`. Token sai, hết hạn hoặc đã dùng → `400 CAPTCHA_INVALID`, người dùng làm lại bước xác minh. Không liên lạc được dịch vụ CAPTCHA → `503 CAPTCHA_UNAVAILABLE`, không tạo tài khoản. Cả ba trường hợp đều không kiểm tra dữ liệu, không truy cập CSDL.
 - 4a. Thiếu trường bắt buộc / sai định dạng email → `400 VALIDATION_ERROR`, đánh dấu trường lỗi.
 - 4b. Múi giờ không hợp lệ → `400 INVALID_TIMEZONE`.
 - 4c. Mã nhà hàng đã tồn tại → `409 RESTAURANT_CODE_EXISTS`, yêu cầu chọn mã khác.

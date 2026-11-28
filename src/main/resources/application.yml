@@ -105,6 +105,16 @@ app:
       secret: ${SEPAY_WEBHOOK_SECRET:}
       timestamp-tolerance: PT5M
       max-body-bytes: 65536
+  # Cloudflare Turnstile on restaurant registration (docs/auth-captcha.md). Off unless keys are configured;
+  # the prod profile turns it on. Leave expected-hostname blank with Cloudflare test keys.
+  captcha:
+    enabled: ${CAPTCHA_ENABLED:false}
+    turnstile:
+      secret-key: ${TURNSTILE_SECRET_KEY:}
+      expected-hostname: ${TURNSTILE_EXPECTED_HOSTNAME:}
+      verify-url: ${TURNSTILE_VERIFY_URL:https://challenges.cloudflare.com/turnstile/v0/siteverify}
+      connect-timeout: 3s
+      read-timeout: 5s
   # Shared in-memory limiter: counters live in this JVM, so limits hold for a single backend instance.
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}

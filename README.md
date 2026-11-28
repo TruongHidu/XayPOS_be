@@ -191,6 +191,8 @@ Base URL: `http://localhost:8080/api/v1/auth`
 
 Login, register và refresh có giới hạn tần suất theo IP; sai mật khẩu quá số lần thì email bị khoá tạm
 (`429 TOO_MANY_REQUESTS` / `429 LOGIN_TEMPORARILY_LOCKED`, kèm `Retry-After`). Xem [docs/auth-rate-limit.md](docs/auth-rate-limit.md).
+Đăng ký cần token Cloudflare Turnstile trong header `X-Captcha-Token` khi `CAPTCHA_ENABLED=true` (mặc định ở prod).
+Xem [docs/auth-captcha.md](docs/auth-captcha.md).
 
 Ví dụ đăng ký:
 

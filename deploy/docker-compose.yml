@@ -67,6 +67,10 @@ services:
       AUTH_LOGIN_FAILURE_LIMIT: ${AUTH_LOGIN_FAILURE_LIMIT:-5}
       AUTH_REGISTER_RATE_LIMIT: ${AUTH_REGISTER_RATE_LIMIT:-10}
       AUTH_REFRESH_RATE_LIMIT: ${AUTH_REFRESH_RATE_LIMIT:-60}
+      # Registration CAPTCHA (docs/auth-captcha.md). Enabled without TURNSTILE_SECRET_KEY, the backend refuses to start.
+      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-true}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_EXPECTED_HOSTNAME: ${DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/v1/packages || exit 1"]
       interval: 15s
@@ -84,6 +88,8 @@ services:
         VITE_APP_NAME: ${VITE_APP_NAME:-Xây POS}
         VITE_ENABLE_QR_API: "true"
         VITE_REALTIME_ENABLED: "true"
+        # Public half of the Turnstile widget; must come from the same .env as TURNSTILE_SECRET_KEY.
+        VITE_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     image: pos-saas-web:latest
     restart: unless-stopped
     depends_on:

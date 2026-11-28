@@ -55,7 +55,11 @@ openssl rand -base64 48   # dán vào JWT_SECRET
 nano .env
 ```
 
-Các biến bắt buộc: `DOMAIN`, `POSTGRES_*`, `JWT_SECRET`. Ở lần chạy đầu, đặt `SUPER_ADMIN_BOOTSTRAP_ENABLED=true` và điền email, mật khẩu cho tài khoản super admin.
+Các biến bắt buộc: `DOMAIN`, `POSTGRES_*`, `JWT_SECRET`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`. Ở lần chạy đầu, đặt `SUPER_ADMIN_BOOTSTRAP_ENABLED=true` và điền email, mật khẩu cho tài khoản super admin.
+
+Hai key Turnstile dùng cho CAPTCHA ở trang đăng ký. Lấy ở Cloudflare Dashboard → **Turnstile** → **Add widget**: hostname là `DOMAIN`, mode **Managed**. Prod bật CAPTCHA mặc định, nên thiếu `TURNSTILE_SECRET_KEY` thì backend không khởi động. Xem [auth-captcha.md](auth-captcha.md).
+
+> **Lần đầu bật CAPTCHA:** GitHub Actions tự deploy backend khi push lên `main`. Hãy điền 2 key vào `deploy/.env` trên VPS **trước** khi push. Nên build lại web (để bundle có site key) trước hoặc cùng lúc với backend: web mới chạy được với backend cũ, nhưng backend mới sẽ từ chối mọi lần đăng ký từ web cũ (`CAPTCHA_REQUIRED`).
 
 `PUBLIC_MENU_BASE_URL` (tuỳ chọn) là origin frontend được mã hoá vào ảnh QR bàn/QR menu; mặc định `https://${DOMAIN}`. Đổi biến này không đổi token nhưng các thẻ QR đã in theo domain cũ cần in lại.
 
@@ -130,6 +134,10 @@ Heap JVM được giới hạn ở 75% `BACKEND_MEM_LIMIT`. Khi chạy thử, ba
 | Backend báo lỗi `JWT_SECRET` hoặc `DB_*` | Kiểm tra lại `deploy/.env` |
 | Container bị kill (`OOMKilled`) | Thêm swap, build lần lượt từng image, hoặc nâng RAM |
 | Realtime không kết nối được | `DOMAIN` trong `.env` phải đúng domain đang truy cập, vì nó dùng cho kiểm tra Origin của WebSocket |
+| Backend không khởi động, log nhắc `TURNSTILE_SECRET_KEY` | Điền secret Turnstile vào `deploy/.env`, hoặc tạm đặt `CAPTCHA_ENABLED=false` |
+| Đăng ký luôn báo `CAPTCHA_REQUIRED` | Web được build khi chưa có `TURNSTILE_SITE_KEY`: build lại image `web` |
+| Đăng ký luôn báo `CAPTCHA_INVALID` | Site key và secret key không cùng một widget, hoặc hostname của widget khác `DOMAIN` |
+| Đăng ký báo `CAPTCHA_UNAVAILABLE` | VPS không gọi được `challenges.cloudflare.com`, hoặc secret sai (xem log `ERROR` của backend) |
 
 ## Ghi chú kỹ thuật
 

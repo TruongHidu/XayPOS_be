@@ -20,3 +20,6 @@ app:
     require-https: true
   jwt:
     secret: ${JWT_SECRET}
+  # On by default in production: startup fails until TURNSTILE_SECRET_KEY is set.
+  captcha:
+    enabled: ${CAPTCHA_ENABLED:true}

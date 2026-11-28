@@ -1,5 +1,6 @@
 package com.possaas.config;
 
+import com.possaas.infrastructure.security.CaptchaVerificationFilter;
 import com.possaas.infrastructure.security.JwtAuthenticationFilter;
 import com.possaas.infrastructure.security.PublicMenuRequests;
 import com.possaas.infrastructure.security.PublicQrOrderRequests;
@@ -32,6 +33,7 @@ public class SecurityConfig {
         HttpSecurity http,
         JwtAuthenticationFilter jwtFilter,
         RequestRateLimitFilter rateLimitFilter,
+        CaptchaVerificationFilter captchaFilter,
         SepayWebhookAuthenticationFilter sepayWebhookFilter,
         UserAccountStatusFilter userAccountStatusFilter,
         TenantRestaurantStatusFilter tenantRestaurantStatusFilter,
@@ -59,6 +61,8 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             // After CORS so a 429 keeps its CORS headers; before anything reads the body or touches the database.
             .addFilterAfter(rateLimitFilter, CorsFilter.class)
+            // After the rate limit so a flood never turns into calls to the CAPTCHA provider.
+            .addFilterAfter(captchaFilter, RequestRateLimitFilter.class)
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(sepayWebhookFilter, JwtAuthenticationFilter.class)
             .addFilterAfter(userAccountStatusFilter, JwtAuthenticationFilter.class)
