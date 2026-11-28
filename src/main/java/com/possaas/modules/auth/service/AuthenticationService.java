@@ -3,6 +3,7 @@ package com.possaas.modules.auth.service;
 import com.possaas.common.exception.BusinessException;
 import com.possaas.common.exception.ResourceNotFoundException;
 import com.possaas.modules.audit.service.AuditService;
+import com.possaas.modules.auth.application.port.LoginAttemptGuard;
 import com.possaas.modules.auth.dto.AuthResponse;
 import com.possaas.modules.auth.dto.LoginRequest;
 import com.possaas.modules.auth.dto.MeResponse;
@@ -21,7 +22,6 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +31,8 @@ public class AuthenticationService {
     private final UserRepository userRepository;
     private final RestaurantRepository restaurantRepository;
     private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final CredentialVerifier credentials;
+    private final LoginAttemptGuard loginAttempts;
     private final PermissionService permissionService;
     private final RefreshTokenService refreshTokenService;
     private final AuthTokenService authTokenService;
@@ -40,14 +41,15 @@ public class AuthenticationService {
     @Transactional(noRollbackFor = BusinessException.class)
     public AuthResponse login(LoginRequest request, String ipAddress) {
         String normalizedEmail = request.email().trim().toLowerCase();
-        User user = userRepository.findByEmailAndDeletedAtIsNull(normalizedEmail)
-            .orElseThrow(() -> {
-                recordLoginFailure(null, ipAddress);
-                return invalidCredentials();
-            });
+        loginAttempts.assertNotLocked(normalizedEmail);
 
-        if (!user.isActive() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        User user = userRepository.findByEmailAndDeletedAtIsNull(normalizedEmail).orElse(null);
+        // Always one password hash comparison, so timing reveals neither unknown nor deactivated accounts.
+        boolean passwordMatches = credentials.matches(request.password(), user);
+        if (user == null || !passwordMatches || !user.isActive()) {
             recordLoginFailure(user, ipAddress);
+            // Unknown e-mails are counted too: locking must not reveal which accounts exist.
+            loginAttempts.recordFailure(normalizedEmail);
             throw invalidCredentials();
         }
 
@@ -76,6 +78,7 @@ public class AuthenticationService {
             null,
             ipAddress
         );
+        loginAttempts.recordSuccess(normalizedEmail);
         return response;
     }
 

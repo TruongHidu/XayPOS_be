@@ -105,10 +105,28 @@ app:
       secret: ${SEPAY_WEBHOOK_SECRET:}
       timestamp-tolerance: PT5M
       max-body-bytes: 65536
+  # Shared in-memory limiter: counters live in this JVM, so limits hold for a single backend instance.
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    max-entries-per-policy: ${RATE_LIMIT_MAX_ENTRIES_PER_POLICY:20000}
   auth:
     refresh-cookie:
       # Browsers receive the refresh token in this HttpOnly cookie (X-Auth-Transport: cookie).
       secure: ${AUTH_COOKIE_SECURE:true}
+    # login/register/refresh: per client IP (IPv6 per /64). login-failures: wrong passwords per e-mail.
+    rate-limit:
+      login:
+        limit: ${AUTH_LOGIN_RATE_LIMIT:20}
+        window: ${AUTH_LOGIN_RATE_WINDOW:1m}
+      login-failures:
+        limit: ${AUTH_LOGIN_FAILURE_LIMIT:5}
+        window: ${AUTH_LOGIN_FAILURE_WINDOW:15m}
+      register:
+        limit: ${AUTH_REGISTER_RATE_LIMIT:10}
+        window: ${AUTH_REGISTER_RATE_WINDOW:1h}
+      refresh:
+        limit: ${AUTH_REFRESH_RATE_LIMIT:60}
+        window: ${AUTH_REFRESH_RATE_WINDOW:1m}
   jwt:
     # Short-lived: web and mobile renew it silently with the refresh token.
     access-token-ttl: ${JWT_ACCESS_TTL:15m}

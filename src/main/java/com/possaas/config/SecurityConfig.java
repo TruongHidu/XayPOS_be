@@ -3,6 +3,7 @@ package com.possaas.config;
 import com.possaas.infrastructure.security.JwtAuthenticationFilter;
 import com.possaas.infrastructure.security.PublicMenuRequests;
 import com.possaas.infrastructure.security.PublicQrOrderRequests;
+import com.possaas.infrastructure.security.RequestRateLimitFilter;
 import com.possaas.infrastructure.security.RestAccessDeniedHandler;
 import com.possaas.infrastructure.security.RestAuthenticationEntryPoint;
 import com.possaas.infrastructure.security.TenantRestaurantStatusFilter;
@@ -18,6 +19,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.filter.CorsFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -29,6 +31,7 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
         HttpSecurity http,
         JwtAuthenticationFilter jwtFilter,
+        RequestRateLimitFilter rateLimitFilter,
         SepayWebhookAuthenticationFilter sepayWebhookFilter,
         UserAccountStatusFilter userAccountStatusFilter,
         TenantRestaurantStatusFilter tenantRestaurantStatusFilter,
@@ -54,6 +57,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, SepayWebhookAuthenticationFilter.PATH).hasAuthority(SepayWebhookAuthenticationFilter.AUTHORITY)
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated())
+            // After CORS so a 429 keeps its CORS headers; before anything reads the body or touches the database.
+            .addFilterAfter(rateLimitFilter, CorsFilter.class)
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(sepayWebhookFilter, JwtAuthenticationFilter.class)
             .addFilterAfter(userAccountStatusFilter, JwtAuthenticationFilter.class)

@@ -1,11 +1,14 @@
 package com.possaas.common.exception;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.possaas.common.ratelimit.RateLimitExceededException;
 import java.time.Instant;
 import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -27,6 +30,14 @@ public class GlobalExceptionHandler {
         public ErrorResponse(boolean success, String code, String message, Map<String, String> fieldErrors, Instant timestamp) {
             this(success, code, message, fieldErrors, timestamp, null);
         }
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    ResponseEntity<ErrorResponse> rateLimited(RateLimitExceededException ex) {
+        return ResponseEntity.status(ex.getStatus())
+            .cacheControl(CacheControl.noStore())
+            .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.retryAfterSeconds()))
+            .body(new ErrorResponse(false, ex.getCode(), ex.getMessage(), Map.of(), Instant.now()));
     }
 
     @ExceptionHandler(BusinessException.class)

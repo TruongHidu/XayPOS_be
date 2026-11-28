@@ -189,6 +189,9 @@ Base URL: `http://localhost:8080/api/v1/auth`
 - `POST /logout`: thu hồi refresh token hiện tại (Bearer token).
 - `GET /me`: lấy người dùng, nhà hàng, vai trò và quyền hiệu lực (Bearer token).
 
+Login, register và refresh có giới hạn tần suất theo IP; sai mật khẩu quá số lần thì email bị khoá tạm
+(`429 TOO_MANY_REQUESTS` / `429 LOGIN_TEMPORARILY_LOCKED`, kèm `Retry-After`). Xem [docs/auth-rate-limit.md](docs/auth-rate-limit.md).
+
 Ví dụ đăng ký:
 
 ```json

@@ -58,6 +58,7 @@ UC01 ..> UC02 : <<extend>>\n(tự đăng nhập sau đăng ký)
 7. Hệ thống chuyển người dùng tới màn hình chọn gói dịch vụ (onboarding).
 
 **Luồng thay thế / ngoại lệ**
+- 3a. Cùng một IP gửi quá nhiều yêu cầu đăng ký (mặc định 10 lần/giờ, tính cả yêu cầu lỗi) → `429 TOO_MANY_REQUESTS` kèm `Retry-After`; hệ thống không kiểm tra dữ liệu, không truy cập CSDL.
 - 4a. Thiếu trường bắt buộc / sai định dạng email → `400 VALIDATION_ERROR`, đánh dấu trường lỗi.
 - 4b. Múi giờ không hợp lệ → `400 INVALID_TIMEZONE`.
 - 4c. Mã nhà hàng đã tồn tại → `409 RESTAURANT_CODE_EXISTS`, yêu cầu chọn mã khác.
@@ -87,7 +88,9 @@ UC01 ..> UC02 : <<extend>>\n(tự đăng nhập sau đăng ký)
 6. Hệ thống điều hướng theo vai trò: Quản trị viên → trang quản trị; nhân viên → màn hình POS / bếp tương ứng.
 
 **Luồng thay thế / ngoại lệ**
-- 2a. Sai email hoặc mật khẩu → `401 INVALID_CREDENTIALS` (không tiết lộ trường nào sai).
+- 1a. Cùng một IP gửi quá nhiều yêu cầu đăng nhập (mặc định 20 lần/phút) → `429 TOO_MANY_REQUESTS` kèm `Retry-After`.
+- 2a. Sai email hoặc mật khẩu → `401 INVALID_CREDENTIALS` (không tiết lộ trường nào sai). Thời gian phản hồi như nhau dù email có tồn tại hay không.
+- 2b. Một email bị nhập sai mật khẩu quá số lần (mặc định 5 lần/15 phút, từ bất kỳ IP nào) → email bị khoá tạm: mọi lần đăng nhập, kể cả đúng mật khẩu, nhận `429 LOGIN_TEMPORARILY_LOCKED` kèm `Retry-After` cho tới hết cửa sổ. Email không tồn tại cũng bị khoá y hệt, nên việc bị khoá không tiết lộ email nào đã đăng ký.
 - 3a. Tài khoản bị khoá → `401 ACCOUNT_INACTIVE`.
 - 3b. Nhà hàng không ở trạng thái `ACTIVE` (bị quản trị viên khoá/tạm ngưng) → `401`, thông báo nhà hàng đang bị khoá.
 - A1 (extend – Làm mới phiên): khi access token hết hạn, client gửi refresh token; hệ thống kiểm tra token còn hiệu lực, chưa bị thu hồi, tài khoản/nhà hàng còn hoạt động → **xoay vòng** (thu hồi token cũ, cấp cặp token mới). Token không hợp lệ → `401 INVALID_REFRESH_TOKEN`, buộc đăng nhập lại.
@@ -95,6 +98,7 @@ UC01 ..> UC02 : <<extend>>\n(tự đăng nhập sau đăng ký)
 **Quy tắc nghiệp vụ**
 - BR02-1: Quyền thay đổi chỉ có hiệu lực sau khi đăng nhập lại hoặc làm mới phiên.
 - BR02-2: Khoá tài khoản / cấp mật khẩu tạm sẽ thu hồi toàn bộ refresh token của người đó.
+- BR02-3: Đăng nhập thành công xoá bộ đếm số lần sai mật khẩu của email đó. Làm mới phiên bị giới hạn 60 lần/phút mỗi IP (xem `docs/auth-rate-limit.md`).
 
 ---
 
